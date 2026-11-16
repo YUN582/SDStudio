@@ -458,13 +458,13 @@ describe('호출부 배선(소스 검사)', () => {
     expect(body).toContain('emptyCombo(menu, comboLayout, comboCtx)');
   });
 
-  test('createInpaintScene — 이미지를 읽고 저장하기 전에 정하고, 등록 전에 적용', () => {
+  test('image entry delegates to the single-image factory; explicit combo creation stays separate', () => {
     const src = read('../../componenets/SceneQueueControl.tsx');
     const body = src.slice(src.indexOf('const createInpaintScene = async'), src.indexOf('const replaceInpaintSceneImage'));
-    const choose = body.indexOf('chooseNewVariantCombo(');
-    expect(choose).toBeGreaterThan(0);
-    expect(choose).toBeLessThan(body.indexOf('imageService.fetchImage('));
-    expect(body.indexOf('comboChoice.apply(newScene)')).toBeLessThan(body.lastIndexOf('curSession!.addScene(newScene)'));
+    expect(body).toContain('openSourceVariant(');
+    const factory = read('../sourceVariant.ts');
+    expect(factory).not.toContain('chooseNewVariantCombo(');
+    expect(factory).toContain('workFlowService.createPreset(workflowType, job)');
   });
 
   test('InPaintEditor — 단일 계열 「프롬프트」 칸 머리(fieldHeaderEnds.prompt)에 켜기 버튼, 두 InnerPreSetEditor(모바일·PC) 모두', () => {

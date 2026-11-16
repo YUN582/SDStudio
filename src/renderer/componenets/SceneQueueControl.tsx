@@ -1,3 +1,4 @@
+import { openSourceVariant } from '../models/sourceVariant';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
 import { canStartSelectionBox, mainSceneDragSurface, isOnNativeScrollbar } from '../models/dragSelection';
@@ -2117,115 +2118,8 @@ const QueueControl = observer(
       },
     };
 
-    const createInpaintScene = async (
-      scene: GenericScene,
-      workflowType: string,
-      path: string,
-      close: () => void,
-    ) => {
-      // 프롬프트 구성(2026-11-03, SPEC §7-4) — 이미지를 저장하기 전에 정한다(취소 = 아무것도 만들지 않음).
-      // I2I·인페인트만 대상: 원본이 조합 모드 변형 씬이면 묻지 않고 승계, 그 밖은 3택(단일 = 기존 동작 그대로).
-      const comboChoice = await chooseNewVariantCombo(curSession!, scene, workflowType);
-      if (!comboChoice) return;
-      const sourceImage = path.split('/').pop();
-      let image = await imageService.fetchImage(path);
-      image = dataUriToBase64(image!);
-      let cnt = 0;
-      const newName = () => scene.name + cnt.toString();
-      while (curSession!.inpaints.has(newName())) {
-        cnt++;
-      }
-      const name = newName();
-      const job = await extractPromptDataFromBase64(image);
-      const preset = job
-        ? workFlowService.createPreset(workflowType, job)
-        : workFlowService.buildPreset(workflowType);
-
-      if (workflowType === 'SDMirror') {
-        // 미러: 세션 레벨 이미지 저장 + 합성 캔버스 생성
-        const storedPath = await imageService.storeVibeImage(
-          curSession!,
-          image,
-        );
-        const prevMirrorImage = curSession!.mirrorImage;
-        curSession!.mirrorImage = storedPath;
-        const result = await prepareMirrorCanvas(
-          image,
-          curSession!.mirrorMode || 'blank',
-        );
-        preset.image = await imageService.storeVibeImage(
-          curSession!,
-          result.canvas,
-        );
-        preset.mask = await imageService.storeVibeImage(
-          curSession!,
-          result.mask,
-        );
-        const newScene = InpaintScene.fromJSON({
-          type: 'inpaint',
-          name,
-          workflowType,
-          preset,
-          resolution: 'custom',
-          resolutionWidth: result.width,
-          resolutionHeight: result.height,
-          mirrorCropX: result.cropX,
-          sceneRef: scene.type === 'scene' ? scene.name : undefined,
-          sourceImage: scene.type === 'scene' ? sourceImage : undefined,
-          imageMap: [],
-          mains: [],
-          round: undefined,
-          game: undefined,
-        });
-        if (newScene) {
-          curSession!.addScene(newScene);
-          // 되돌리기(U2a): 씬은 휴지통행, 세션 미러 원본은 이번 값 그대로일 때만 이전 값으로(새 이미지 파일은 남김)
-          recordScenesCreated(curSession, [newScene], UNDO_TEXT.variantSceneCreate(newScene.name), {
-            ...mirrorImageHooks(curSession!, prevMirrorImage, storedPath),
-          });
-          close();
-          setInpaintEditScene(newScene);
-        }
-      } else {
-        // 해상도 = 첨부 이미지 크기(R-res, SPEC §7-3). 이미 받은 이미지로 생성 전에 정해 씬 등록 1회로 끝낸다.
-        // 크기를 모르거나 대상 아닌 워크플로우면 원본 씬 해상도(커스텀 너비·높이 포함 — 예전엔 enum 만 복사).
-        const fromImage = workflowUsesImageResolution(workflowType)
-          ? await resolutionFromImage(image)
-          : undefined;
-        preset.image = await imageService.storeVibeImage(curSession!, image);
-        const newScene = InpaintScene.fromJSON({
-          type: 'inpaint',
-          name,
-          workflowType,
-          preset,
-          ...inpaintSceneResolutionFields(workflowType, scene, fromImage),
-          sceneRef: scene.type === 'scene' ? scene.name : scene.sceneRef,
-          sourceImage: scene.type === 'scene' ? sourceImage : undefined,
-          outputInSourceScene:
-            (workflowType === 'SDInpaint' || workflowType === 'SDI2I' || workflowType === 'Augment') &&
-            (scene.type === 'scene' || (scene.sceneRef && curSession!.scenes.has(scene.sceneRef)))
-              ? true
-              : undefined,
-          imageMap: [],
-          mains: [],
-          round: undefined,
-          game: undefined,
-        });
-        // 조합 선택이면 프롬프트 계열 칸·slots·comboMode 만 바꾼다(이미지·해상도·강도·마스크는 위 기존 규칙 그대로) — 등록 전
-        if (newScene && comboChoice.kind === 'combo') comboChoice.apply(newScene);
-        if (newScene) {
-          curSession!.addScene(newScene);
-          if (comboChoice.kind === 'combo' && comboChoice.fromCurrent) {
-            appState.pushMessage(COMBO_SOURCE_TEXT.currentNotice, 'info');
-          }
-          // 되돌리기(U2a): 씬은 휴지통행(저장한 첨부 이미지 파일은 남김)
-          recordScenesCreated(curSession, [newScene], UNDO_TEXT.variantSceneCreate(newScene.name));
-          close();
-          setInpaintEditScene(newScene);
-          const notice = fromImage && paidResolutionNotice(fromImage);
-          if (notice) appState.pushMessage(notice, 'info');
-        }
-      }
+    const createInpaintScene = async (scene:GenericScene,workflowType:string,path:string,close:()=>void) => {
+      await openSourceVariant(curSession!,scene,workflowType,path,work=>{close();setInpaintEditScene(work);});
     };
 
     // 기존 변형 씬의 이미지를 결과 이미지로 바꾸고 씬 해상도를 그 크기로 맞춘다(R-res ⓒ·ⓓ).
@@ -2236,6 +2130,7 @@ const QueueControl = observer(
       const fromImage = workflowUsesImageResolution(scene.workflowType)
         ? await resolutionFromImage(image)
         : undefined;
+      scene.meta.set('codex.detachedInpaintInput',true);
       await imageService.writeVibeImage(curSession!, scene.preset.image, image);
       if (fromImage) {
         applyImageResolution(scene, fromImage);
@@ -2387,7 +2282,6 @@ const QueueControl = observer(
             {inpaintEditScene && (
               <FloatView
                 priority={3}
-                ownsGenControl
                 onEscape={() => setInpaintEditScene(undefined)}
               >
                 <InPaintEditor
@@ -2430,7 +2324,6 @@ const QueueControl = observer(
           {inpaintEditScene && (
             <FloatView
               priority={3}
-              ownsGenControl
               onEscape={() => setInpaintEditScene(undefined)}
             >
               <InPaintEditor
@@ -2445,7 +2338,6 @@ const QueueControl = observer(
           {(editingScene || adding) && (
             <FloatView
               priority={2}
-              ownsGenControl
               onEscape={() => {
                 setEditingScene(undefined);
                 setAdding(false);
@@ -3181,7 +3073,7 @@ const QueueControl = observer(
                     }`
               }${toolbarRowHighlightClass(toolbarDrag, toolbarRowOver)}`}
             >
-              {appState.sceneSelectionMode && (
+              {(appState.sceneSelectionMode || appState.selectedSceneCount(type)>0) && (
                 <Tooltip content="현재 표시된 씬 모두 선택">
                   <button
                     // 그룹 툴바는 행 gap 이 없어(칸 간격은 구분선 칸이 맡음) 첫 칸과 12px 띄운다
@@ -3434,7 +3326,7 @@ const QueueControl = observer(
                 {/* 그리드 끝의 점선 「새 씬」 카드(2026-09-21, PC·모바일 공통) — 툴바 [씬 추가]와 같은 addScene.
                     검색 중·선택 모드·파생 목록(filterFunc)에서는 숨긴다. 씬 카드가 아니므로 scene-cell- id 를 쓰지 않는다. */}
                 {!sceneSearchQuery.trim() &&
-                  !appState.sceneSelectionMode &&
+                  !appState.sceneSelectionMode && appState.selectedSceneCount(type)===0 &&
                   !filterFunc && (
                     <button
                       type="button"
