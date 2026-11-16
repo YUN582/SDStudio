@@ -48,6 +48,7 @@ const chokidar = require('chokidar');
 import webpackPaths from '../../.erb/configs/webpack.paths';
 import { Config } from './config';
 import { launchCustomImageEditor } from './customImageEditor';
+import { registerEditedImageMetadata } from './editedImageMetadata';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
 import { extractStealthBits, embedStealthBits, canEmbed } from './stealth';
 import { spawn } from 'child_process';
@@ -1591,6 +1592,8 @@ async function openImageEditor(inputPath: string) {
 ipcMain.handle('open-image-editor', async (event, inputPath) => {
   await openImageEditor(APP_DIR + '/' + inputPath);
 });
+
+registerEditedImageMetadata(() => APP_DIR, exiftool, sharp);
 
 ipcMain.handle('watch-image', async (event, inputPath) => {
   const orgDir = inputPath.split('/').slice(0, -1).join('/');

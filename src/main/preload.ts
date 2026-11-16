@@ -64,6 +64,7 @@ export type Channels =
   | 'resize-image'
   | 'exist-file'
   | 'open-image-editor'
+  | 'restore-edited-image-metadata'
   | 'watch-image'
   | 'unwatch-image'
   | 'load-model'

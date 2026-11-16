@@ -1453,6 +1453,10 @@ export class AndroidBackend extends Backend {
     return;
   }
 
+  async restoreEditedImageMetadata(_inputPath: string): Promise<boolean> {
+    return false;
+  }
+
   async watchImage(inputPath: string): Promise<void> {
     return;
   }

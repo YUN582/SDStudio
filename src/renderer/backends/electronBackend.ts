@@ -533,6 +533,10 @@ export class ElectornBackend extends Backend {
     await invoke('open-image-editor', inputPath);
   }
 
+  async restoreEditedImageMetadata(inputPath: string): Promise<boolean> {
+    return await invoke('restore-edited-image-metadata', inputPath);
+  }
+
   async watchImage(inputPath: string): Promise<void> {
     await invoke('watch-image', inputPath);
   }

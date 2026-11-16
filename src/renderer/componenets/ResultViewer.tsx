@@ -1124,6 +1124,7 @@ const ResultDetailView = observer(
     const [image, setImage] = useState<string | undefined>(undefined);
     const [imageLoadFailed, setImageLoadFailed] = useState(false);
     const [upscalePreparing, setUpscalePreparing] = useState(false);
+    const [restoringMetadata, setRestoringMetadata] = useState(false);
     const [upscaleInfo, setUpscaleInfo] = useState<{ path: string; cost?: number; error?: string }>();
     const [imageRetryRevision, setImageRetryRevision] = useState(0);
     const watchedImages = useRef(new Set<string>());
@@ -1406,6 +1407,20 @@ const ResultDetailView = observer(
       String(typeof b.text === 'function' ? b.text(paths[selectedIndex]) : b.text);
     const runPlugin = (b: any) => b.onClick(scene, paths[selectedIndex], onClose);
 
+    const restoreEditedMetadata = async () => {
+      setRestoringMetadata(true);
+      try {
+        if (await backend.restoreEditedImageMetadata(paths[selectedIndex])) {
+          appState.pushMessage('생성 정보를 복원한 PNG를 저장했습니다.');
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appState.pushMessage(message.replace(/^Error invoking remote method '[^']+': Error: /, ''), 'error');
+      } finally {
+        setRestoringMetadata(false);
+      }
+    };
+
     const infoFields = (
       <>
             <div className="max-w-full mb-2 text-sub">
@@ -1576,6 +1591,15 @@ const ResultDetailView = observer(
                 }}
               >
                 이미지 편집
+              </button>
+            )}
+            {!isMobile && (
+              <button
+                className="round-button back-gray"
+                disabled={restoringMetadata || !paths[selectedIndex]}
+                onClick={restoreEditedMetadata}
+              >
+                {restoringMetadata ? '생성 정보 복원 중…' : '편집본에 생성 정보 복원'}
               </button>
             )}
             <button

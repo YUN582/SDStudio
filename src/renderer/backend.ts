@@ -215,6 +215,7 @@ export abstract class Backend {
   abstract download(url: string, dest: string, filename: string): Promise<void>;
   abstract resizeImage(input: ResizeImageInput): Promise<void>;
   abstract openImageEditor(inputPath: string): Promise<void>;
+  abstract restoreEditedImageMetadata(inputPath: string): Promise<boolean>;
   abstract watchImage(inputPath: string): Promise<void>;
   abstract unwatchImage(inputPath: string): Promise<void>;
   abstract loadModel(modelPath: string): Promise<void>;
