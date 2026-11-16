@@ -2180,6 +2180,9 @@ const QueueControl = observer(
               ) => {
                 if (!scene.sceneRef) {
                   appState.pushMessage('원본 씬이 없습니다.');
+                  // A chained edit's immediate source belongs to another work, not this root scene.
+                  // Copying to the root must never delete a same-named, unrelated root image.
+                  if (scene.sourceInpaint) return undefined;
                   return;
                 }
                 const orgScene = curSession!.scenes.get(scene.sceneRef);

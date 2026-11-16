@@ -35,12 +35,14 @@ export function linkedInpaintInputPath(
 ): string | undefined {
   if (
     !['SDInpaint', 'SDI2I'].includes(scene.workflowType) ||
-    !scene.sceneRef ||
+    (!scene.sceneRef && !scene.sourceInpaint) ||
     !scene.sourceImage ||
     scene.meta.get(DETACHED_INPUT_META)
   )
     return;
-  const parent = session.scenes.get(scene.sceneRef);
+  const parent = scene.sourceInpaint
+    ? session.inpaints.get(scene.sourceInpaint)
+    : session.scenes.get(scene.sceneRef!);
   if (!parent) throw new Error('연결된 원본 씬을 찾을 수 없습니다.');
   return access.getOutputDir(session, parent) + '/' + scene.sourceImage;
 }

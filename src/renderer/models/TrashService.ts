@@ -779,15 +779,16 @@ export class TrashService extends EventTarget {
     return sceneTrashBelongsTo(entry, physicalDirOf(projectName));
   }
 
-  async renameVariantTrashSource(session: Session, oldName: string, newName: string): Promise<void> {
+  async renameVariantTrashSource(session: Session, oldName: string, newName: string, sourceType: 'scene' | 'inpaint' = 'scene'): Promise<void> {
     this.ensureLoaded();
     const prefix = session.name + ':';
     const updated: IInpaintScene[] = [];
+    const field = sourceType === 'inpaint' ? 'sourceInpaint' : 'sceneRef';
     for (const [key, entry] of Object.entries(this.data.scenes)) {
       const scene = entry.sceneData;
       if (key.startsWith(prefix) && this.sceneEntryBelongs(session.name, entry) &&
-          scene.type === 'inpaint' && scene.outputInSourceScene && scene.sceneRef === oldName) {
-        scene.sceneRef = newName;
+          scene.type === 'inpaint' && scene[field] === oldName) {
+        scene[field] = newName;
         updated.push(scene);
       }
     }
@@ -795,7 +796,7 @@ export class TrashService extends EventTarget {
     try {
       await this.saveTrash();
     } catch (error) {
-      for (const scene of updated) scene.sceneRef = oldName;
+      for (const scene of updated) scene[field] = oldName;
       throw error;
     }
   }
@@ -815,7 +816,7 @@ export class TrashService extends EventTarget {
       if (!files) continue;
       changes.push({ scene, sceneRef: scene.sceneRef, sourceImage: scene.sourceImage });
       scene.sceneRef = target;
-      scene.sourceImage = scene.sourceImage && files.get(scene.sourceImage);
+      if (!scene.sourceInpaint) scene.sourceImage = scene.sourceImage && files.get(scene.sourceImage);
     }
     const restore = () => {
       for (const { scene, sceneRef, sourceImage } of changes) {

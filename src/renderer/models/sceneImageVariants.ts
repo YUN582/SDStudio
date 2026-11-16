@@ -73,9 +73,10 @@ export function linkedImageVariants(
   variants: Iterable<InpaintScene>,
   sourceFilename?: string,
 ): InpaintScene[] {
-  if (scene.type !== 'scene') return [];
   return Array.from(variants).filter((variant) =>
-    variant.sceneRef === scene.name &&
+    (scene.type === 'scene'
+      ? variant.sceneRef === scene.name && (sourceFilename === undefined || !variant.sourceInpaint)
+      : variant.sourceInpaint === scene.name) &&
     (sourceFilename === undefined || variant.sourceImage === sourceFilename),
   );
 }

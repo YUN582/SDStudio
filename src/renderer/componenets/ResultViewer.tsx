@@ -2122,8 +2122,13 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         imageOwners.set(path, variant);
         variantPaths.push(path);
       }
-      if (variant.sourceImage) {
-        const source = sourceDir + '/' + variant.sourceImage;
+    }
+    for (const variant of curSession!.inpaints.values()) {
+      const sourceOwner = variant.sourceInpaint
+        ? curSession!.inpaints.get(variant.sourceInpaint)
+        : variant.sceneRef ? curSession!.scenes.get(variant.sceneRef) : undefined;
+      if (variant.sourceImage && sourceOwner) {
+        const source = imageService.getOutputDir(curSession!, sourceOwner) + '/' + variant.sourceImage;
         variantCounts.set(source, (variantCounts.get(source) ?? 0) + 1);
       }
     }
@@ -3316,7 +3321,7 @@ const LinkedImageWorks=observer(function LinkedImageWorks({session,scene,path}:{
   const [result,setResult]=useState<{work:InpaintScene;file:string}|null>(null);
   const [,refresh]=useState(0);
   useEffect(()=>{const changed=()=>refresh(n=>n+1);imageService.addEventListener('image-added',changed);return()=>imageService.removeEventListener('image-added',changed);},[]);
-  const works=scene.type==='scene'?linkedImageVariants(scene,session.inpaints.values(),path?.split('/').pop()):[];
+  const works=linkedImageVariants(scene,session.inpaints.values(),path?.split('/').pop());
   if(!works.length)return null;
   return <section className="sds-linked-works" aria-label="연결된 인페인트·I2I 작업">
     <h3 className="text-default">연결된 인페인트·I2I 작업 <span className="text-sub">{works.length}</span></h3>

@@ -467,8 +467,9 @@ export class ImageService extends EventTarget {
     session: Session,
     oldName: string,
     newName: string,
+    sceneForPaths?: InpaintScene,
   ): Promise<void> {
-    const scene = session.inpaints.get(oldName);
+    const scene = sceneForPaths ?? session.inpaints.get(oldName);
     if (!scene) throw new Error(`변형 씬 "${oldName}"을(를) 찾을 수 없습니다.`);
     const moves: { from: string; to: string; dir: boolean }[] = [
       {
@@ -777,7 +778,9 @@ export class ImageService extends EventTarget {
   }
 
   getSceneGalleryEntries(session: Session, scene: GenericScene) {
-    const owners = [scene, ...linkedImageVariants(scene, session.inpaints.values())];
+    const owners = scene.type === 'scene'
+      ? [scene, ...linkedImageVariants(scene, session.inpaints.values())]
+      : [scene];
     return orderGalleryEntries(owners.map(owner => {
       const directory = this.getOutputDir(session, owner);
       return gameService.getOutputs(session, owner).map(filename => ({ owner, filename, path: directory + '/' + filename }));

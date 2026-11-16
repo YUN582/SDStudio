@@ -12,6 +12,8 @@ import {
 } from './inpaintResolution';
 import { recordScenesCreated, mirrorImageHooks } from './sceneStructureUndo';
 import { UNDO_TEXT } from './undoService';
+import { chooseNewVariantCombo, COMBO_SOURCE_TEXT } from './comboSource';
+import { KEEP_COMBINATIONS, SINGLE_IMAGE_EDIT } from './singleImageEdit';
 
 const pendingRequests = new WeakMap<Session, Set<string>>();
 
@@ -22,21 +24,6 @@ export async function openSourceVariant(
   path: string,
   open: (work: InpaintScene) => void,
 ) {
-  const filename = path.split('/').pop();
-  if (type === 'SDInpaint' && scene.type === 'scene' && filename) {
-    const linked = [...session.inpaints.values()].filter(
-      (work) =>
-        work.workflowType === type &&
-        work.sceneRef === scene.name &&
-        work.sourceImage === filename &&
-        work.preset.image,
-    );
-    const existing = linked.find((work) => work.imageMap.length) || linked[0];
-    if (existing) {
-      open(existing);
-      return;
-    }
-  }
   let pending = pendingRequests.get(session);
   if (!pending) pendingRequests.set(session, (pending = new Set()));
   const key = JSON.stringify([scene.type, scene.name, type, path]);
@@ -49,7 +36,7 @@ export async function openSourceVariant(
   }
 }
 
-/** An image already resolved one prompt; do not inherit its parent scene's combinations. */
+/** Always create a new work; existing work is opened explicitly in the linked-work list. */
 export async function createSourceVariant(
   session: Session,
   scene: GenericScene,
@@ -57,6 +44,9 @@ export async function createSourceVariant(
   path: string,
   open: (work: InpaintScene) => void,
 ) {
+  // Ask before storing image files, so cancellation leaves no work or orphan snapshot.
+  const choice = await chooseNewVariantCombo(session, scene, workflowType, true);
+  if (!choice) return;
   const sourceImage = path.split('/').pop();
   let image = await imageService.fetchImage(path);
   image = dataUriToBase64(image!);
@@ -91,8 +81,9 @@ export async function createSourceVariant(
       resolutionWidth: result.width,
       resolutionHeight: result.height,
       mirrorCropX: result.cropX,
-      sceneRef: scene.type === 'scene' ? scene.name : undefined,
-      sourceImage: scene.type === 'scene' ? sourceImage : undefined,
+      sceneRef: scene.type === 'scene' ? scene.name : scene.sceneRef,
+      sourceImage,
+      sourceInpaint: scene.type === 'inpaint' ? scene.name : undefined,
       imageMap: [],
       mains: [],
       round: undefined,
@@ -123,10 +114,13 @@ export async function createSourceVariant(
       name,
       workflowType,
       preset,
-      meta: { 'codex.singleImageEdit.v1': true },
+      meta: choice.kind === 'single'
+        ? { [SINGLE_IMAGE_EDIT]: true }
+        : { [KEEP_COMBINATIONS]: true },
       ...inpaintSceneResolutionFields(workflowType, scene, fromImage),
       sceneRef: scene.type === 'scene' ? scene.name : scene.sceneRef,
-      sourceImage: scene.type === 'scene' ? sourceImage : undefined,
+      sourceImage,
+      sourceInpaint: scene.type === 'inpaint' ? scene.name : undefined,
       outputInSourceScene:
         (workflowType === 'SDInpaint' ||
           workflowType === 'SDI2I' ||
@@ -141,6 +135,10 @@ export async function createSourceVariant(
       game: undefined,
     });
     if (newScene) {
+      if (choice.kind === 'combo') {
+        choice.apply(newScene);
+        if (choice.fromCurrent) appState.pushMessage(COMBO_SOURCE_TEXT.currentNotice, 'info');
+      }
       session.addScene(newScene);
 
       // 되돌리기(U2a): 씬은 휴지통행(저장한 첨부 이미지 파일은 남김)

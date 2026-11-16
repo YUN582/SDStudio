@@ -121,6 +121,17 @@ test.each([false, true])('merges files, favorites, and both variant layouts (ove
   expect(relinkHistory).toHaveBeenCalled();
 });
 
+test('merging roots preserves a chained result filename and immediate work owner', async()=>{
+  const {session,target,source}=await fixture();
+  const child={name:'child',type:'inpaint',sceneRef:source.name,sourceInpaint:'repair',sourceImage:'edit.png',outputInSourceScene:true,
+    toJSON(){return {...this,toJSON:undefined};}};
+  session.inpaints.set('child',child as any);
+  await backend.writeFile(out+'/angry_1/variants/child/final.png','chained result');
+  await mergeSelectedScenes(session,[target,source],target);
+  expect(session.inpaints.get('child')).toMatchObject({sceneRef:'angry',sourceInpaint:'repair',sourceImage:'edit.png'});
+  expect(await fs.readFile(local(out+'/angry/variants/child/final.png'),'utf8')).toBe('chained result');
+});
+
 test('project write failure restores sources, variant references, and only removes staged files', async () => {
   const { session, target, source } = await fixture();
   committed.mockRejectedValueOnce(new Error('write failed'));

@@ -8,7 +8,7 @@ import { runInAction } from 'mobx';
 
 export const SINGLE_IMAGE_EDIT = 'codex.singleImageEdit.v1';
 export const SINGLE_IMAGE_BACKUP = 'codex.singleImagePromptBackup.v1';
-const KEEP_COMBINATIONS = 'codex.keepImageEditCombinations.v1';
+export const KEEP_COMBINATIONS = 'codex.keepImageEditCombinations.v1';
 const promptKeys = [
   'prompt',
   'uc',
@@ -20,6 +20,7 @@ const promptKeys = [
 export function isSingleImageEdit(work: InpaintScene) {
   return (
     ['SDInpaint', 'SDI2I'].includes(work.workflowType) &&
+    !work.meta.get(KEEP_COMBINATIONS) &&
     !!work.preset.image &&
     !!(work.sourceImage || work.meta.get(SINGLE_IMAGE_EDIT))
   );

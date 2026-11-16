@@ -265,6 +265,29 @@ describe('빈 조합·현재 프롬프트 → 중간', () => {
 });
 
 describe('생성 직전 3택 — chooseNewVariantCombo', () => {
+  test('image entry asks even for a combination work; single does not inherit combinations', async () => {
+    const session = makeSession(), source = metaVariant('SDInpaint', 'parent');
+    source.comboMode = 'shared';
+    answers.push('single');
+    expect(await chooseNewVariantCombo(session, source, 'SDInpaint', true)).toEqual({ kind: 'single' });
+    expect(pushed).toHaveLength(1);
+    expect(source.comboMode).toBe('shared');
+  });
+
+  test.each(['shared', 'snapshot'] as const)('image entry applies the selected %s mode to child work', async (mode) => {
+    const session = makeSession(), source = metaVariant('SDInpaint', 'parent');
+    source.comboMode = 'shared'; source.slots = [[PromptPiece.fromJSON(pieceJson('first')),PromptPiece.fromJSON(pieceJson('second'))]];
+    answers.push(mode);
+    const choice = await chooseNewVariantCombo(session, source, 'SDInpaint', true);
+    const child = metaVariant('SDInpaint', 'child');
+    if (choice?.kind !== 'combo') throw Error('expected combo choice');
+    choice.apply(child);
+    expect(child.comboMode).toBe(mode);
+    expect(child.slots[0].map(piece=>piece.prompt)).toEqual(['first','second']);
+    expect(child.slots[0][0]).not.toBe(source.slots[0][0]);
+    expect(pushed).toHaveLength(1);
+  });
+
   test('묻기 문구·선택지 = 단일·공유·고정(편집 창 모드 표시와 같은 표현), 「취소」류 항목 없음, 취소 = undefined', async () => {
     answers.push('single');
     expect(await askVariantPromptLayout()).toBe('single');
@@ -463,7 +486,7 @@ describe('호출부 배선(소스 검사)', () => {
     const body = src.slice(src.indexOf('const createInpaintScene = async'), src.indexOf('const replaceInpaintSceneImage'));
     expect(body).toContain('openSourceVariant(');
     const factory = read('../sourceVariant.ts');
-    expect(factory).not.toContain('chooseNewVariantCombo(');
+    expect(factory).toContain('chooseNewVariantCombo(session, scene, workflowType, true)');
     expect(factory).toContain('workFlowService.createPreset(workflowType, job)');
   });
 

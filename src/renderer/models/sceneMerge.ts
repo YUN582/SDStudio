@@ -38,7 +38,7 @@ export async function mergeSelectedScenes(
     }
     const links = new Map([...session.inpaints.values()]
       .filter((variant) => sourceNames.has(variant.sceneRef ?? ''))
-      .map((variant) => [variant, [variant.sceneRef, variant.name, variant.sourceImage, variant.outputInSourceScene] as const]));
+      .map((variant) => [variant, [variant.sceneRef, variant.name, variant.sourceImage, variant.outputInSourceScene, variant.sourceInpaint] as const]));
     const variants = [...links.keys()];
     const checkScenes = () => {
       if (session.name !== project || target.name !== targetName ||
@@ -50,7 +50,7 @@ export async function mergeSelectedScenes(
       if (currentVariants.length !== variants.length || currentVariants.some((variant) => {
         const link = links.get(variant);
         return !link || link[0] !== variant.sceneRef || link[1] !== variant.name ||
-          link[2] !== variant.sourceImage || link[3] !== variant.outputInSourceScene;
+          link[2] !== variant.sourceImage || link[3] !== variant.outputInSourceScene || link[4] !== variant.sourceInpaint;
       })) {
         throw new Error('연결된 변형 작업이 변경됐습니다. 다시 시도해 주세요.');
       }
@@ -213,7 +213,8 @@ export async function mergeSelectedScenes(
       for (const variant of variants) {
         const nextVariant = json.inpaints[variant.name];
         nextVariant.sceneRef = target.name;
-        nextVariant.sourceImage = variant.sourceImage && imageNames.get(variant.sceneRef!)?.get(variant.sourceImage);
+        nextVariant.sourceImage = variant.sourceInpaint ? variant.sourceImage
+          : variant.sourceImage && imageNames.get(variant.sceneRef!)?.get(variant.sourceImage);
       }
       await backend.writeFile(backup + '/moves.json', JSON.stringify({
         target: target.name, sources: [...sourceNames], archived, files: [...movedPaths],

@@ -57,3 +57,14 @@ test('transparent white and opaque black are not mask paint; opaque colored pixe
     true,
   );
 });
+test('a chained input resolves the current parent work result, not a same-named root image', async () => {
+  const {session,work,access}=fixture();
+  const parent={name:'parent',type:'inpaint'};
+  session.inpaints=new Map([['parent',parent]]);
+  work.sourceInpaint='parent'; work.sourceImage='result.png';
+  access.getOutputDir=jest.fn((_s:any,owner:any)=>owner===parent?'variants/parent':'outs/root') as any;
+  expect(await fetchInpaintInput(access,session,work)).toBe('current');
+  expect(access.fetchImage).toHaveBeenCalledWith('variants/parent/result.png');
+  session.inpaints.clear();
+  await expect(fetchInpaintInput(access,session,work)).rejects.toThrow('원본 씬');
+});

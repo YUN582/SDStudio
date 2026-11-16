@@ -3475,7 +3475,17 @@ export const renameInpaintScene = async (
       }
     }
     await imageService.renameInpaintSceneFiles(session, oldName, newName);
+    try {
+      await trashService.renameVariantTrashSource(session, oldName, newName, 'inpaint');
+    } catch (error) {
+      // The scene still carries its old name while the file operation is rolled back.
+      await imageService.renameInpaintSceneFiles(session, newName, oldName, scene);
+      throw error;
+    }
     scene.name = newName;
+    for (const child of session.inpaints.values()) {
+      if (child.sourceInpaint === oldName) child.sourceInpaint = newName;
+    }
     // 순서 보존(renameScene 과 같은 재구성)
     const rebuilt = new Map();
     for (const [key, value] of session.inpaints) {

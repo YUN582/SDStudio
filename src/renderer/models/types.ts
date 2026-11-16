@@ -398,6 +398,8 @@ export interface IInpaintScene extends IAbstractScene {
   preset?: any;
   sceneRef?: string;
   sourceImage?: string;
+  /** Immediate source work for a result-to-result edit; sceneRef remains the root output scene. */
+  sourceInpaint?: string;
   outputInSourceScene?: true;
   slots?: IPromptPieceSlot[];
   mirrorCropX?: number;
@@ -414,6 +416,7 @@ export class InpaintScene extends AbstractScene implements IInpaintScene {
   @observable accessor preset: any | undefined = undefined;
   @observable accessor sceneRef: string | undefined = undefined;
   @observable accessor sourceImage: string | undefined = undefined;
+  @observable accessor sourceInpaint: string | undefined = undefined;
   @observable accessor outputInSourceScene: true | undefined = undefined;
   @observable accessor slots: PromptPieceSlot[] = [];
   @observable accessor mirrorCropX: number | undefined = undefined;
@@ -459,6 +462,7 @@ export class InpaintScene extends AbstractScene implements IInpaintScene {
       preset: this.preset?.toJSON(),
       sceneRef: this.sceneRef,
       sourceImage: this.sourceImage,
+      ...(this.sourceInpaint && { sourceInpaint: this.sourceInpaint }),
       ...(this.outputInSourceScene && { outputInSourceScene: true as const }),
       ...(this.slots.length > 0 && {
         slots: this.slots.map((slot) => slot.map((piece) => piece.toJSON())),
