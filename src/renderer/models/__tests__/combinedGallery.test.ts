@@ -36,3 +36,24 @@ test('mixed selection adds all favorites; an entirely starred selection removes 
   variant.mains = ['same.png'];
   expect(galleryFavoritePlan(groups)).toMatchObject({ add: false, count: 2 });
 });
+import { galleryPreviewEntry, linkedImageVariants } from '../sceneImageVariants';
+
+test('scene preview uses gallery order across original and variant favorites, not favorite insertion order', () => {
+  const original = owner('original'), variant = owner('variant', 'inpaint');
+  original.mains = ['second.png', 'first.png'];
+  variant.mains = ['edit.png'];
+  const a = entry(original, 'first.png'), b = entry(original, 'second.png'), c = entry(variant, 'edit.png');
+  expect(galleryPreviewEntry([c, a, b])).toBe(c);
+  expect(galleryPreviewEntry([a, c, b])).toBe(a);
+  original.mains = []; variant.mains = [];
+  expect(galleryPreviewEntry([c, a, b])).toBe(c);
+});
+
+test('chained dependencies belong to the actual result owner even when filenames match', () => {
+  const root = owner('root'), parent = owner('parent', 'inpaint');
+  const direct = { name:'parent', sceneRef:'root', sourceImage:'same.png' } as any;
+  const child = { name:'child', sceneRef:'root', sourceInpaint:'parent', sourceImage:'same.png' } as any;
+  expect(linkedImageVariants(root, [direct, child], 'same.png')).toEqual([direct]);
+  expect(linkedImageVariants(parent, [direct, child], 'same.png')).toEqual([child]);
+  expect(linkedImageVariants(root, [direct, child])).toEqual([direct, child]);
+});

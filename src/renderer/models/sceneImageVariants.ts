@@ -68,6 +68,11 @@ export function selectGalleryExportEntries(entries: SceneGalleryEntry[], favorit
 
 export type SceneImageFilter = 'all' | 'original' | 'variant';
 
+/** The first favorite in the visible/manual order wins, regardless of image owner. */
+export function galleryPreviewEntry(entries: readonly SceneGalleryEntry[]) {
+  return entries.find(({ owner, filename }) => owner.mains.includes(filename)) ?? entries[0];
+}
+
 export function linkedImageVariants(
   scene: GenericScene,
   variants: Iterable<InpaintScene>,

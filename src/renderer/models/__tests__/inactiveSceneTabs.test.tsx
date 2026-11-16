@@ -176,7 +176,8 @@ test.each([false, true])('scene cards count linked results and preview their fil
     getImage.mockResolvedValue('original-cover');
     await act(async () => game.emit('updated'));
     expect(container.textContent).toContain('head bump2');
-    expect(currentImage()).toBe('original-cover');
+    expect(currentImage()).toBe('preview-current');
+    expect(images.fetchImageSmall).toHaveBeenLastCalledWith('outs/project/scene/result.png', expect.any(Number));
 
     await act(async () => { runInAction(() => { variant.mains.push('result.png'); }); });
     expect(currentImage()).toBe('preview-current');

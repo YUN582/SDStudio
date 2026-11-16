@@ -66,7 +66,7 @@ import {
 } from '../models/ImageService';
 import { copyImageToOriginalRecorded } from '../models/deleteUndo';
 import { setImageFavorites, toggleImageFavorite } from '../models/imageStateUndo';
-import { linkedImageVariants } from '../models/sceneImageVariants';
+import { galleryPreviewEntry, linkedImageVariants } from '../models/sceneImageVariants';
 import { queueWorkflow } from '../models/TaskQueueService';
 import {
   addScenesToQueue,
@@ -547,8 +547,7 @@ export const SceneCell = observer(
     const outputs = imageService.getSceneGalleryEntries(curSession, scene);
     const totalImages = outputs.length;
     const previewOutput = outputs[previewIndex];
-    const fallbackOutput = outputs.find(entry => entry.owner === scene && entry.filename === scene.mains[0])
-      ?? outputs.find(({ owner, filename }) => owner.mains.includes(filename)) ?? outputs[0];
+    const fallbackOutput = galleryPreviewEntry(outputs);
     const currentOutput = previewOutput ?? fallbackOutput;
     const currentFavoriteCount = outputs.filter(({ owner, filename }) => owner.mains.includes(filename)).length;
     const currentPreviewIsFavorite = currentOutput
@@ -559,7 +558,7 @@ export const SceneCell = observer(
     const previewPath = previewOutput
       ? `${imageService.getOutputDir(curSession, previewOutput.owner)}/${previewOutput.filename}`
       : undefined;
-    const fallbackPath = fallbackOutput && (fallbackOutput.owner !== scene || scene.type === 'inpaint')
+    const fallbackPath = fallbackOutput
       ? `${imageService.getOutputDir(curSession, fallbackOutput.owner)}/${fallbackOutput.filename}`
       : undefined;
 
