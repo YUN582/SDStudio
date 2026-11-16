@@ -10,6 +10,8 @@ import {
 const handles = new Map<string, BackStackHandle>();
 const callbacks = new Map<string, (visible: boolean) => void>();
 
+export function hasOpenContextMenu(): boolean { return handles.size > 0; }
+
 export function contextMenuBackLayer(id: string | number): (visible: boolean) => void {
   const key = String(id);
   let cb = callbacks.get(key);

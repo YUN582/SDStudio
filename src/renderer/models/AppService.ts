@@ -236,7 +236,7 @@ export class AppState {
   }
 
   @action
-  private applySceneSelection(next: SceneSelectionState) {
+  applySceneSelection(next: SceneSelectionState) {
     this.selectedScenes = next.names;
     this.selectedScenesType = next.type;
   }

@@ -1,3 +1,7 @@
+import { ReorderDragPreview, useGridReorder } from './GridReorder';
+import { moveCombinedGalleryImage } from '../models/galleryReorder';
+import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
+import { keyboardShortcutService, KeyboardShortcutService } from '../models/KeyboardShortcutService';
 import { canStartSelectionBox, imagePathsInSelectionBox } from '../models/dragSelection';
 import { groupImagePaths, linkedImageVariants, type SceneImageFilter } from '../models/sceneImageVariants';
 import { parseRankCutoff, RANK_CUTOFF_INVALID_MESSAGE } from '../models/rankCutoff';
@@ -112,7 +116,7 @@ import { EMPTY_TRASH_EXTRA, trashNoticeText } from './TrashViews';
 import { getResultDirectory } from '../models/SessionService';
 import { extractPromptDataFromBase64 } from '../models/util';
 import { appState } from '../models/AppService';
-import { backStackService } from '../models/BackStackService';
+import { backStackService, useBackLayer } from '../models/BackStackService';
 import { observer } from 'mobx-react-lite';
 import { DownloadDialog } from './DownloadDialog';
 import { Session, GenericScene as GenericSceneType } from '../models/types';
@@ -417,11 +421,12 @@ interface ImageGalleryProps {
   scene: GenericScene;
   filePaths: string[];
   imageSize: number;
-  onSelected?: (path: string) => void;
+  onSelected?: (path: string, event?: GridModifiers) => void;
   isMainImage?: (path: string) => boolean;
   imageOwners: ReadonlyMap<string, GenericScene>;
   variantCounts: ReadonlyMap<string, number>;
   onOpenVariants: (path: string) => void;
+  onReorderImages?: (from: string, to: string, visible: string[], group: string[]) => Promise<void>;
   onFilenameChange?: (src: string, dst: string) => void;
   pageSize?: number;
   isHidden?: boolean;
@@ -429,7 +434,7 @@ interface ImageGalleryProps {
   selectedImages: Set<string>;
   bookmarkedImagePath?: string;
   focusedIndex?: number | null;
-  onSelectedImagesChange?: (paths: string[], deselect: boolean) => void;
+  onSelectedImagesChange?: (paths: string[], deselect: boolean, additive?: boolean) => void;
   onClearSelection?: () => void;
   emptyText?: string;
   emptyHint?: string;
@@ -507,6 +512,7 @@ const Cell = memo(
       imageOwners,
       variantCounts,
       onOpenVariants,
+      reorderDrag,
     } = data as any;
 
     const { curSession } = appState;
@@ -579,7 +585,7 @@ const Cell = memo(
       () => ({
         type: 'image',
         item: { scene: owner, path, cellSize, imageSize, index },
-        canDrag: () => !selectMode && index < filePaths.length,
+        canDrag: () => isMobile && !selectMode && index < filePaths.length,
         collect: (monitor) => {
           const diff = monitor.getDifferenceFromInitialOffset();
           if (diff) {
@@ -667,23 +673,24 @@ const Cell = memo(
       <div
         key={index.toString() + path + imageSize.toString()}
         data-image-index={index}
+        data-image-card={path ? "" : undefined}
         style={style}
         className={
           'image-cell relative hover:brightness-95 active:brightness-90 bg-[var(--c-surface)] cursor-pointer ' +
-          (isDragging ? 'opacity-0 no-touch' : '') +
-          (isOver ? ' border-2 border-sky-500' : '')
+          ((isDragging || reorderDrag?.items.includes(path)) ? 'opacity-30 no-touch' : '') +
+          ((isOver || reorderDrag?.target === path) ? ' border-2 border-sky-500' : '')
         }
-        draggable={!selectMode}
-        onClick={() => {
+        draggable={isMobile && !selectMode}
+        onClick={(event) => {
           if (path) {
             if (onSelected) {
-              onSelected(path);
+              onSelected(path, event);
             }
           }
         }}
         onMouseEnter={() => onCellEnter?.(index)}
         onMouseLeave={() => onCellLeave?.(index)}
-        ref={(node) => drag(drop(selectMode ? null : node))}
+        ref={(node) => drag(drop(isMobile && !selectMode ? node : null))}
       >
         {path && image && (
           <>
@@ -802,6 +809,7 @@ const createItemData = memoizeOne(
     imageOwners,
     variantCounts,
     onOpenVariants,
+    reorderDrag,
   ) => {
     return {
       scene,
@@ -822,6 +830,7 @@ const createItemData = memoizeOne(
       imageOwners,
       variantCounts,
       onOpenVariants,
+    reorderDrag,
     };
   },
 );
@@ -847,6 +856,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
       imageOwners,
       variantCounts,
       onOpenVariants,
+      onReorderImages,
     },
     ref,
   ) => {
@@ -859,6 +869,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
     const hoveredIndexRef = useRef<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<any>(null);
+    const imageScrollRef = useRef<HTMLDivElement>(null);
 
     type DragBox = {
       x1: number;
@@ -866,6 +877,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
       x2: number;
       y2: number;
       deselect: boolean;
+      additive?: boolean;
     };
     const [dragBox, setDragBox] = useState<DragBox | null>(null);
     // 드래그 중 window 리스너가 최신 좌표를 읽을 수 있도록 ref 로도 동기화한다.
@@ -963,9 +975,23 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
       };
     };
 
+    const reorder = useGridReorder<string>({
+      enabled: !isMobile && !isHidden && activeView,
+      scope: scene, viewport: imageScrollRef, cardSelector: '[data-image-card]',
+      resolve: card => filePaths[Number(card.dataset.imageIndex)],
+      selected: path => selectedImages.has(path) ? filePaths.filter(item => selectedImages.has(item)) : [path],
+      suppressClick: wasDraggingRef,
+      commit: (from, to, group) => {
+        if (!filePaths.includes(from) || !filePaths.includes(to) || !onReorderImages) return;
+        void onReorderImages(from, to, filePaths, group).catch(error => {
+          console.error(error); appState.pushMessage('이미지 순서를 바꾸지 못했습니다.', 'error');
+        });
+      },
+    });
+
     const handleGridMouseDown = (e: React.MouseEvent) => {
       if (e.button !== 0 || dragBoxRef.current || isHidden) return;
-      if (!canStartSelectionBox(e.target, !!selectMode, '[data-image-content]')) return;
+      if (!canStartSelectionBox(e.target, isMobile ? !!selectMode : false, '[data-image-content]')) return;
       if (!containerRef.current) return;
       e.preventDefault();
       e.stopPropagation();
@@ -976,6 +1002,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
         x2: x,
         y2: y,
         deselect: e.shiftKey || e.ctrlKey,
+        additive: !!(e.shiftKey || e.ctrlKey || e.metaKey),
       };
       dragBoxRef.current = start;
       setDragBox(start);
@@ -1013,8 +1040,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
           const selected = containerRef.current
             ? imagePathsInSelectionBox(containerRef.current, filePaths, box)
             : [];
-          if (selected.length > 0 && onSelectedImagesChange) {
-            onSelectedImagesChange(selected, box.deselect);
+          if ((!isMobile || selected.length > 0) && onSelectedImagesChange) {
+            onSelectedImagesChange(selected, box.deselect, box.additive);
           }
         }
         dragBoxRef.current = null;
@@ -1058,11 +1085,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
           'flex justify-center relative select-none ' +
           (isHidden ? 'hidden' : '')
         }
-        onMouseDownCapture={handleGridMouseDown}
+        onMouseDownCapture={event => { reorder.start(event); handleGridMouseDown(event); }}
         onClickCapture={handleGridClick}
       >
         <Grid
           ref={gridRef}
+          outerRef={imageScrollRef}
           columnCount={columnCount}
           columnWidth={columnWidth}
           height={containerHeight}
@@ -1089,6 +1117,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
             imageOwners,
             variantCounts,
             onOpenVariants,
+            reorder.drag,
           )}
           // 셀 키를 위치가 아닌 이미지 경로 기준으로 — 목록이 바뀌면 셀이
           // 언마운트되어 이전 이미지 state(잔상)가 재사용되지 않는다.
@@ -1101,6 +1130,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
         >
           {Cell}
         </Grid>
+        {reorder.drag && <ReorderDragPreview type="image" drag={reorder.drag} />}
         {filePaths.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-faint text-sm select-none pointer-events-none">
             <span>{emptyText ?? '이미지가 없습니다'}</span>
@@ -1965,7 +1995,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     const { curSession, samples } = appState;
     const activeView = useContext(FloatViewActiveContext);
     const [_, forceUpdate] = useState<{}>({});
-    const [selectMode, setSelectMode] = useState<boolean>(false);
+    const [mobileImageSelection, setSelectMode] = useState<boolean>(false);
     // 모바일 V2(2026-09-26): 머리의 액션 버튼 줄 대신 하단 5칸 줄(+더보기 둘째 줄). 클래식·PC 마크업은 불변.
     const v2 = isV2('detail');
     const [v2More, setV2More] = useState(false);
@@ -1973,6 +2003,8 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       useState<boolean>(false);
     const [tournament, setTournament] = useState<boolean>(false);
     const selectedImages = useRef(new Set<string>());
+    const imageSelectionAnchor = useRef<string>();
+    const selectMode = isMobile ? mobileImageSelection : selectedImages.current.size > 0;
     const [selectedImageIndex, setSelectedImageIndex] = useState<
       number | undefined
     >(undefined);
@@ -2066,6 +2098,11 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       .map(entry => entry.path);
     const favoritePaths = imagePaths.filter(isFavorite);
     const activePaths = selectedTab === 0 ? imagePaths : selectedTab === 1 ? favoritePaths : [];
+    const onReorderImages = (from: string, to: string, visible: string[], group: string[]) => {
+      const entries = imageService.getSceneGalleryEntries(curSession!, scene);
+      return moveCombinedGalleryImage(curSession!, scene, entries.map(entry => entry.path),
+        new Map(entries.map(entry => [entry.path, entry.owner])), from, to, visible, group);
+    };
     const closeVariants = () => {
       setVariantResult(undefined);
       setVariantSourcePath(undefined);
@@ -2081,72 +2118,73 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       }
     }, [focusFilename]);
 
-    const onSelected = useCallback(
-      (path: string) => {
-        const index = activePaths.indexOf(path);
-        if (index < 0) return;
-        if (!isMobile) setFocusedImagePath(path);
-        if (selectMode) {
-          if (selectedImages.current.has(path)) {
-            selectedImages.current.delete(path);
-          } else {
-            selectedImages.current.add(path);
-          }
-          if (gallaryRef.current) {
-            gallaryRef.current.refeshImage(path);
-          }
-          if (gallaryRef2.current) {
-            gallaryRef2.current.refeshImage(path);
-          }
-          forceUpdate({});
-        } else {
-          setSelectedImageIndex(index);
-        }
-      },
-      [selectMode, activePaths],
-    );
-
-    const onSelectedImagesChange = useCallback(
-      (selectedPaths: string[], deselect: boolean) => {
-        if (!selectMode) {
-          setSelectMode(true);
-        }
-        for (const p of selectedPaths) {
-          if (deselect) {
-            selectedImages.current.delete(p);
-          } else {
-            selectedImages.current.add(p);
-          }
-        }
-        if (gallaryRef.current) {
-          gallaryRef.current.refresh();
-        }
-        if (gallaryRef2.current) {
-          gallaryRef2.current.refresh();
-        }
-        forceUpdate({});
-      },
-      [selectMode],
-    );
-
     const onClearSelection = useCallback(() => {
-      selectedImages.current.clear();
+      imageSelectionAnchor.current = undefined;
+      selectedImages.current = new Set();
       setSelectMode(false);
-      if (gallaryRef.current) {
-        gallaryRef.current.refresh();
-      }
-      if (gallaryRef2.current) {
-        gallaryRef2.current.refresh();
-      }
+      gallaryRef.current?.refresh();
+      gallaryRef2.current?.refresh();
       forceUpdate({});
     }, []);
-
-    // 이미지 선택 모드 중 Android 뒤로 가기·PC Esc = 선택 모드 종료(닫기 관문, 2026-10-03 U1·X6 — 예전엔 그리드째 닫힘)
+    const onSelected = useCallback((path: string, event: GridModifiers = {}) => {
+      const index = activePaths.indexOf(path);
+      if (index < 0) return;
+      if (isMobile) {
+        if (!selectMode) { setSelectedImageIndex(index); return; }
+        if (selectedImages.current.has(path)) selectedImages.current.delete(path);
+        else selectedImages.current.add(path);
+      } else {
+        setFocusedImagePath(path);
+        if (!gridCardUsesSelection(event)) { onClearSelection(); setSelectedImageIndex(index); return; }
+        const selection = gridClickSelection(activePaths, selectedImages.current, imageSelectionAnchor.current, path, event);
+        imageSelectionAnchor.current = selection.anchor;
+        selectedImages.current = selection.keys;
+      }
+      gallaryRef.current?.refresh();
+      gallaryRef2.current?.refresh();
+      forceUpdate({});
+    }, [selectMode, activePaths, onClearSelection]);
+    const onSelectedImagesChange = useCallback((paths: string[], deselect: boolean, additive?: boolean) => {
+      if (!isMobile) {
+        if (!additive) selectedImages.current = new Set();
+        for (const path of paths) selectedImages.current.add(path);
+        if (paths.length) { imageSelectionAnchor.current = paths[0]; setFocusedImagePath(paths[0]); }
+        else if (!additive) imageSelectionAnchor.current = undefined;
+      } else {
+        setSelectMode(true);
+        for (const path of paths) {
+          if (deselect) selectedImages.current.delete(path); else selectedImages.current.add(path);
+        }
+      }
+      gallaryRef.current?.refresh();
+      gallaryRef2.current?.refresh();
+      forceUpdate({});
+    }, []);
+    useEffect(() => { if (!isMobile) onClearSelection(); }, [selectedTab, imageFilter, onClearSelection]);
     useEffect(() => {
-      if (!selectMode) return undefined;
+      if (!isMobile || !selectMode || !activeView || selectedImageIndex != null) return;
       const handle = backStackService.push(onClearSelection);
       return () => handle.remove();
-    }, [selectMode, onClearSelection]);
+    }, [selectMode, onClearSelection, activeView, selectedImageIndex]);
+    useBackLayer(!isMobile && selectMode && activeView && selectedImageIndex == null, () => {
+      onClearSelection(); setFocusedImagePath(undefined);
+    }, {
+      preempt: true, back: 'skip',
+      get escape() {
+        return selectedImages.current.size && activeView && selectedImageIndex == null &&
+          (selectedTab === 0 || selectedTab === 1) && !tournament && !showDownloadDialog &&
+          !v2More && !variantSourcePath && !variantResult && gridSelectionCanReceiveEscape() ? 'close' : 'skip';
+      },
+    });
+    useEffect(() => {
+      if (selectedTab !== 1 || !selectedImages.current.size) return;
+      const visible = new Set(favoritePaths);
+      const remaining = new Set([...selectedImages.current].filter(path => visible.has(path)));
+      if (remaining.size === selectedImages.current.size) return;
+      selectedImages.current = remaining;
+      if (imageSelectionAnchor.current && !remaining.has(imageSelectionAnchor.current)) imageSelectionAnchor.current = undefined;
+      forceUpdate({});
+    }, [selectedTab, favoritePaths]);
 
     const onToggleFavoriteSelected = useCallback(() => {
       if (selectedImages.current.size === 0) return;
@@ -2412,8 +2450,13 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         if (selectedTab !== 0 && selectedTab !== 1) return;
         if (selectedImageIndex != null) return;
 
+        if (action === 'image-toggle-favorite' && selectedImages.current.size) {
+          if (canHandleGridDelete() && !(e as CustomEvent).detail?.repeat) onToggleFavoriteSelected();
+          return;
+        }
+        if (action === 'image-delete' && !canHandleGridDelete()) return;
         if (action === 'image-delete' && selectMode) {
-          onDeleteButton();
+          if (!(e as CustomEvent).detail?.repeat) onDeleteButton();
           return;
         }
 
@@ -2421,33 +2464,9 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         const cols = activeGalleryRef.current?.getColumnCount() ?? 1;
         if (count === 0) return;
 
-        const toggleSelectAt = (idx: number) => {
-          const path = activePaths[idx];
-          if (selectedImages.current.has(path)) {
-            selectedImages.current.delete(path);
-          } else {
-            selectedImages.current.add(path);
-          }
-          gallaryRef.current?.refeshImage(path);
-          gallaryRef2.current?.refeshImage(path);
-          forceUpdate({});
-        };
-
-        // 선택 모드 진입/취소는 포커스가 없어도 동작 (씬 그리드와 동일 UX)
-        if (action === 'image-clear-select') {
-          selectedImages.current.clear();
-          setSelectMode(false);
-          gallaryRef.current?.refresh();
-          gallaryRef2.current?.refresh();
-          forceUpdate({});
-          return;
-        }
-        if (action === 'image-toggle-select') {
-          // 모드 진입 후엔 수정자 없는 S만으로 토글이 이어진다(아래 keydown 핸들러).
-          if (!selectMode) setSelectMode(true);
-          const idx = Math.max(0, focusedImageIndex);
-          setFocusedImagePath(activePaths[idx]);
-          toggleSelectAt(idx);
+        if (action === 'image-clear-select') { onClearSelection(); return; }
+        if (action === 'image-toggle-select' || action === 'image-toggle-select-space') {
+          onSelected(activePaths[Math.max(0, focusedImageIndex)], { ctrlKey: true });
           return;
         }
 
@@ -2475,6 +2494,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         } else if (action === 'image-down') {
           setFocusedImagePath(activePaths[Math.min(count - 1, i + cols)]);
         } else if (action === 'image-open-detail') {
+          onClearSelection();
           setSelectedImageIndex(i);
         } else if (action === 'image-toggle-favorite') {
           const path = activePaths[i];
@@ -2503,8 +2523,21 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           });
         }
       };
+      const canHandleGridDelete = () => activeView && !isMobile && selectedImageIndex == null &&
+        (selectedTab === 0 || selectedTab === 1) && !tournament && !showDownloadDialog && !variantSourcePath && !variantResult;
+      const handleSelectionDelete = (event: KeyboardEvent) => {
+        if (event.key !== 'Delete' || event.defaultPrevented || event.repeat || event.isComposing) return;
+        if (!canHandleGridDelete() || !selectedImages.current.size) return;
+        if (isTextEntryFocused() || appState.dialogs.length || appState.sceneMergeRequest) return;
+        if (keyboardShortcutService.getBinding('image-delete') !== KeyboardShortcutService.normalizeKey(event)) return;
+        event.preventDefault(); event.stopPropagation(); onDeleteButton();
+      };
       window.addEventListener('shortcut-action', onShortcut);
-      return () => window.removeEventListener('shortcut-action', onShortcut);
+      if (!isMobile && activeView) window.addEventListener('keydown', handleSelectionDelete, true);
+      return () => {
+        window.removeEventListener('shortcut-action', onShortcut);
+        window.removeEventListener('keydown', handleSelectionDelete, true);
+      };
     }, [
       focusedImageIndex,
       activePaths,
@@ -2515,7 +2548,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       selectMode,
       sceneNav,
       activeView,
-      selectedImageIndex,
+      selectedImageIndex, tournament, showDownloadDialog, variantSourcePath, variantResult, onSelected, onClearSelection, onToggleFavoriteSelected,
     ]);
 
     // 선택 모드(Ctrl+S로 진입)에서 수정자 없는 S로 포커스 이미지 선택 토글.
@@ -2527,7 +2560,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         if (isMobile) return;
         if (!activeView || selectedImageIndex != null) return;
         if (selectedTab !== 0 && selectedTab !== 1) return;
-        if (!selectMode || focusedImageIndex < 0) return;
+        if (focusedImageIndex < 0 || appState.dialogs.length) return;
         const el = document.activeElement;
         if (el) {
           const tag = el.tagName.toLowerCase();
@@ -2540,19 +2573,11 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         }
         if (focusedImageIndex >= activePaths.length) return;
         e.preventDefault();
-        const path = activePaths[focusedImageIndex];
-        if (selectedImages.current.has(path)) {
-          selectedImages.current.delete(path);
-        } else {
-          selectedImages.current.add(path);
-        }
-        gallaryRef.current?.refeshImage(path);
-        gallaryRef2.current?.refeshImage(path);
-        forceUpdate({});
+        onSelected(activePaths[focusedImageIndex], { ctrlKey: true });
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [activeView, selectMode, focusedImageIndex, activePaths, selectedTab, selectedImageIndex]);
+    }, [activeView, focusedImageIndex, activePaths, selectedTab, selectedImageIndex, onSelected]);
 
     // H로 이미지 그리드 전용 단축키 도움말 토글.
     // 토너먼트/상세 보기 중에는 각자의 도움말이 우선하므로 무시한다.
@@ -2912,7 +2937,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                   </button>
                 </Tooltip>
               )}
-              <Tooltip content="이미지 선택 모드">
+              {isMobile && <Tooltip content="이미지 선택 모드">
                 <button
                   className={
                     `round-button icon-only ` + (selectMode ? 'back-sky toggle-on' : 'back-gray')
@@ -2923,7 +2948,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                 >
                   <ActionIcon id="multi-select" />
                 </button>
-              </Tooltip>
+              </Tooltip>}
               {isMainImage && (
                 <Tooltip content="즐겨찾기 이미지 일괄 선택">
                   <button
@@ -3068,6 +3093,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
             imageOwners={imageOwners}
             variantCounts={variantCounts}
             onOpenVariants={setVariantSourcePath}
+            onReorderImages={onReorderImages}
             filePaths={imagePaths}
             imageSize={imagesSizes[imageSize].size}
             isHidden={selectedTab !== 0}
@@ -3201,6 +3227,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
             imageOwners={imageOwners}
             variantCounts={variantCounts}
             onOpenVariants={setVariantSourcePath}
+            onReorderImages={onReorderImages}
             filePaths={favoritePaths}
             imageSize={imagesSizes[imageSize].size}
             selectedImages={selectedImages.current}

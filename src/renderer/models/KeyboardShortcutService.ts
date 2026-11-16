@@ -22,6 +22,7 @@ const ACTIONS: ShortcutAction[] = [
   { id: 'image-toggle-favorite', label: '즐겨찾기 토글', category: 'image-grid', defaultKey: 'Ctrl+F' },
   { id: 'image-toggle-bookmark', label: '북마크 토글', category: 'image-grid', defaultKey: 'Ctrl+B' },
   { id: 'image-toggle-select', label: '선택 모드 진입/포커스 이미지 선택 토글', category: 'image-grid', defaultKey: 'Ctrl+S' },
+  { id: 'image-toggle-select-space', label: '포커스 이미지 선택 토글', category: 'image-grid', defaultKey: 'Ctrl+Space' },
   { id: 'image-clear-select', label: '선택 모드 취소', category: 'image-grid', defaultKey: 'Ctrl+X' },
   { id: 'image-delete', label: '이미지 삭제', category: 'image-grid', defaultKey: 'Delete' },
   { id: 'image-tab-1', label: '이미지 탭', category: 'image-grid', defaultKey: 'Ctrl+1' },
@@ -95,7 +96,9 @@ export function isShortcutActionActive(
   st: ShortcutGateState,
 ): boolean {
   if (action.category === 'image-grid') {
-    return st.imageGridFocusable && st.dialogCount === 0;
+    const sceneNavigation = action.id === 'image-prev-scene' || action.id === 'image-next-scene';
+    return (st.imageGridFocusable || (sceneNavigation && st.resultViewerOpen)) && st.dialogCount === 0 &&
+      (action.id !== 'image-delete' || !st.resultViewerOpen);
   }
   if (action.category === 'viewer') {
     return st.resultViewerOpen && st.dialogCount === 0;
@@ -280,6 +283,7 @@ export class KeyboardShortcutService {
 
     // 공통 억제: input/textarea 포커스
     if (this.isInputFocused()) return;
+    if (['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z'].includes(normalized) && document.querySelector('[data-canvas-history-active="true"]')) return;
 
     // 같은 키에 여러 카테고리 액션이 매핑될 수 있음 (예: ArrowLeft = viewer:prev-image + scene:scene-left)
     // ACTIONS 배열 정의 순서(viewer → scene → global)가 우선순위를 결정:

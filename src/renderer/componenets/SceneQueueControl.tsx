@@ -1,3 +1,5 @@
+import { ReorderDragPreview, useGridReorder } from './GridReorder';
+import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
 import { canStartSelectionBox, mainSceneDragSurface, isOnNativeScrollbar } from '../models/dragSelection';
 import { isSceneSelected, selectedCountForType } from '../models/sceneSelection';
 import SceneQueueMenu from './SceneQueueMenu';
@@ -133,7 +135,7 @@ import {
   selectionHasEveryCombinationColumn,
 } from '../models/combinationSelection';
 import CompactCombinationPieces from './CompactCombinationPieces';
-import { backStackService } from '../models/BackStackService';
+import { backStackService, useBackLayer } from '../models/BackStackService';
 import { recordSceneOrder } from '../models/sceneOrderUndo';
 import { mirrorImageHooks, recordScenesCreated, toggleSceneBookmarkRecorded } from '../models/sceneStructureUndo';
 import { UNDO_TEXT } from '../models/undoService';
@@ -458,6 +460,7 @@ interface SceneCellProps {
   getImage: (scene: GenericScene) => Promise<string | null>;
   setDisplayScene?: (scene: GenericScene) => void;
   onFocusScene?: (scene: GenericScene) => void;
+  onSelectScene?: (scene: GenericScene, event: GridModifiers) => void;
   setEditingScene?: (scene: GenericScene) => void;
   moveScene?: (scene: GenericScene, index: number) => void;
   moveScenes?: (scenes: GenericScene[], targetIndex: number) => void;
@@ -466,6 +469,8 @@ interface SceneCellProps {
   onToggleBookmark?: () => void;
   disableHover?: boolean;
   isFocused?: boolean;
+  isReordering?: boolean;
+  isDropTarget?: boolean;
   // 프롬프트 퀵 수정(W2) — 일반 씬 전용, 이미지 우상단 오버레이 버튼.
   // anchor = 씬 카드 사각형 (모달을 카드 위에 띄우는 인라인 느낌용)
   onQuickPrompt?: (scene: GenericScene, anchor?: DOMRect) => void;
@@ -480,6 +485,7 @@ export const SceneCell = observer(
     getImage,
     setDisplayScene,
     onFocusScene,
+    onSelectScene,
     moveScene,
     moveScenes,
     setEditingScene,
@@ -490,6 +496,8 @@ export const SceneCell = observer(
     onToggleBookmark,
     disableHover,
     isFocused,
+    isReordering,
+    isDropTarget,
     onQuickPrompt,
     onReview,
   }: SceneCellProps) => {
@@ -668,6 +676,7 @@ export const SceneCell = observer(
     const [{ isDragging }, drag, preview] = useDrag(
       () => ({
         type: 'scene',
+        canDrag: () => isMobile,
         item: () => {
           const cardWidth = cardElRef.current?.offsetWidth;
           const isSelected = isSceneSelected(
@@ -853,7 +862,7 @@ export const SceneCell = observer(
 
     const cardRef = (node: any) => {
       cardElRef.current = node;
-      drag(drop(appState.sceneSelectionMode ? null : node));
+      drag(drop(isMobile && !appState.sceneSelectionMode ? node : null));
     };
     const onContext = (e: any) => {
       // 메뉴 라벨의 "선택한 씬(N)" 수는 우클릭한 씬과 같은 종류의 선택만 센다
@@ -863,8 +872,9 @@ export const SceneCell = observer(
     const onClickCard = (event: any) => {
       if (isDragging) return;
       onFocusScene?.(scene);
-      // 선택 모드에서는 데스크톱/모바일 모두 카드 클릭으로 선택을 토글한다.
-      if (event.ctrlKey || appState.sceneSelectionMode) {
+      if (!isMobile && onSelectScene) { onSelectScene(scene, event); return; }
+      // Mobile retains its explicit selection mode.
+      if (gridCardUsesSelection(event) || (isMobile && appState.sceneSelectionMode)) {
         appState.toggleSceneSelection(scene.name, scene.type);
         return;
       }
@@ -1017,8 +1027,8 @@ export const SceneCell = observer(
         <div
           id={`scene-cell-${scene.type}-${scene.name}`}
           className={`relative z-0 ${isMobile ? 'm-[5px]' : 'm-[10.5px]'} p-1 bg-[var(--c-surface-2)] border line-color ${
-            isDragging ? 'opacity-0 no-touch ' : ''
-          }${isOver ? ' outline outline-sky-500' : ''}${
+            (isDragging || isReordering) ? 'opacity-30 no-touch ' : ''
+          }${(isOver || isDropTarget) ? ' outline outline-sky-500' : ''}${
             isSelected
               ? ' ring-2 ring-sky-500 bg-sky-50 dark:bg-sky-900/20'
               : ''
@@ -1115,8 +1125,8 @@ export const SceneCell = observer(
             : isSelected
               ? 'border-sky-500 '
               : 'line-color '
-        }${isDragging ? 'opacity-0 no-touch ' : ''}${
-          isOver ? ' ring-2 ring-sky-500' : ''
+        }${(isDragging || isReordering) ? 'opacity-30 no-touch ' : ''}${
+          (isOver || isDropTarget) ? ' ring-2 ring-sky-500' : ''
         }${isSelected ? ' ring-2 ring-sky-400' : ''}${focusRing}`}
         style={style}
         ref={cardRef}
@@ -1300,15 +1310,26 @@ const QueueControl = observer(
     }, [appState.sceneSelectionMode]);
     // 씬 선택 모드 중 Android 뒤로 가기·PC Esc = 선택 모드 종료(닫기 관문, 2026-10-03 U1·X6 — 예전엔 앱 최소화).
     // 보이는 메인 목록 하나만 등록한다(파생 목록 filterFunc·비활성 탭 제외).
+    const sceneSelectionAnchor = useRef<string>();
+    const clearDesktopSceneSelection = () => { sceneSelectionAnchor.current = undefined; appState.clearSceneSelection(); };
     const sceneSelectBackOn = !!appState.sceneSelectionMode && isActive && !filterFunc;
     useEffect(() => {
-      if (!sceneSelectBackOn) return undefined;
+      if (!isMobile || !sceneSelectBackOn) return undefined;
       const handle = backStackService.push(() => {
         appState.sceneSelectionMode = false;
         appState.clearSceneSelection();
       });
       return () => handle.remove();
     }, [sceneSelectBackOn]);
+    useBackLayer(!isMobile && appState.selectedSceneCount(type) > 0 && isActive && !filterFunc, () => {
+      clearDesktopSceneSelection(); setFocusedScene(null);
+    }, {
+      preempt: true, back: 'skip',
+      get escape() {
+        return appState.selectedSceneCount(type) > 0 && appState.floatViewCount === 0 && !v2Tier && !quickPromptScene &&
+          gridContainerRef.current?.offsetParent !== null && gridSelectionCanReceiveEscape() ? 'close' : 'skip';
+      },
+    });
     const { show: showSceneContextMenu } = useContextMenu({
       id: ContextMenuType.Scene,
     });
@@ -1321,6 +1342,7 @@ const QueueControl = observer(
       y2: number;
       deselect: boolean;
       removeQueue: boolean;
+      additive?: boolean;
     };
     const [dragBox, setDragBox] = useState<SceneDragBox | null>(null);
     // 드래그 중 window 리스너가 최신 좌표를 읽도록 ref 로도 동기화
@@ -1366,6 +1388,17 @@ const QueueControl = observer(
 
     // 히스토리 사이드바 → 해당 씬 이미지 그리드 열기 (+특정 이미지 포커스)
     useEffect(() => {
+      const focus = (event: Event) => {
+        const { sceneType, sceneName } = (event as CustomEvent).detail ?? {};
+        if (!isActive || sceneType !== type) return;
+        const scene = curSession.getScene(type, sceneName);
+        if (scene) { setFocusedScene(scene); sceneSelectionAnchor.current = scene.name; }
+      };
+      sessionService.addEventListener('focus-scene', focus);
+      return () => sessionService.removeEventListener('focus-scene', focus);
+    }, [curSession, type, isActive]);
+
+    useEffect(() => {
       const handleOpenViewer = (e: Event) => {
         const { sceneType, sceneName, filename } =
           (e as CustomEvent).detail || {};
@@ -1383,6 +1416,8 @@ const QueueControl = observer(
         if (!scene) return;
         setDisplayFocus(filename);
         setFocusedScene(scene);
+        appState.applySceneSelection({ names: new Set([scene.name]), type: scene.type });
+        sceneSelectionAnchor.current = scene.name;
         setDisplayScene(scene);
       };
       sessionService.addEventListener('open-result-viewer', handleOpenViewer);
@@ -1512,7 +1547,7 @@ const QueueControl = observer(
       ) {
         return;
       }
-      if (!canStartSelectionBox(e.target, appState.sceneSelectionMode, '[id^="scene-cell-"]')) return;
+      if (!canStartSelectionBox(e.target, isMobile && appState.sceneSelectionMode, '[id^="scene-cell-"]')) return;
 
       const grid = gridContainerRef.current;
       if (mainDragSurface) {
@@ -1553,6 +1588,7 @@ const QueueControl = observer(
         x2: x,
         y2: y,
         deselect: e.shiftKey || e.ctrlKey,
+        additive: !!(e.shiftKey || e.ctrlKey || e.metaKey),
         removeQueue: e.altKey,
       };
       dragBoxRef.current = start;
@@ -1671,18 +1707,18 @@ const QueueControl = observer(
               }
             }
           }
-          if (selected.length > 0) {
-            if (box.removeQueue) {
-              taskQueueService.removeTasksFromScenes(
-                new Set(selectedScenes),
-                curSession,
-              );
-            } else if (box.deselect) {
-              appState.removeScenesFromSelection(selected, type);
-            } else {
-              appState.sceneSelectionMode = true;
-              appState.addScenesToSelection(selected, type);
+          if (box.removeQueue) {
+            if (selected.length) taskQueueService.removeTasksFromScenes(new Set(selectedScenes), curSession);
+          } else if (isMobile) {
+            if (selected.length) {
+              if (box.deselect) appState.removeScenesFromSelection(selected, type);
+              else { appState.sceneSelectionMode = true; appState.addScenesToSelection(selected, type); }
             }
+          } else {
+            if (box.additive) appState.addScenesToSelection(selected, type);
+            else appState.applySceneSelection({ names: new Set(selected), type: selected.length ? type : null });
+            if (selected.length) { sceneSelectionAnchor.current = selected[0]; setFocusedScene(selectedScenes[0]); }
+            else if (!box.additive) sceneSelectionAnchor.current = undefined;
           }
         }
         dragBoxRef.current = null;
@@ -1714,8 +1750,8 @@ const QueueControl = observer(
         return;
       }
       if (
-        !appState.sceneSelectionMode &&
-        e.target === gridContainerRef.current
+        (!isMobile || !appState.sceneSelectionMode) &&
+        !e.ctrlKey && !e.metaKey && !e.shiftKey && e.target === gridContainerRef.current
       ) {
         appState.clearSceneSelection();
       }
@@ -1733,6 +1769,16 @@ const QueueControl = observer(
         document.removeEventListener('click', click, true);
       };
     });
+
+    const selectSceneCard = (scene: GenericScene, event: GridModifiers) => {
+      setFocusedScene(scene);
+      if (!gridCardUsesSelection(event)) { clearDesktopSceneSelection(); setDisplayScene(scene); return; }
+      const keys = getFilteredScenes().map(item => item.name);
+      const current = appState.selectedScenesType === scene.type ? appState.selectedScenes : new Set<string>();
+      const selection = gridClickSelection(keys, current, sceneSelectionAnchor.current, scene.name, event);
+      sceneSelectionAnchor.current = selection.anchor;
+      appState.applySceneSelection({ names: selection.keys, type: selection.keys.size ? scene.type : null });
+    };
 
     const getGridColumnCount = useCallback((): number => {
       if (!gridContainerRef.current) return 1;
@@ -1805,8 +1851,7 @@ const QueueControl = observer(
           // 선택 모드 진입 + 포커스된 씬을 다중 선택에 토글.
           // 모드 진입 후엔 수정자 없는 S 키만으로 토글이 이어진다(아래 keydown 핸들러).
           if (focusedSceneIndex >= 0) {
-            appState.sceneSelectionMode = true;
-            appState.toggleSceneSelection(scenes[focusedSceneIndex].name, type);
+            selectSceneCard(scenes[focusedSceneIndex], { ctrlKey: true });
           }
         } else if (action === 'scene-clear-select') {
           // 선택 모드 취소(전체 선택 해제 + 모드 종료)
@@ -1899,9 +1944,8 @@ const QueueControl = observer(
         if (e.key === 's' || e.key === 'S') {
           // 선택 모드(Ctrl+S로 진입)에서는 수정자 없는 S만으로 포커스 씬 선택 토글.
           // 모드 밖에서는 실수 선택을 막기 위해 무시한다.
-          if (!appState.sceneSelectionMode) return;
           e.preventDefault();
-          appState.toggleSceneSelection(focusedScene.name, type);
+          selectSceneCard(focusedScene, { ctrlKey: true });
           return;
         }
         if (e.key === 'a' || e.key === 'A' || e.key === ',') {
@@ -2767,7 +2811,7 @@ const QueueControl = observer(
           </button>
         </Tooltip>
       ),
-      'multi-select': (
+      'multi-select': isMobile ? (
         <Tooltip content="드래그 선택 모드">
           <button
             className={`round-button${iconMode && selectedCount === 0 ? ' icon-only' : ''} ${
@@ -2800,7 +2844,7 @@ const QueueControl = observer(
             )}
           </button>
         </Tooltip>
-      ),
+      ) : null,
       // 해상도 변경: PC 아이콘 모드는 아이콘+툴팁(2026-10-04 T5 그룹 툴바). 모바일은 글자·툴팁 없음 그대로(2026-07-18 사용자)
       'change-resolution': isMobile ? (
         <button
@@ -3009,6 +3053,21 @@ const QueueControl = observer(
             ?.ids ?? []
         : [],
     );
+
+    const sceneReorder = useGridReorder<GenericScene>({
+      enabled: !isMobile && isActive, scope: curSession, viewport: gridContainerRef,
+      cardSelector: '[id^="scene-cell-"]',
+      resolve: card => card.id.startsWith('scene-cell-' + type + '-')
+        ? curSession.getScene(type, card.id.slice(('scene-cell-' + type + '-').length)) : undefined,
+      selected: scene => appState.isSceneSelected(scene)
+        ? curSession.getScenes(type).filter(item => appState.isSceneSelected(item)) : [scene],
+      suppressClick: wasDraggingRef,
+      commit: (scene, target, group) => {
+        const index = curSession.getScenes(type).indexOf(target);
+        if (index < 0 || group.some(item => curSession.getScene(type, item.name) !== item)) return;
+        if (group.length > 1) moveScenes(group, index); else moveScene(scene, index);
+      },
+    });
 
     return (
       <div
@@ -3295,6 +3354,7 @@ const QueueControl = observer(
             return (
               <div
                 ref={gridContainerRef}
+                onMouseDownCapture={sceneReorder.start}
                 className={
                   useGrid
                     ? 'overflow-auto w-full content-start relative'
@@ -3331,16 +3391,20 @@ const QueueControl = observer(
                     }}
                   />
                 )}
+                {sceneReorder.drag && <ReorderDragPreview type="scene" drag={sceneReorder.drag} />}
                 {renderedScenes.map((scene) => (
                   <SceneCell
                     cellSize={effectiveCellSize}
                     key={scene.name}
                     scene={scene}
                     sceneIndex={sceneIndices.get(scene)}
+                    isReordering={sceneReorder.drag?.items.includes(scene)}
+                    isDropTarget={sceneReorder.drag?.target === scene}
                     isActive={isActive}
                     getImage={getImage}
                     setDisplayScene={setDisplayScene}
                     onFocusScene={isMobile ? undefined : setFocusedScene}
+                    onSelectScene={isMobile ? undefined : selectSceneCard}
                     setEditingScene={setEditingScene}
                     onQuickPrompt={(s, anchor) => {
                       if (s.type === 'scene')

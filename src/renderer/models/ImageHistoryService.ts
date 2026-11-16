@@ -318,6 +318,10 @@ export class ImageHistoryService {
     } else {
       // 열려 있는 이미지 그리드(ResultViewer)를 먼저 닫아야 스크롤이 보인다
       sessionService.dispatchEvent(new CustomEvent('close-result-viewer'));
+      appState.applySceneSelection({ names: new Set([entry.sceneName]), type: entry.sceneType });
+      sessionService.dispatchEvent(new CustomEvent('focus-scene', {
+        detail: { sceneType: entry.sceneType, sceneName: entry.sceneName },
+      }));
       // 오버레이 언마운트가 반영된 다음 프레임에 스크롤
       await new Promise((r) => setTimeout(r, 0));
       cell.scrollIntoView({ behavior: 'smooth', block: 'center' });

@@ -43,6 +43,7 @@ const state: any = {
   selectedScenes: new Set(), dialogs: [], samples: 1, floatViewCount: 0,
   uiToolbar: { classic: false },
   clearSceneSelection: jest.fn(), toggleSceneSelection: jest.fn(),
+  selectedSceneCount: () => 0,
 };
 const dragSpecs = new Map<any, any>();
 const dropSpecs: any[] = [];
@@ -84,7 +85,7 @@ jest.mock('../uiLayout', () => ({
   resolveToolbarView: () => [],
   groupToolbarIds: () => [],
 }));
-jest.mock('../BackStackService', () => ({ backStackService: { push: () => ({ remove() {} }) } }));
+jest.mock('../BackStackService', () => ({ useBackLayer: () => {}, backStackService: { push: () => ({ remove() {} }) } }));
 jest.mock('../../componenets/FloatView', () => ({ FloatView: ({ children }: any) => children }));
 jest.mock('../../componenets/ModalOverlay', () => ({ children }: any) => children);
 jest.mock('../../componenets/SceneEditor', () => () => null);
