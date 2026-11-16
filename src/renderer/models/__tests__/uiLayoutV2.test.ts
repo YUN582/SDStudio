@@ -82,7 +82,7 @@ describe('resolveToolbarView — areas 순서/폴백/필터', () => {
   it('3. 미배치 신규 id 는 tier 폴백으로 뒤에 편입 + v1 buttons 오버라이드 우선', () => {
     const ov: UiToolbarConfig = {
       schema: 2,
-      // add-scene 만 명시. 나머지는 미배치.
+      // multi-select 만 명시. 나머지는 미배치.
       buttons: {
         // secondary 라 PC 기본 inline 이지만 오버라이드로 menu 강제
         'export-images': 'menu',
@@ -90,13 +90,13 @@ describe('resolveToolbarView — areas 순서/폴백/필터', () => {
         'queue-add': 'hidden',
       },
       areas: {
-        [SCENE]: { inline: ['scene-search'], menu: [], hidden: [] },
+        [SCENE]: { inline: ['multi-select', 'scene-search'], menu: [], hidden: [] },
       },
     };
     const view = resolveToolbarView(registries, ov, false);
     const scene = view.find((v) => v.area === SCENE)!;
-    // 명시된 scene-search 가 맨 앞.
-    expect(scene.inline[0]).toBe('scene-search');
+    expect(scene.inline[0]).toBe('multi-select');
+    expect(scene.inline).not.toContain('scene-search'); // 예전 검색 버튼 설정은 무시
     // export-images 는 buttons=menu 오버라이드로 menu 에.
     expect(scene.menu).toContain('export-images');
     expect(scene.inline).not.toContain('export-images');
@@ -146,19 +146,19 @@ describe('resolveToolbarView — areas 순서/폴백/필터', () => {
       schema: 2,
       areas: {
         [SCENE]: {
-          // artist-tag 는 pcOnly. scene-search 는 hidden.
+          // artist-tag 는 pcOnly. multi-select 는 hidden.
           // (webp-convert 는 모바일 일괄 변환 지원으로 pcOnly 해제됨 — 2026-07-18)
           inline: ['artist-tag', 'add-scene'],
           menu: [],
-          hidden: ['scene-search'],
+          hidden: ['multi-select'],
         },
       },
     };
     const view = resolveToolbarView(registries, ov, true);
     const scene = view.find((v) => v.area === SCENE)!;
     expect(scene.inline).not.toContain('artist-tag'); // pcOnly
-    expect(scene.inline).not.toContain('scene-search'); // hidden
-    expect(scene.menu).not.toContain('scene-search');
+    expect(scene.inline).not.toContain('multi-select'); // hidden
+    expect(scene.menu).not.toContain('multi-select');
     expect(scene.inline).toContain('add-scene');
   });
 });
@@ -203,7 +203,7 @@ describe('moveToolbarButton', () => {
     const ov: UiToolbarConfig = { classic: false };
     const frozen = JSON.stringify(ov);
     const next = moveToolbarButton(registries, ov, {
-      id: 'scene-search',
+      id: 'multi-select',
       toArea: SCENE,
       slot: 'inline',
       index: 0,
@@ -215,12 +215,12 @@ describe('moveToolbarButton', () => {
     expect(next.schema).toBe(2);
     expect(next.classic).toBe(false);
     // dual-write: inline → 'pinned'.
-    expect(next.buttons?.['scene-search']).toBe('pinned');
+    expect(next.buttons?.['multi-select']).toBe('pinned');
     // areas.scene.inline 맨 앞에 위치.
-    expect(next.areas?.[SCENE]?.inline?.[0]).toBe('scene-search');
+    expect(next.areas?.[SCENE]?.inline?.[0]).toBe('multi-select');
     // 해석 결과에서도 맨 앞.
     const view = resolveToolbarView(registries, next, false);
-    expect(view.find((v) => v.area === SCENE)!.inline[0]).toBe('scene-search');
+    expect(view.find((v) => v.area === SCENE)!.inline[0]).toBe('multi-select');
   });
 
   it('index 미지정/범위 밖은 맨 뒤 삽입', () => {
@@ -282,7 +282,7 @@ describe('moveToolbarButton', () => {
   });
 
   it('anchor 가 대상 배열에 없으면 맨 뒤 폴백', () => {
-    // scene-search 는 inline 에 있는데 anchor 를 menu 의 버튼으로 지정 → inline 맨 뒤.
+    // add-scene 은 inline 에 있는데 anchor 를 menu 의 버튼으로 지정 → inline 맨 뒤.
     const next = moveToolbarButton(registries, undefined, {
       id: 'add-scene',
       toArea: SCENE,
@@ -296,28 +296,28 @@ describe('moveToolbarButton', () => {
   it('9. slot=default 는 areas 에서 제거 + buttons 키 삭제 → tier 폴백 복귀', () => {
     // 먼저 pinned 상태를 만든 뒤 default 로 되돌린다.
     const pinned = moveToolbarButton(registries, undefined, {
-      id: 'scene-search',
+      id: 'multi-select',
       toArea: SCENE,
       slot: 'menu',
       index: 0,
     });
-    expect(pinned.buttons?.['scene-search']).toBe('menu');
+    expect(pinned.buttons?.['multi-select']).toBe('menu');
 
     const reset = moveToolbarButton(registries, pinned, {
-      id: 'scene-search',
+      id: 'multi-select',
       toArea: SCENE,
       slot: 'default',
     });
     // buttons 키 삭제.
-    expect(reset.buttons?.['scene-search']).toBeUndefined();
+    expect(reset.buttons?.['multi-select']).toBeUndefined();
     // areas 의 어느 배열에도 없음.
     const a = reset.areas?.[SCENE];
-    expect(a?.inline).not.toContain('scene-search');
-    expect(a?.menu).not.toContain('scene-search');
-    expect(a?.hidden).not.toContain('scene-search');
-    // 해석 시 tier 폴백(scene-search 는 primary → inline)으로 복귀.
+    expect(a?.inline).not.toContain('multi-select');
+    expect(a?.menu).not.toContain('multi-select');
+    expect(a?.hidden).not.toContain('multi-select');
+    // 해석 시 tier 폴백(multi-select 는 primary → inline)으로 복귀.
     const view = resolveToolbarView(registries, reset, false);
-    expect(view.find((v) => v.area === SCENE)!.inline).toContain('scene-search');
+    expect(view.find((v) => v.area === SCENE)!.inline).toContain('multi-select');
   });
 });
 

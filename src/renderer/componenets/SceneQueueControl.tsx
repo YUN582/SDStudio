@@ -63,6 +63,7 @@ import {
 } from '../models/ImageService';
 import { copyImageToOriginalRecorded } from '../models/deleteUndo';
 import { setImageFavorites, toggleImageFavorite } from '../models/imageStateUndo';
+import { linkedImageVariants } from '../models/sceneImageVariants';
 import { queueWorkflow } from '../models/TaskQueueService';
 import {
   addScenesToQueue,
@@ -456,6 +457,7 @@ interface SceneCellProps {
   cellSize: number;
   getImage: (scene: GenericScene) => Promise<string | null>;
   setDisplayScene?: (scene: GenericScene) => void;
+  onFocusScene?: (scene: GenericScene) => void;
   setEditingScene?: (scene: GenericScene) => void;
   moveScene?: (scene: GenericScene, index: number) => void;
   moveScenes?: (scenes: GenericScene[], targetIndex: number) => void;
@@ -477,6 +479,7 @@ export const SceneCell = observer(
     isActive = true,
     getImage,
     setDisplayScene,
+    onFocusScene,
     moveScene,
     moveScenes,
     setEditingScene,
@@ -531,12 +534,31 @@ export const SceneCell = observer(
         : ['w-full h-48', 'w-full h-64', 'w-full h-96'];
     const cellSizes3 = ['', '', ''];
 
-    const outputs = gameService.getOutputs(curSession!, scene);
+    const originalOutputs = gameService.getOutputs(curSession, scene);
+    const outputs = originalOutputs.map((filename) => ({ owner: scene, filename }));
+    for (const owner of linkedImageVariants(scene, curSession.inpaints.values())) {
+      for (const filename of gameService.getOutputs(curSession, owner)) {
+        outputs.push({ owner, filename });
+      }
+    }
     const totalImages = outputs.length;
-    const currentPreviewIsFavorite =
-      previewIndex >= 0 && previewIndex < totalImages
-        ? scene.mains.includes(outputs[previewIndex])
-        : scene.mains.length > 0;
+    const previewOutput = outputs[previewIndex];
+    const fallbackOutput = scene.type === 'scene' && originalOutputs.length === 0
+      ? outputs.find(({ owner, filename }) => owner.mains.includes(filename)) ?? outputs[0]
+      : undefined;
+    const currentOutput = previewOutput ?? fallbackOutput;
+    const currentFavoriteCount = (currentOutput?.owner ?? scene).mains.length;
+    const currentPreviewIsFavorite = currentOutput
+      ? currentOutput.owner.mains.includes(currentOutput.filename)
+      : currentFavoriteCount > 0;
+    const previewOwner = previewOutput?.owner;
+    const previewFilename = previewOutput?.filename;
+    const previewPath = previewOutput
+      ? `${imageService.getOutputDir(curSession, previewOutput.owner)}/${previewOutput.filename}`
+      : undefined;
+    const fallbackPath = fallbackOutput
+      ? `${imageService.getOutputDir(curSession, fallbackOutput.owner)}/${fallbackOutput.filename}`
+      : undefined;
 
     const isInputFocusedLocal = useCallback(() => {
       const el = document.activeElement;
@@ -550,11 +572,9 @@ export const SceneCell = observer(
     useEffect(() => {
       if (!isActive) return;
       let cancelled = false;
-      if (previewIndex >= 0 && previewIndex < totalImages) {
-        const filename = outputs[previewIndex];
-        const dir = imageService.getOutputDir(curSession!, scene);
+      if (previewPath) {
         imageService
-          .fetchImageSmall(`${dir}/${filename}`, platform.sceneThumbSize)
+          .fetchImageSmall(previewPath, platform.sceneThumbSize)
           .then((image) => {
             if (!cancelled && activeRef.current) setPreviewImage(image);
           })
@@ -565,7 +585,7 @@ export const SceneCell = observer(
         setPreviewImage(null);
       }
       return () => { cancelled = true; };
-    }, [isActive, previewIndex, totalImages, outputs, curSession, scene]);
+    }, [isActive, previewPath]);
 
     useEffect(() => {
       if (!isActive || !isHovered) return;
@@ -592,9 +612,9 @@ export const SceneCell = observer(
         } else if (e.key === 'f' || e.key === 'F') {
           e.preventDefault();
           e.stopPropagation();
-          if (previewIndex < 0 || previewIndex >= totalImages) return;
-          const filename = outputs[previewIndex];
-          toggleImageFavorite(curSession!, scene, filename);
+          if (previewOwner && previewFilename) {
+            toggleImageFavorite(curSession, previewOwner, previewFilename);
+          }
         }
       };
       window.addEventListener('keydown', handler, true);
@@ -602,10 +622,10 @@ export const SceneCell = observer(
     }, [
       isActive,
       isHovered,
-      previewIndex,
       totalImages,
-      outputs,
-      scene,
+      previewOwner,
+      previewFilename,
+      curSession,
       isInputFocusedLocal,
     ]);
 
@@ -628,14 +648,14 @@ export const SceneCell = observer(
             prev < 0 || prev >= totalImages - 1 ? 0 : prev + 1,
           );
         } else if (detail.action === 'fav') {
-          if (previewIndex < 0 || previewIndex >= totalImages) return;
-          const filename = outputs[previewIndex];
-          toggleImageFavorite(curSession!, scene, filename);
+          if (previewOwner && previewFilename) {
+            toggleImageFavorite(curSession, previewOwner, previewFilename);
+          }
         }
       };
       window.addEventListener('scene-image-nav', handler);
       return () => window.removeEventListener('scene-image-nav', handler);
-    }, [isActive, scene, totalImages, outputs, previewIndex]);
+    }, [isActive, scene, totalImages, previewOwner, previewFilename, curSession]);
 
     // 키보드 포커스가 떠나고 호버도 아니면 미리보기를 초기화한다.
     // (포커스가 다른 씬으로 이동했을 때 이전 미리보기 잔상이 남지 않도록)
@@ -796,7 +816,9 @@ export const SceneCell = observer(
         if (!activeRef.current) return;
         const currentRequest = ++request;
         try {
-          const base64 = await getImageRef.current(scene);
+          const base64 = fallbackPath
+            ? await imageService.fetchImageSmall(fallbackPath, platform.sceneThumbSize)
+            : await getImageRef.current(scene);
           if (cancelled || !activeRef.current || currentRequest !== request) return;
           setImage(base64 ?? undefined);
         } catch (e: any) {
@@ -832,7 +854,7 @@ export const SceneCell = observer(
         dispose();
         dispose2();
       };
-    }, [isActive, scene, curSession]);
+    }, [isActive, scene, curSession, fallbackPath]);
 
     const cardRef = (node: any) => {
       cardElRef.current = node;
@@ -845,6 +867,7 @@ export const SceneCell = observer(
     };
     const onClickCard = (event: any) => {
       if (isDragging) return;
+      onFocusScene?.(scene);
       // 선택 모드에서는 데스크톱/모바일 모두 카드 클릭으로 선택을 토글한다.
       if (event.ctrlKey || appState.sceneSelectionMode) {
         appState.toggleSceneSelection(scene.name, scene.type);
@@ -1040,7 +1063,7 @@ export const SceneCell = observer(
                 {scene.name}
               </div>
               <div className="flex-none text-faint">
-                {previewIndex >= 0
+                {previewOutput
                   ? `${previewIndex + 1}/${totalImages}`
                   : totalImages}{' '}
               </div>
@@ -1065,9 +1088,9 @@ export const SceneCell = observer(
                     {currentPreviewIsFavorite && (
                       <div className="absolute left-1 top-1 z-10 text-yellow-400 text-sm drop-shadow flex items-center gap-1">
                         <FaStar />
-                        {scene.mains.length > 1 && (
+                        {currentFavoriteCount > 1 && (
                           <span className="bg-black/70 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
-                            {scene.mains.length}
+                            {currentFavoriteCount}
                           </span>
                         )}
                       </div>
@@ -1142,9 +1165,9 @@ export const SceneCell = observer(
                   {currentPreviewIsFavorite && (
                     <div className="absolute left-1 top-1 z-10 text-yellow-400 text-sm drop-shadow flex items-center gap-1">
                       <FaStar />
-                      {scene.mains.length > 1 && (
+                      {currentFavoriteCount > 1 && (
                         <span className="bg-black/70 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
-                          {scene.mains.length}
+                          {currentFavoriteCount}
                         </span>
                       )}
                     </div>
@@ -1166,7 +1189,7 @@ export const SceneCell = observer(
                     {scene.name}
                   </div>
                   <div className="flex-none ml-1 text-white/80 drop-shadow">
-                    {previewIndex >= 0
+                    {previewOutput
                       ? `${previewIndex + 1}/${totalImages}`
                       : totalImages}
                   </div>
@@ -1264,12 +1287,9 @@ const QueueControl = observer(
       );
     }, [type, editingScene, displayScene, curSession]);
     const [cellSize, setCellSize] = useState(1);
-    const [focusedSceneIndex, setFocusedSceneIndex] = useState<number | null>(
-      null,
-    );
+    const [focusedScene, setFocusedScene] = useState<GenericScene | null>(null);
     const gridContainerRef = useRef<HTMLDivElement>(null);
     const [sceneSearchQuery, setSceneSearchQuery] = useState('');
-    const [showSceneSearch, setShowSceneSearch] = useState(false);
     // 모바일 V2(선택형 배치): 씬 툴바 줄 대신 하단 메인 줄, 검색·프롬프트조각은 상단 슬롯, 프롬프트 도구는 시트 슬롯으로 보낸다.
     // 메인 탭의 씬 목록에만 적용한다(이미지 상세 안의 파생 목록=filterFunc 는 클래식 그대로). models/mobileV2.ts
     const v2Layout = isV2('main') && !!showPannel && !filterFunc;
@@ -1367,6 +1387,7 @@ const QueueControl = observer(
             : curSession!.inpaints.get(sceneName);
         if (!scene) return;
         setDisplayFocus(filename);
+        setFocusedScene(scene);
         setDisplayScene(scene);
       };
       sessionService.addEventListener('open-result-viewer', handleOpenViewer);
@@ -1447,7 +1468,7 @@ const QueueControl = observer(
         return;
       }
       setSceneSearchQuery('');
-      setShowSceneSearch(false);
+      setFocusedScene(found);
       window.setTimeout(() => {
         const element = document.getElementById(
           `scene-cell-${found.type}-${found.name}`,
@@ -1745,6 +1766,7 @@ const QueueControl = observer(
           return;
         const scenes = getFilteredScenes();
         if (scenes.length === 0) return;
+        const focusedSceneIndex = focusedScene ? scenes.indexOf(focusedScene) : -1;
 
         if (
           action === 'scene-left' ||
@@ -1752,9 +1774,9 @@ const QueueControl = observer(
           action === 'scene-up' ||
           action === 'scene-down'
         ) {
-          const idx = focusedSceneIndex ?? -1;
-          if (idx < 0 || idx >= scenes.length) {
-            setFocusedSceneIndex(0);
+          const idx = focusedSceneIndex;
+          if (idx < 0) {
+            setFocusedScene(scenes[0]);
             return;
           }
           const cols = getGridColumnCount();
@@ -1765,23 +1787,20 @@ const QueueControl = observer(
           else if (action === 'scene-up') next = Math.max(0, idx - cols);
           else if (action === 'scene-down')
             next = Math.min(scenes.length - 1, idx + cols);
-          setFocusedSceneIndex(next);
+          setFocusedScene(scenes[next]);
         } else if (action === 'scene-open-images') {
-          if (focusedSceneIndex != null && focusedSceneIndex < scenes.length) {
+          if (focusedSceneIndex >= 0) {
             setDisplayScene(scenes[focusedSceneIndex]);
           }
         } else if (action === 'scene-open-editor') {
-          if (focusedSceneIndex != null && focusedSceneIndex < scenes.length) {
+          if (focusedSceneIndex >= 0) {
             setEditingScene(scenes[focusedSceneIndex]);
           }
         } else if (action === 'scene-queue-add') {
           // 다중 선택 상태면 선택된 씬 전체를, 아니면 포커스된 씬만 예약
           if (selectedCount > 0) {
             addSelectedToQueue();
-          } else if (
-            focusedSceneIndex != null &&
-            focusedSceneIndex < scenes.length
-          ) {
+          } else if (focusedSceneIndex >= 0) {
             const scene = scenes[focusedSceneIndex];
             queueScene(curSession, scene, appState.samples).catch((e: any) => {
               appState.pushMessage(`프롬프트 에러: ${e.message}`);
@@ -1790,7 +1809,7 @@ const QueueControl = observer(
         } else if (action === 'scene-toggle-select') {
           // 선택 모드 진입 + 포커스된 씬을 다중 선택에 토글.
           // 모드 진입 후엔 수정자 없는 S 키만으로 토글이 이어진다(아래 keydown 핸들러).
-          if (focusedSceneIndex != null && focusedSceneIndex < scenes.length) {
+          if (focusedSceneIndex >= 0) {
             appState.sceneSelectionMode = true;
             appState.toggleSceneSelection(scenes[focusedSceneIndex].name, type);
           }
@@ -1799,7 +1818,7 @@ const QueueControl = observer(
           appState.clearSceneSelection();
           appState.sceneSelectionMode = false;
         } else if (action === 'scene-toggle-bookmark') {
-          if (focusedSceneIndex != null && focusedSceneIndex < scenes.length) {
+          if (focusedSceneIndex >= 0) {
             const scene = scenes[focusedSceneIndex];
             // 절대값 + 되돌리기 기록(U2a)
             void toggleSceneBookmarkRecorded(curSession, scene);
@@ -1814,7 +1833,7 @@ const QueueControl = observer(
       return () =>
         window.removeEventListener('shortcut-action', sceneNavHandler);
     }, [
-      focusedSceneIndex,
+      focusedScene,
       getFilteredScenes,
       getGridColumnCount,
       setDisplayScene,
@@ -1873,55 +1892,45 @@ const QueueControl = observer(
         // 씬 포커스 이동은 방향키(scene-left/right/up/down) 전담이다.
         // 키보드 포커스된 씬에 대해서만 동작하며, 마우스 호버 셀이 있으면 그 셀의
         // capture 핸들러가 이 이벤트를 선점하므로 호버가 우선된다.
-        const hasFocus =
-          focusedSceneIndex != null &&
-          focusedSceneIndex >= 0 &&
-          focusedSceneIndex < scenes.length;
+        if (!focusedScene || !scenes.includes(focusedScene)) return;
         const dispatchImageNav = (action: 'prev' | 'next' | 'fav') => {
-          const s = scenes[focusedSceneIndex!];
           window.dispatchEvent(
             new CustomEvent('scene-image-nav', {
-              detail: { sceneType: s.type, sceneName: s.name, action },
+              detail: { sceneType: focusedScene.type, sceneName: focusedScene.name, action },
             }),
           );
         };
         if (e.key === 's' || e.key === 'S') {
           // 선택 모드(Ctrl+S로 진입)에서는 수정자 없는 S만으로 포커스 씬 선택 토글.
           // 모드 밖에서는 실수 선택을 막기 위해 무시한다.
-          if (!appState.sceneSelectionMode || !hasFocus) return;
+          if (!appState.sceneSelectionMode) return;
           e.preventDefault();
-          appState.toggleSceneSelection(scenes[focusedSceneIndex!].name, type);
+          appState.toggleSceneSelection(focusedScene.name, type);
           return;
         }
         if (e.key === 'a' || e.key === 'A' || e.key === ',') {
-          if (!hasFocus) return;
           e.preventDefault();
           dispatchImageNav('prev');
         } else if (e.key === 'd' || e.key === 'D' || e.key === '.') {
-          if (!hasFocus) return;
           e.preventDefault();
           dispatchImageNav('next');
         } else if (e.key === 'f' || e.key === 'F') {
-          if (!hasFocus) return;
           e.preventDefault();
           dispatchImageNav('fav');
         }
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [focusedSceneIndex, getFilteredScenes, isInputFocused]);
+    }, [focusedScene, getFilteredScenes, isInputFocused]);
 
     // 포커스된 씬 자동 스크롤
     useEffect(() => {
-      if (focusedSceneIndex == null) return;
-      const scenes = getFilteredScenes();
-      const scene = scenes[focusedSceneIndex];
-      if (!scene) return;
+      if (!focusedScene || !getFilteredScenes().includes(focusedScene)) return;
       const el = document.getElementById(
-        `scene-cell-${scene.type}-${scene.name}`,
+        `scene-cell-${focusedScene.type}-${focusedScene.name}`,
       );
       if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, [focusedSceneIndex, getFilteredScenes]);
+    }, [focusedScene, getFilteredScenes]);
 
     const addScene = () => {
       // 줄마다 이름 규칙(경로 안전·같은 종류 씬 중복·입력 안 중복)을 창 안에서 검사 — 실패해도 창 유지(D2)
@@ -2150,8 +2159,13 @@ const QueueControl = observer(
           workflowType,
           preset,
           ...inpaintSceneResolutionFields(workflowType, scene, fromImage),
-          sceneRef: scene.type === 'scene' ? scene.name : undefined,
+          sceneRef: scene.type === 'scene' ? scene.name : scene.sceneRef,
           sourceImage: scene.type === 'scene' ? sourceImage : undefined,
+          outputInSourceScene:
+            (workflowType === 'SDInpaint' || workflowType === 'SDI2I' || workflowType === 'Augment') &&
+            (scene.type === 'scene' || (scene.sceneRef && curSession!.scenes.has(scene.sceneRef)))
+              ? true
+              : undefined,
           imageMap: [],
           mains: [],
           round: undefined,
@@ -2447,6 +2461,7 @@ const QueueControl = observer(
           if (!next) return;
           gameService.refreshList(curSession!, displayScene);
           setDisplayFocus(undefined);
+          setFocusedScene(next);
           setDisplayScene(next);
         };
         return (
@@ -2475,6 +2490,7 @@ const QueueControl = observer(
               isMainImage={isMainImage}
               onFilenameChange={onFilenameChange}
               onEdit={onEdit}
+              onEditVariant={setInpaintEditScene}
               buttons={buttons}
               onSampleExtract={
                 type === 'scene'
@@ -2590,17 +2606,6 @@ const QueueControl = observer(
         );
     }, []);
     const sceneBookmark = sessionService.getSceneBookmark(curSession.name);
-
-    const toggleSceneSearch = useCallback(() => {
-      setShowSceneSearch((prev) => {
-        if (prev) {
-          setSceneSearchQuery('');
-        } else {
-          setTimeout(() => sceneSearchRef.current?.focus(), 50);
-        }
-        return !prev;
-      });
-    }, []);
 
     // 씬 카드 드래그의 순서 변경(단일 드롭·드롭 없이 끝난 원위치 복귀) — 되돌리기 계측(U1).
     // react-dnd 는 hover 중 순서를 바꾸지 않아 드롭 1회 = 변경 1회. 원위치 복귀처럼 순서가 그대로면 기록하지 않는다(A13).
@@ -2847,18 +2852,6 @@ const QueueControl = observer(
       ),
       // 'artist-tag'·'scene-trash' 는 portable 공유 JSX(PortableToolbarButtons)로
       // 이관(B군 승격) — buttonNode 의 shared 폴백이 렌더한다.
-      'scene-search': (
-        <Tooltip content="씬 검색">
-          <button
-            className={`round-button icon-only ${showSceneSearch ? 'back-sky toggle-on' : 'back-gray'}`}
-            aria-pressed={showSceneSearch}
-            data-toolbar-toggle="scene-search"
-            onClick={toggleSceneSearch}
-          >
-            <ActionIcon id="scene-search" size={18} />
-          </button>
-        </Tooltip>
-      ),
       'image-review': (
         <Tooltip content="이미지를 크게 넘겨보며 검수">
           <button
@@ -3078,6 +3071,38 @@ const QueueControl = observer(
         {/* 씬 휴지통·아티스트 태깅 모달은 App.tsx 전역 오버레이로 이관(B군 승격) */}
         {panel}
         {!!showPannel && !v2Layout && (
+          <div role="search" className="flex flex-none items-center gap-2 pb-2 px-1">
+            <FaSearch className="text-faint flex-none" aria-hidden="true" />
+            <input
+              ref={sceneSearchRef}
+              data-esc-cancel
+              type="text"
+              aria-label="씬 이름 검색"
+              className="min-w-0 flex-1 px-2 py-1 border line-color rounded bg-[var(--c-input-bg)] text-default outline-none focus:border-sky-500"
+              placeholder="씬 이름 검색..."
+              value={sceneSearchQuery}
+              onChange={(e) => setSceneSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape' || e.nativeEvent.isComposing) return;
+                setSceneSearchQuery('');
+                e.currentTarget.blur();
+              }}
+            />
+            <button
+              type="button"
+              className="round-button icon-only back-gray"
+              aria-label="검색어 지우기"
+              disabled={!sceneSearchQuery}
+              onClick={() => {
+                setSceneSearchQuery('');
+                sceneSearchRef.current?.focus();
+              }}
+            >
+              <FaTimes />
+            </button>
+          </div>
+        )}
+        {!!showPannel && !v2Layout && (
           <div className={`flex flex-none pb-1.5 flex-wrap${groupedToolbar ? ' items-end' : ''}`}>
             {/* 모바일(비클래식): 줄바꿈 대신 가로 스크롤 — 어떤 기기 폭에서도 1줄 보장.
                 행 전체가 드롭 타깃(놓으면 인라인 고정) */}
@@ -3257,36 +3282,6 @@ const QueueControl = observer(
             </div>
           </div>
         )}
-        {showSceneSearch && !v2Layout && (
-          <div className="flex flex-none items-center gap-2 pb-2 px-1">
-            <FaSearch className="text-faint flex-none" />
-            <input
-              ref={sceneSearchRef}
-              data-esc-cancel
-              type="text"
-              className="flex-1 px-2 py-1 border line-color rounded bg-[var(--c-input-bg)] text-default outline-none focus:border-sky-500"
-              placeholder="씬 이름 검색..."
-              value={sceneSearchQuery}
-              onChange={(e) => setSceneSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setSceneSearchQuery('');
-                  setShowSceneSearch(false);
-                }
-              }}
-            />
-            <button
-              className="round-button icon-only back-gray"
-              aria-label="씬 검색 닫기"
-              onClick={() => {
-                setSceneSearchQuery('');
-                setShowSceneSearch(false);
-              }}
-            >
-              <FaTimes />
-            </button>
-          </div>
-        )}
         <div className="flex flex-1 overflow-hidden">
           {(() => {
             const effectiveCellSize = showPannel || isMobile ? cellSize : 2;
@@ -3340,7 +3335,7 @@ const QueueControl = observer(
                     }}
                   />
                 )}
-                {renderedScenes.map((scene, sceneIdx) => (
+                {renderedScenes.map((scene) => (
                   <SceneCell
                     cellSize={effectiveCellSize}
                     key={scene.name}
@@ -3349,6 +3344,7 @@ const QueueControl = observer(
                     isActive={isActive}
                     getImage={getImage}
                     setDisplayScene={setDisplayScene}
+                    onFocusScene={isMobile ? undefined : setFocusedScene}
                     setEditingScene={setEditingScene}
                     onQuickPrompt={(s, anchor) => {
                       if (s.type === 'scene')
@@ -3368,7 +3364,7 @@ const QueueControl = observer(
                       // 절대값 + 되돌리기 기록(U2a)
                       void toggleSceneBookmarkRecorded(curSession, scene)}
                     disableHover={!!(editingScene || displayScene)}
-                    isFocused={focusedSceneIndex === sceneIdx}
+                    isFocused={!isMobile && focusedScene === scene}
                   />
                 ))}
                 {/* 그리드 끝의 점선 「새 씬」 카드(2026-09-21, PC·모바일 공통) — 툴바 [씬 추가]와 같은 addScene.
@@ -3415,7 +3411,7 @@ const QueueControl = observer(
             // (V2 에서 기능이 사라지지 않게). 해상도·WebP 는 대량 작업 메뉴에 있다.
             const homed = new Set([
               'multi-select', 'export-images', 'quick-export', 'batch-process', 'import-image',
-              'scene-search', 'scene-find', 'bookmark-jump', 'add-scene',
+              'scene-find', 'bookmark-jump', 'add-scene',
               'piece-editor', 'change-resolution', 'webp-convert',
             ]);
             // 일괄 예약은 하단 바의 예약 버튼이 맡는다(보고 있는 탭의 종류를 따르고, 선택이 있으면 선택분만) → 더보기에서 뺀다.
@@ -3571,7 +3567,6 @@ const QueueControl = observer(
                     <>
                       <label className="flex-1 min-w-0 h-10 flex items-center gap-1 pl-2 pr-1 rounded-[10px] border line-color bg-[var(--c-input-bg)]">
                         <input
-                          ref={sceneSearchRef}
                           type="text"
                           aria-label="씬 검색"
                           className="flex-1 min-w-0 w-0 bg-transparent border-0 outline-none text-[13px] text-default"

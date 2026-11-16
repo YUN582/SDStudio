@@ -1,5 +1,6 @@
 import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
+import { Simulate } from 'react-dom/test-utils';
 import { observable, runInAction } from 'mobx';
 
 class TrackedEvents extends EventTarget {
@@ -21,11 +22,13 @@ let outputs = ['a.png', 'b.png'];
 const queue = Object.assign(new TrackedEvents(), {
   statsTasksFromScene: jest.fn(() => ({ total: remaining, done: 0 })),
 });
-const game = Object.assign(new TrackedEvents(), { getOutputs: jest.fn(() => outputs) });
+const game = Object.assign(new TrackedEvents(), {
+  getOutputs: jest.fn((_session: any, _scene: any) => outputs),
+});
 const images = Object.assign(new TrackedEvents(), {
   fetchImageSmall: jest.fn(async () => 'preview-current'),
   fetchVibeImage: jest.fn(async () => 'representative'),
-  getOutputDir: () => 'outs/project/scene',
+  getOutputDir: (_session: any, scene: any) => scene.outputDir ?? 'outs/project/scene',
 });
 const sessions = Object.assign(new TrackedEvents(), {
   getSceneBookmark: () => undefined,
@@ -59,14 +62,18 @@ jest.mock('..', () => ({
 jest.mock('../AppService', () => ({ appState: state }));
 jest.mock('../types', () => ({ ContextMenuType: { Scene: 'scene', Image: 'image' } }));
 jest.mock('../ImageService', () => ({ toggleImageMain: jest.fn() }));
+jest.mock('../imageStateUndo', () => ({ toggleImageFavorite: jest.fn() }));
 jest.mock('../TaskQueueService', () => ({}));
 jest.mock('../sceneQueueActions', () => ({}));
 jest.mock('../util', () => ({}));
 jest.mock('../workflows/SDWorkFlow', () => ({}));
 jest.mock('../workflows/OneTimeFlows', () => ({ oneTimeFlows: [], oneTimeFlowMap: new Map() }));
 jest.mock('../sceneSeedGroups', () => ({ getSceneSeedGroupInfo: () => undefined }));
-jest.mock('../combinationSelection', () => ({}));
 jest.mock('../companionSlots', () => ({ companionAssignedIds: () => new Set() }));
+jest.mock('../mobileV2', () => ({
+  ...jest.requireActual('../mobileV2'),
+  isV2: () => false,
+}));
 jest.mock('../uiLayout', () => ({
   TOOLBAR_VIEW_MAIN: [],
   resolveToolbarView: () => [],
@@ -96,6 +103,7 @@ jest.mock('../../componenets/ToolbarDnd', () => ({
   ToolbarHideZone: () => null, ToolbarMenuDropTarget: ({ children }: any) => children,
 }));
 import QueueControl, { SceneCell } from '../../componenets/SceneQueueControl';
+import { toggleImageFavorite } from '../imageStateUndo';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -124,6 +132,7 @@ beforeEach(() => {
   state.curSession = session;
   state.selectedScenes.clear();
   getImage = jest.fn(async () => 'initial');
+  game.getOutputs.mockReset().mockImplementation(() => outputs);
   images.fetchImageSmall.mockReset().mockResolvedValue('preview-current');
   container = document.createElement('div'); document.body.appendChild(container);
   root = createRoot(container);
@@ -133,6 +142,50 @@ afterEach(() => {
   expect(queue.count('progress')).toBe(0);
   expect(game.count('updated')).toBe(0);
   expect(images.count('image-cache-invalidated')).toBe(0);
+});
+
+test.each([false, true])('scene cards count linked results and preview their files (classic=%s)', async (classic) => {
+  state.classicSceneCard = classic;
+  try {
+    scene = observable({ name: 'head bump', type: 'scene', mains: [], slots: [] });
+    const variant = observable({
+      name: 'inpaint', type: 'inpaint', sceneRef: scene.name, mains: [],
+      outputDir: 'outs/project/head bump/.variants/inpaint',
+    });
+    session.inpaints = new Map([[variant.name, variant]]);
+    const files = new Map([[scene, [] as string[]], [variant, [] as string[]]]);
+    game.getOutputs.mockImplementation((_session, owner) => files.get(owner) ?? []);
+    getImage.mockResolvedValue(undefined);
+    await renderCard(true, { isFocused: true });
+    expect(container.textContent).toContain('head bump0');
+    expect(currentImage()).toBeUndefined();
+
+    files.set(variant, ['result.png']);
+    await act(async () => game.emit('updated'));
+    expect(container.textContent).toContain('head bump1');
+    expect(currentImage()).toBe('preview-current');
+    expect(images.fetchImageSmall).toHaveBeenLastCalledWith(`${variant.outputDir}/result.png`, expect.any(Number));
+
+    files.set(scene, ['result.png']);
+    getImage.mockResolvedValue('original-cover');
+    await act(async () => game.emit('updated'));
+    expect(container.textContent).toContain('head bump2');
+    expect(currentImage()).toBe('original-cover');
+
+    const navigate = (action: string) => window.dispatchEvent(new CustomEvent('scene-image-nav', {
+      detail: { sceneName: scene.name, sceneType: scene.type, action },
+    }));
+    await act(async () => { navigate('next'); });
+    expect(container.textContent).toContain('head bump1/2');
+    expect(images.fetchImageSmall).toHaveBeenLastCalledWith('outs/project/scene/result.png', expect.any(Number));
+    await act(async () => { navigate('next'); });
+    expect(container.textContent).toContain('head bump2/2');
+    expect(images.fetchImageSmall).toHaveBeenLastCalledWith(`${variant.outputDir}/result.png`, expect.any(Number));
+    await act(async () => { navigate('fav'); });
+    expect(toggleImageFavorite).toHaveBeenLastCalledWith(session, variant, 'result.png');
+  } finally {
+    state.classicSceneCard = false;
+  }
 });
 
 test('hidden cards detach display subscriptions, preserve DOM and catch up once', async () => {
@@ -214,6 +267,33 @@ test('passed original index (including zero) avoids per-card scans; preview fall
   await renderCard(true, { sceneIndex: undefined });
   expect(session.getScenes).toHaveBeenCalled();
   expect(dragSpecs.get(scene).item().curIndex).toBe(0);
+});
+
+test('scene search is always above the toolbar and can be cleared without closing', async () => {
+  const scenes = ['angry', 'smile'].map((name) => ({ ...scene, name }));
+  session.getScenes.mockReturnValue(scenes);
+  await act(async () => root.render(<QueueControl type="inpaint" showPannel />));
+  const search = container.querySelector<HTMLInputElement>('input[aria-label="씬 이름 검색"]')!;
+  const toolbar = container.querySelector('.scene-toolbar-row')!;
+  const clear = container.querySelector<HTMLButtonElement>('button[aria-label="검색어 지우기"]')!;
+  expect(search.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(clear.disabled).toBe(true);
+  const type = (value: string) => {
+    search.value = value;
+    Simulate.change(search);
+  };
+  await act(async () => type('SMILE'));
+  expect(container.querySelector('#scene-cell-inpaint-angry')).toBeNull();
+  expect(container.querySelector('#scene-cell-inpaint-smile')).not.toBeNull();
+  await act(async () => clear.click());
+  expect(search.value).toBe('');
+  expect(document.activeElement).toBe(search);
+  expect(container.querySelector('#scene-cell-inpaint-angry')).not.toBeNull();
+  await act(async () => type('angry'));
+  await act(async () => Simulate.keyDown(search, { key: 'Escape' }));
+  expect(search.value).toBe('');
+  expect(search.isConnected).toBe(true);
+  expect(document.activeElement).not.toBe(search);
 });
 
 test('filtered QueueControl passes original indices and stops parent plus card progress listeners', async () => {

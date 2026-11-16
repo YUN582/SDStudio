@@ -32,7 +32,6 @@ import {
   FaFileImage,
   FaFileImport,
   FaFilm,
-  FaFilter,
   FaFolderMinus,
   FaGoogleDrive,
   FaGripVertical,
@@ -116,7 +115,6 @@ export const ICON_DICTIONARY = {
   'webp-convert': FaFileImage, // WebP 변환(툴바는 글자 버튼 — 사전 항목만)
   'import-image': FaEyeDropper, // 이미지에서 프롬프트 추출(메타→설정)
   'artist-tag': FaTags, // 아티스트 태깅(그림체 분석)
-  'scene-search': FaFilter, // 씬 검색(목록을 거른다)
   'scene-find': FaCrosshairs, // 씬 찾기(거르지 않고 위치로 이동)
   'image-review': FaClipboardCheck, // 이미지 검수
   'artist-breakdown': FaSitemap, // 작가 분해(태그를 하나씩 나눠 예약)

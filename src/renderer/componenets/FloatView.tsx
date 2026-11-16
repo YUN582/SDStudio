@@ -53,6 +53,7 @@ interface FloatViewContextProps {
 const FloatViewContext = createContext<FloatViewContextProps | undefined>(
   undefined,
 );
+export const FloatViewActiveContext = createContext(true);
 
 export const useFloatView = (): FloatViewContextProps => {
   const context = useContext(FloatViewContext);
@@ -193,7 +194,11 @@ export const FloatViewProvider: React.FC<FloatViewProviderProps> = observer(({
               </button>
               {view.undoCorner && <UndoCornerSlot />}
             </div>
-            <div className="flex-1 overflow-hidden">{view.component}</div>
+            <div className="flex-1 overflow-hidden">
+              <FloatViewActiveContext.Provider value={view.id === views[0].id}>
+                {view.component}
+              </FloatViewActiveContext.Provider>
+            </div>
           </div>
         </div>
       ))}

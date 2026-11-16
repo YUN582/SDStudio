@@ -29,7 +29,7 @@ describe('groupToolbarIds — 기본 배치(PC)', () => {
     expect(asMap(pcSegments(undefined))).toEqual([
       ['create', '생성', ['add-scene', 'queue-add', 'batch-process']],
       ['export', '내보내기', ['export-images', 'quick-export']],
-      ['navigate', '탐색', ['multi-select', 'scene-search', 'bookmark-jump', 'find-replace', 'batch-insert']],
+      ['navigate', '탐색', ['multi-select', 'bookmark-jump', 'find-replace', 'batch-insert']],
       ['edit', '편집 도구', ['change-resolution']],
     ]);
   });
@@ -48,7 +48,6 @@ describe('groupToolbarIds — 기본 배치(PC)', () => {
       'batch-process',
       'multi-select',
       'change-resolution',
-      'scene-search',
       'bookmark-jump',
       'find-replace',
       'batch-insert',
@@ -64,7 +63,7 @@ describe('groupToolbarIds — 사용자 배치', () => {
       slot: 'inline',
     });
     const nav = pcSegments(ov).find((s) => s.group === 'navigate')!;
-    expect(nav.ids).toEqual(['multi-select', 'scene-search', 'bookmark-jump', 'find-replace', 'batch-insert', 'scene-find']);
+    expect(nav.ids).toEqual(['multi-select', 'bookmark-jump', 'find-replace', 'batch-insert', 'scene-find']);
     const edit = pcSegments({ buttons: { 'artist-tag': 'pinned', 'import-image': 'pinned' } }).find(
       (s) => s.group === 'edit',
     )!;
@@ -137,19 +136,18 @@ describe('groupToolbarIds — 사용자 배치', () => {
     });
     // 탐색 칸 버튼을 생성 칸 맨 앞에 끌어 놓아도 저장은 그 순서, 표시는 탐색 칸
     ov = moveToolbarButton(TOOLBAR_VIEW_MAIN, ov, {
-      id: 'scene-search',
+      id: 'bookmark-jump',
       toArea: 'scene',
       slot: 'inline',
       anchor: { id: 'add-scene', side: 'before' },
     });
-    expect(ov.areas!.scene!.inline![0]).toBe('scene-search');
+    expect(ov.areas!.scene!.inline![0]).toBe('bookmark-jump');
     const segs = pcSegments(ov);
     expect(segs[0].ids[0]).toBe('add-scene');
     expect(segs.find((s) => s.group === 'navigate')!.ids).toEqual([
-      'scene-search',
+      'bookmark-jump',
       'find-replace',
       'multi-select',
-      'bookmark-jump',
       'batch-insert',
     ]);
   });
@@ -185,7 +183,7 @@ describe('레지스트리 group 계약', () => {
     expect(byGroup).toEqual({
       create: ['add-scene', 'queue-add', 'batch-process'],
       export: ['export-images', 'quick-export'],
-      navigate: ['multi-select', 'scene-search', 'scene-find', 'image-review', 'bookmark-jump', 'find-replace', 'batch-insert'],
+      navigate: ['multi-select', 'scene-find', 'image-review', 'bookmark-jump', 'find-replace', 'batch-insert'],
       // undo·redo 는 2026-11-03 U6(D19)에서 레지스트리 제거 — 하단 상시 버튼 바(UndoRedoBar)가 맡는다
       edit: ['change-resolution', 'import-image', 'artist-tag', 'artist-breakdown', 'artist-prefix-toggle'],
       none: ['webp-convert', 'scene-trash', 'empty-image-trash', 'shortcut-help'],
