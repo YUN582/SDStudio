@@ -21,6 +21,7 @@ import {
 } from '../models/focusedInpaintEditor';
 
 interface Props {
+  pointerToImage?: (element: HTMLElement, event: {clientX:number;clientY:number}, width:number, height:number) => {x:number;y:number};
   imageWidth: number;
   imageHeight: number;
   /** 저장된 사각형(프리셋 focusX/Y/W/H). */
@@ -48,6 +49,7 @@ export default function FocusAreaOverlay({
   visible,
   interactive,
   onCommit,
+  pointerToImage,
 }: Props) {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ drag: FocusDrag; pointerId: number } | null>(null);
@@ -75,6 +77,7 @@ export default function FocusAreaOverlay({
   }, [interactive]);
 
   const toImage = (e: { clientX: number; clientY: number }) => {
+    if (pointerToImage) return pointerToImage(layerRef.current!, e, imageWidth, imageHeight);
     const box = layerRef.current!.getBoundingClientRect();
     return clientToImagePoint(e.clientX, e.clientY, box, imageWidth, imageHeight);
   };

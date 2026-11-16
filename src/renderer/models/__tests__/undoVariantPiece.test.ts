@@ -489,7 +489,6 @@ describe('파일 덮어쓰기 경로는 기록하지 않는다(소스 검사)', 
       'const saveMask = async',
       'const uploadMirrorImage = async',
       'const refreshMirrorCanvas = async',
-      'aria-label="결과 이미지를 원본으로 적용"',
     ]) {
       expect(block(ipe, marker)).not.toMatch(RECORDERS);
     }

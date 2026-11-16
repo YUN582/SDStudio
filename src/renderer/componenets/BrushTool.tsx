@@ -69,7 +69,12 @@ export function maskToBase64(
   return base64String;
 }
 
-interface Props {
+export interface BrushToolProps {
+  disableUndo?: boolean;
+  onMaskReady?: () => void;
+  paintLayer?: ReactNode;
+  showBrushPreview?: boolean;
+  pointerToImage?: (canvas: HTMLCanvasElement, event: {clientX:number;clientY:number}, width:number, height:number) => {x:number;y:number};
   image: string;
   brushSize: number;
   eraserMode?: boolean;
@@ -84,6 +89,8 @@ interface Props {
 }
 
 export interface BrushToolRef {
+  hasMask(): boolean;
+  restoreMask(base64: string): Promise<void>;
   getMaskBase64(): string;
   startBrushing(): void;
   stopBrushing(): void;
@@ -174,7 +181,7 @@ function getChunksBetween(
   });
 }
 
-const BrushTool = forwardRef<BrushToolRef, Props>(
+const BrushTool = forwardRef<BrushToolRef, BrushToolProps>(
   (
     {
       image,
@@ -186,6 +193,7 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
       onDrawEnd,
       overlay,
       resetKey,
+      disableUndo = false, onMaskReady, paintLayer, showBrushPreview = true, pointerToImage,
     },
     ref,
   ) => {
@@ -199,6 +207,10 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
     onDrawEndRef.current = onDrawEnd;
     const historyRef = useRef<any>([]);
     const curImageRef = useRef<any>(undefined);
+    const readyRef = useRef(onMaskReady);
+    readyRef.current = onMaskReady;
+    const pointRef = useRef(pointerToImage);
+    pointRef.current = pointerToImage;
     const brushColor = 'rgba(0, 0, 255, 1)';
 
     const undoImpl = () => {
@@ -214,8 +226,32 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
     };
 
     useImperativeHandle(ref, () => ({
+      hasMask() {
+        const pixels = curImageRef.current?.data;
+        if (!pixels) return false;
+        for(let i=0;i<pixels.length;i+=4) if(pixels[i+3] && (pixels[i]||pixels[i+1]||pixels[i+2])) return true;
+        return false;
+      },
+      restoreMask(base64) {
+        return new Promise<void>((resolve,reject)=>{
+          const image=new Image();
+          image.onload=()=>{
+            const ctx=canvasRef.current.getContext('2d');
+            ctx.clearRect(0,0,imageWidth,imageHeight);
+            ctx.drawImage(image,0,0,imageWidth,imageHeight);
+            const pixels=ctx.getImageData(0,0,imageWidth,imageHeight);
+            for(let i=0;i<pixels.data.length;i+=4){
+              const on=pixels.data[i]||pixels.data[i+1]||pixels.data[i+2];
+              pixels.data[i]=pixels.data[i+1]=0;
+              pixels.data[i+2]=pixels.data[i+3]=on?255:0;
+            }
+            ctx.putImageData(pixels,0,0);curImageRef.current=pixels;resolve();
+          };
+          image.onerror=reject;image.src=base64ToDataUri(base64);
+        });
+      },
       getMaskBase64() {
-        return maskToBase64(curImageRef.current, imageWidth, imageHeight);
+        return maskToBase64(curImageRef.current || new ImageData(Math.max(1,imageWidth),Math.max(1,imageHeight)), Math.max(1,imageWidth), Math.max(1,imageHeight));
       },
       clear() {
         historyRef.current = [
@@ -322,10 +358,12 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
           historyRef.current = [imageData2];
           curImageRef.current = imageData2;
           setLoaded(true);
+          readyRef.current?.();
         };
         img.src = mask;
       } else {
         setLoaded(true);
+        readyRef.current?.();
       }
     }, [mask, image, imageHeight, imageWidth, resetKey]);
 
@@ -333,10 +371,11 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
 
+      let strokeErase = eraserMode;
       const drawBrushChunk = (x: any, y: any) => {
         const chunks = getChunksInBrush(x, y, brushSize);
         chunks.forEach(({ chunkX, chunkY }) => {
-          if (eraserMode) {
+          if (strokeErase) {
             ctx.clearRect(
               chunkX * CHUNK_SIZE,
               chunkY * CHUNK_SIZE,
@@ -352,7 +391,7 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
       const interpolate = (x0: any, y0: any, x1: any, y1: any) => {
         const chunks = getChunksBetween(x0, y0, x1, y1, brushSize);
         chunks.forEach(({ chunkX, chunkY }) => {
-          if (eraserMode) {
+          if (strokeErase) {
             ctx.clearRect(
               chunkX * CHUNK_SIZE,
               chunkY * CHUNK_SIZE,
@@ -367,10 +406,11 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
 
       const draw = (e: any) => {
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-        const x = (clientX - rect.left) * (canvas.width / rect.width);
-        const y = (clientY - rect.top) * (canvas.height / rect.height);
+        const clientX = e.clientX ?? (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY ?? (e.touches && e.touches[0].clientY);
+        const point = pointRef.current?.(canvas, {clientX,clientY}, canvas.width, canvas.height);
+        const x = point?.x ?? (clientX - rect.left) * (canvas.width / rect.width);
+        const y = point?.y ?? (clientY - rect.top) * (canvas.height / rect.height);
 
         if (isDrawingRef.current) {
           const lastPos = lastPosRef.current;
@@ -387,17 +427,18 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
       const undo = (e: any) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
           // 입력 칸(프롬프트 편집기 등) 포커스 중의 Ctrl+Z 는 그 칸의 되돌리기 — 붓 이력까지 함께 되돌리지 않는다(2026-11-01 K2)
-          if (isTextEntryFocused()) return;
+          if (disableUndo || isTextEntryFocused()) return;
           undoImpl();
         }
       };
 
       const startDrawing = (e: any) => {
-        if (!brushingRef.current) return;
+        if (!brushingRef.current || !curImageRef.current || e.ctrlKey || (e.button != null && ![0,2].includes(e.button))) return;
+        strokeErase = eraserMode || e.button === 2;
         e.preventDefault();
         ctx.putImageData(curImageRef.current, 0, 0);
         const imageData = curImageRef.current;
-        historyRef.current.push(imageData);
+        if (!disableUndo) historyRef.current.push(imageData);
         isDrawingRef.current = true;
         draw(e);
       };
@@ -419,14 +460,16 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
       const drawIfDrawing = (e: any) => {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-        const x = (clientX - rect.left) * (canvas.width / rect.width);
-        const y = (clientY - rect.top) * (canvas.height / rect.height);
+        const clientX = e.clientX ?? (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY ?? (e.touches && e.touches[0].clientY);
+        const point = pointRef.current?.(canvas, {clientX,clientY}, canvas.width, canvas.height);
+        const x = point?.x ?? (clientX - rect.left) * (canvas.width / rect.width);
+        const y = point?.y ?? (clientY - rect.top) * (canvas.height / rect.height);
         curPosRef.current = { x, y };
         if (isDrawingRef.current) {
           draw(e);
         } else {
+          if (!showBrushPreview || !brushingRef.current) return;
           // Show preview of chunks that would be painted
           ctx.putImageData(curImageRef.current, 0, 0);
           const chunks = getChunksInBrush(x, y, brushSize);
@@ -462,13 +505,14 @@ const BrushTool = forwardRef<BrushToolRef, Props>(
         canvas.removeEventListener('touchend', stopDrawing);
         window.removeEventListener('keydown', undo);
       };
-    }, [brushSize, eraserMode]);
+    }, [brushSize, eraserMode, disableUndo, showBrushPreview]);
 
     return (
       <div className="canvas-container overflow-auto w-full md:w-auto h-auto md:h-full ">
         {loaded && (
           <img src={image} className="canvas-image" draggable={false} />
         )}
+        {paintLayer}
         <canvas
           className="canvas"
           ref={canvasRef}

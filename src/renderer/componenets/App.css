@@ -1556,3 +1556,554 @@ input[type='number']::-webkit-outer-spin-button {
 .cfg-two-col [data-theme-template-grid] {
   grid-template-columns: minmax(0, 1fr);
 }
+
+
+/* Inpaint workflow refinement. Reuse SDStudio's semantic theme tokens. */
+.sds-image-detail {
+  min-width: 0;
+}
+.sds-detail-heading {
+  height: 48px;
+  min-height: 48px;
+  overflow: hidden;
+}
+.sds-detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sds-detail-info {
+  min-width: 0;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
+}
+.sds-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(6, 36px);
+  gap: 8px;
+  align-content: start;
+}
+.sds-detail-actions .round-button {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.sds-detail-actions .round-button svg {
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+.sds-detail-image {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.sds-detail-image > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.sds-linked-works {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--c-line);
+}
+.sds-linked-works h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sds-linked-works h3 span {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.sds-linked-work + .sds-linked-work {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--c-line);
+}
+.sds-work-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sds-work-name {
+  flex: 1 1 150px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sds-work-name strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.sds-work-name span,
+.sds-linked-work p {
+  font-size: 12px;
+}
+.sds-work-results {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 10px;
+  padding-bottom: 4px;
+}
+.sds-work-result {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+}
+.sds-drawing-tools {
+  display: flex;
+  flex-wrap: wrap;
+  flex: none;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--c-line);
+}
+.sds-tool-group,
+.sds-tool-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sds-tool-label {
+  color: var(--c-text-sub);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sds-tool-label input[type="color"] {
+  width: 32px;
+  height: 28px;
+  padding: 2px;
+  background: var(--c-input-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 4px;
+}
+.sds-tool-label input[type="range"] {
+  width: 84px;
+  min-width: 0;
+}
+.sds-tool-value {
+  width: 4ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sds-mask-tools {
+  flex-wrap: wrap;
+  flex: none;
+}
+.sds-inpaint-heading {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sds-inpaint-heading input {
+  min-width: 80px;
+  width: 100px;
+}
+.sds-inpaint-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.sds-inpaint-editor .canvas-tooltip {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  text-align: center;
+  white-space: normal;
+  pointer-events: none;
+  background: var(--c-surface-2);
+  color: var(--c-text-sub);
+}
+.sds-mask-tools input[type="range"] {
+  min-width: 80px;
+}
+.sds-inpaint-generation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  margin: 8px 12px 0;
+}
+.sds-samples {
+  width: 64px;
+}
+.sds-generation-hint {
+  font-size: 12px;
+  margin-right: auto;
+}
+.sds-paint-host {
+  position: relative;
+  height: 100%;
+  width: max-content;
+  max-width: 100%;
+}
+.sds-paint-layer {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: crosshair;
+}
+.sds-drawing-tools button:focus-visible,
+.sds-linked-works button:focus-visible,
+.sds-tool-label input:focus-visible {
+  outline: 2px solid var(--c-sky-fg);
+  outline-offset: 2px;
+}
+@media (min-width: 1800px) {
+  .sds-detail-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, 36px);
+  }
+}
+@media (max-width: 767px) {
+  .sds-detail-image {
+    min-height: 42vh;
+  }
+  .sds-detail-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(6, 36px);
+  }
+  .sds-paint-host {
+    height: auto;
+  }
+  .sds-drawing-tools {
+    gap: 8px;
+  }
+}
+
+.sds-variant-choices {
+  container-type: inline-size;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--c-line);
+  color: var(--c-text);
+}
+.sds-variant-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sds-variant-title {
+  min-width: 0;
+}
+.sds-variant-heading h3 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.sds-variant-heading > button {
+  flex: none;
+}
+.sds-variant-section {
+  margin-top: 20px;
+}
+.sds-variant-choices h4 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.sds-variant-choices p {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sds-variant-title .sds-variant-source {
+  margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sds-variant-options {
+  display: grid;
+  gap: 8px;
+}
+.sds-variant-workflows {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sds-variant-work {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-btn-icon);
+  background: var(--c-zone);
+  color: var(--c-text);
+  text-align: left;
+  cursor: pointer;
+}
+.sds-variant-work-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.sds-variant-description {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.sds-variant-work:hover:not(:disabled) {
+  border-color: var(--c-line-strong);
+  background: var(--c-input-bg);
+}
+.sds-variant-choices button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sds-variant-quick {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sds-variant-quick button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+  white-space: normal;
+}
+.sds-variant-choices button:focus-visible {
+  outline: 2px solid var(--c-text);
+  outline-offset: 2px;
+}
+@container (min-width:560px) {
+  .sds-variant-quick {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (max-width:319px) {
+  .sds-variant-workflows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sds-effective-mode {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--c-text-sub);
+}
+.sds-compact-tools {
+  container-type: inline-size;
+  flex: none;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-line);
+  color: var(--c-text);
+}
+.sds-tools-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 2px 0 8px;
+}
+.sds-tools-primary button {
+  flex: none;
+  white-space: nowrap;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.sds-mode-tools {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.sds-tool-reset {
+  color: var(--c-text-sub);
+  background: transparent;
+}
+.sds-tool-reset:hover:not(:disabled) {
+  background: var(--c-zone);
+}
+.sds-history-tools {
+  flex: none;
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+.sds-tools-settings {
+  display: grid;
+  grid-template-columns: auto minmax(125px, 1.2fr) minmax(104px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+.sds-view-reset {
+  flex: none;
+  margin-left: auto;
+}
+.sds-focus-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.sds-compact-tools button {
+  font-size: 13px;
+}
+.sds-compact-tools .sds-tool-label input[type="range"] {
+  flex: 1;
+  width: 100%;
+  min-width: 40px;
+}
+.sds-compact-tools .sds-tool-value {
+  flex: none;
+}
+@container (max-width:400px) {
+  .sds-tools-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sds-compact-tools .sds-tool-label input[type="range"] {
+    flex: none;
+    width: 64px;
+  }
+}
+.sds-canvas-rotation {
+  position: relative;
+  width: max-content;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+.sds-canvas-rotation .canvas-container {
+  overflow: visible;
+}
+.sds-inpaint-generation.sds-shared-generation {
+  display: block;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-line);
+  background: var(--c-zone);
+}
+.sds-shared-generation .sds-effective-mode {
+  margin-bottom: 8px;
+}
+.sds-shared-generation > div:last-child {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+}
+.sds-compact-tools button:focus-visible {
+  outline: 2px solid var(--c-text);
+  outline-offset: 2px;
+}
+
+.sds-brush-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+.sds-paint-host:focus {
+  outline: none;
+}
+.sds-paint-host[data-brush-preview="true"] .canvas,
+.sds-paint-host[data-brush-preview="true"] .sds-paint-layer {
+  cursor: none;
+}
+.sds-eyedropper-preview {
+  position: fixed;
+  z-index: calc(var(--z-float-view) + 1);
+  padding: 6px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-btn-icon);
+  background: var(--c-surface);
+  color: var(--c-text);
+  pointer-events: none;
+}
+.sds-eyedropper-magnifier {
+  position: relative;
+  width: 96px;
+  height: 96px;
+}
+.sds-eyedropper-magnifier canvas {
+  display: block;
+  width: 96px;
+  height: 96px;
+  image-rendering: pixelated;
+}
+.sds-eyedropper-target {
+  position: absolute;
+  left: 48px;
+  top: 48px;
+  width: 4px;
+  height: 4px;
+  border: 1px solid white;
+  outline: 1px solid black;
+}
+.sds-eyedropper-color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 16px;
+}
+.sds-eyedropper-color > span {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--c-line-strong);
+}
+.sds-generation-caption {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 8px;
+}
+.sds-generation-caption .sds-effective-mode {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+.sds-canvas-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  flex: 1 1 360px;
+  margin: 0;
+  color: var(--c-text-sub);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: right;
+}
+.sds-canvas-shortcuts > span {
+  white-space: nowrap;
+}
+.sds-tools-primary {
+  column-gap: 8px;
+}
+.sds-tools-primary button {
+  padding-left: 7px;
+  padding-right: 7px;
+}

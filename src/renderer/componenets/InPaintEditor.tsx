@@ -1,18 +1,12 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Tooltip from './Tooltip';
-import BrushTool, {
-  BrushToolRef,
+import {
   base64ToDataUri,
   getImageDimensions,
 } from './BrushTool';
 import { DropdownSelect, TabComponent } from './UtilComponents';
 import { Resolution, resolutionMap } from '../backends/imageGen';
 import {
-  FaArrowLeft,
-  FaArrowsAlt,
-  FaPlay,
-  FaStop,
-  FaUndo,
   FaImages,
   FaPuzzlePiece,
 } from 'react-icons/fa';
@@ -32,7 +26,6 @@ import {
   combinationMiddlePrompt,
   enumerateCombinations,
 } from '../models/PromptService';
-import { extractPromptDataFromBase64 } from '../models/util';
 import { appState } from '../models/AppService';
 import {
   checkInpaintSceneRename,
@@ -60,8 +53,16 @@ import { observer } from 'mobx-react-lite';
 import { InnerPreSetEditor } from './PreSetEdtior';
 import { ComboPromptEditor } from './ComboPromptEditor';
 import { reaction, runInAction } from 'mobx';
-import { FloatView } from './FloatView';
-import { TaskProgressBar } from './TaskQueueControl';
+import { FloatView, FloatViewActiveContext } from './FloatView';
+import TaskQueueControl from './TaskQueueControl';
+import WorkflowCanvas, { WorkflowCanvasRef, PaintHistory } from './WorkflowCanvas';
+import { InpaintDrawingTools } from './InpaintDrawingTools';
+import { canvasPointerPoint } from '../models/canvasPointer';
+import { generationControlState } from '../models/generationControl';
+import { isTextEntryFocused } from '../models/keyTargetGuard';
+import { DETACHED_INPUT_META } from '../models/inpaintInput';
+import { ensureSingleImagePrompt, isSingleImageEdit } from '../models/singleImageEdit';
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import {
   lowerResolution,
   queueI2IWorkflow,
@@ -150,6 +151,52 @@ const InPaintEditor = observer(
       })
       .filter((x) => !x.value.startsWith('small'));
 
+    const [paintTool, setPaintTool] = useState<'mask'|'paint'>('mask');
+    const [paintColor, setPaintColor] = useState('#ef4444');
+    const [paintOpacity, setPaintOpacity] = useState(1);
+    const [paintHistory, setPaintHistory] = useState<PaintHistory>({undo:false,redo:false,ready:false});
+    const [queuing, setQueuing] = useState(false);
+    const queuingRef = useRef(false);
+    const [inputRevision, setInputRevision] = useState(0);
+    const zoomRef = useRef<ReactZoomPanPinchRef>(null);
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const activeEditor = useContext(FloatViewActiveContext);
+    const activeEditorRef = useRef(activeEditor);
+    activeEditorRef.current = activeEditor;
+    const [spaceHeld, setSpaceHeld] = useState(false);
+    const [rotation, setRotation] = useState(0);
+    const spaceRef = useRef(false), pointerInside = useRef(false);
+    useEffect(()=>{setRotation(0);setSpaceHeld(false);spaceRef.current=false;},[editingScene]);
+    useEffect(()=>{
+      const viewport=viewportRef.current;
+      if(!viewport)return;
+      let previous='';
+      const observer=new ResizeObserver(()=>{
+        const rect=viewport.getBoundingClientRect(),size=rect.width+':'+rect.height;
+        if(previous && previous!==size)zoomRef.current?.centerView(undefined,0);
+        previous=size;
+      });
+      observer.observe(viewport);
+      const release=()=>{spaceRef.current=false;setSpaceHeld(false);};
+      const down=(event:KeyboardEvent)=>{
+        if(event.code!=='Space'||event.repeat||!activeEditorRef.current||!pointerInside.current||isTextEntryFocused()||appState.dialogs.length)return;
+        event.preventDefault();spaceRef.current=true;brushTool.current?.stopBrushing();setSpaceHeld(true);
+      };
+      const up=(event:KeyboardEvent)=>{if(event.code==='Space')release();};
+      const enter=()=>{pointerInside.current=true;};
+      const leave=()=>{pointerInside.current=false;};
+      const wheel=(event:WheelEvent)=>{
+        if(!activeEditorRef.current)return;
+        if(spaceRef.current){event.preventDefault();event.stopPropagation();setRotation(value=>(value+(event.deltaY<0?15:-15)+540)%360-180);return;}
+        if(event.ctrlKey||event.metaKey)return;
+        event.preventDefault();event.stopPropagation();
+        setBrushSize(value=>{const next=Math.max(1,Math.min(100,Number(value)+(event.deltaY<0?1:-1)));brushSizeSaved=next;return next;});
+      };
+      viewport.addEventListener('pointerenter',enter);viewport.addEventListener('pointerleave',leave);
+      viewport.addEventListener('wheel',wheel,{passive:false,capture:true});
+      window.addEventListener('keydown',down,true);window.addEventListener('keyup',up,true);window.addEventListener('blur',release);
+      return ()=>{observer.disconnect();viewport.removeEventListener('pointerenter',enter);viewport.removeEventListener('pointerleave',leave);viewport.removeEventListener('wheel',wheel,true);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',up,true);window.removeEventListener('blur',release);};
+    },[]);
     const [image, setImage] = useState('');
     const [width, setWidth] = useState(0);
     const [height, setHeight] = useState(0);
@@ -240,6 +287,16 @@ const InPaintEditor = observer(
     useEffect(() => {
       if (!showComboTabs) setPcComboTab(0);
     }, [showComboTabs]);
+    useEffect(()=>{
+      const toggle=(event:KeyboardEvent)=>{
+        if(event.key!=='Tab'||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
+        if(!activeEditor||!pointerInside.current||pointerTarget!=='brush'||spaceRef.current||isTextEntryFocused()||appState.dialogs.length)return;
+        if(editingScene.workflowType!=='SDInpaint')return;
+        event.preventDefault();event.stopImmediatePropagation();
+        if(!event.repeat)setPaintTool(value=>value==='mask'?'paint':'mask');
+      };
+      window.addEventListener('keydown',toggle,true);return ()=>window.removeEventListener('keydown',toggle,true);
+    },[activeEditor,pointerTarget,editingScene]);
     // PC 조합 에디터 탭: 이미지 패널을 hidden(display:none)으로 숨긴다 — 언마운트하지 않아 마스크 캔버스·붓질 이력·
     // Focused 영역이 그대로 남고, 오버레이 크기는 다시 보일 때 ResizeObserver 가 재측정한다. md 미만(모바일)은 불변.
     const pcComboWide = showComboTabs && pcComboTab === 1;
@@ -313,7 +370,7 @@ const InPaintEditor = observer(
     // 「조합 모드 켜기」(2026-11-03, 끄기의 짝 — SPEC §7-4) — 단일 I2I·인페인트(미러·조합 모드 씬 제외).
     // 단일 계열 편집 칸(SDI2IUI·SDInpaintUI)의 「프롬프트」 칸 머리 줄 오른쪽 끝(끄기 = 중간 프롬프트 머리 줄과 같은 자리 감각).
     // 공유/고정·출처 선택·적용·되돌리기 기록은 comboSource.turnOnComboMode 단일 출처. 켜지면 조합 계열 창(comboTabs)으로 바뀐다.
-    const canTurnOn = !isMirror && !comboMode && canChooseComboMode(editingScene.workflowType);
+    const canTurnOn = !isMirror && !comboMode && !isSingleImageEdit(editingScene) && canChooseComboMode(editingScene.workflowType);
     const singleHeaderEnds = canTurnOn
       ? {
           prompt: () => (
@@ -476,13 +533,16 @@ const InPaintEditor = observer(
       }
       setImage('');
       setMask(undefined);
+      let cancelled=false;
+      let inputRequest=0;
       async function loadImage() {
+        const request=++inputRequest;
         try {
-          const data = await imageService.fetchVibeImage(
-            curSession!,
-            editingScene.preset.image,
-          );
-          setImage(dataUriToBase64(data!));
+          const data = ['SDInpaint','SDI2I'].includes(editingScene.workflowType)
+            ? await imageService.fetchInpaintInput(curSession!,editingScene,editingScene.preset,false)
+            : await imageService.fetchVibeImage(curSession!,editingScene.preset.image);
+          if(cancelled||request!==inputRequest)return;
+          setImage(dataUriToBase64(data!));setInputRevision(value=>value+1);
         } catch (e) {
           appState.pushMessage('인페인트 이미지를 불러오는데 실패했습니다.');
         }
@@ -512,19 +572,20 @@ const InPaintEditor = observer(
       else setBrushing(false);
       imageService.addEventListener('image-cache-invalidated', loadImage);
       return () => {
+        cancelled=true;
         imageService.removeEventListener('image-cache-invalidated', loadImage);
         dispose();
       };
     }, [editingScene]);
     useEffect(() => {
       // 영역 도구가 포인터를 받는 동안 마스크 캔버스는 칠하지 않는다(오버레이가 위에서 받음 — 이중 차단).
-      if (pointerTarget === 'brush') {
+      if (pointerTarget === 'brush' && !spaceHeld && paintTool === 'mask') {
         brushTool.current!.startBrushing();
       } else {
         brushTool.current!.stopBrushing();
         if (pointerTarget === 'focus') brushTool.current!.clearPreview();
       }
-    }, [pointerTarget]);
+    }, [pointerTarget,spaceHeld,paintTool]);
     useEffect(() => {
       const scene = editingScene;
       getImageDimensions(image)
@@ -563,6 +624,7 @@ const InPaintEditor = observer(
     // (이미 있던 이미지를 덮어쓴 업로드는 기록하지 않음).
     const onImageUploaded = async (field: string, base64: string) => {
       const scene = editingScene;
+      if (field === 'image') scene.meta.set(DETACHED_INPUT_META,true);
       if (field !== 'image' || !workflowUsesImageResolution(scene.workflowType)) return;
       const r = await resolutionFromImage(base64);
       if (r) applyResolution(scene, r);
@@ -618,7 +680,7 @@ const InPaintEditor = observer(
       });
     };
 
-    const brushTool = useRef<BrushToolRef | null>(null);
+    const brushTool = useRef<WorkflowCanvasRef | null>(null);
     // 브러시 스트로크 후 마스크 데이터를 캐싱 (언마운트 시 ref가 null이므로)
     const cachedMaskRef = useRef<string | null>(null);
 
@@ -629,6 +691,7 @@ const InPaintEditor = observer(
     };
 
     const saveMask = async () => {
+      await brushTool.current?.saveDrawing?.();
       if (def?.hasMask && brushTool.current) {
         const mask = brushTool.current.getMaskBase64();
         if (!editingScene.preset.mask) {
@@ -740,9 +803,38 @@ const InPaintEditor = observer(
       await saveMask();
       onConfirm();
     };
+    const queueWork=async()=>{
+      if(queuingRef.current)return false;
+      queuingRef.current=true;setQueuing(true);
+      try {
+        if(!await ensureSingleImagePrompt(curSession!,editingScene,()=>mountedRef.current&&sceneRef.current===editingScene))return false;
+        if(isMirror){if(!curSession?.mirrorImage){appState.pushMessage('미러 이미지를 먼저 업로드해주세요.');return false;}await refreshMirrorCanvas();}
+        await saveMask();
+        const preset={...editingScene.preset};
+        if(def?.hasMask&&!isMirror){
+          preset.image=await brushTool.current!.getInputImage();
+          preset.mask=await imageService.storeVibeImage(curSession!,brushTool.current!.getMaskBase64());
+        }
+        const count=Math.max(1,Math.min(99,Math.floor(Number(appState.samples)||1)));
+        appState.samples=count;
+        // Results stay in their output gallery; never promote them to the editing input.
+        const queued=isMirror?await queueMirrorWorkflow(curSession!,editingScene.workflowType,preset,editingScene,count)
+          :await queueI2IWorkflow(curSession!,editingScene.workflowType,preset,editingScene,count);
+        if(queued===0){appState.pushMessage(COMBO_EMPTY_TEXT);return false;}return true;
+      }catch(error){appState.pushMessage('생성 예약 실패: '+(error as Error).message,'error');return false;}
+      finally{queuingRef.current=false;if(mountedRef.current)setQueuing(false);}
+    };
+    const queueWorkRef=useRef(queueWork);queueWorkRef.current=queueWork;
+    const generationDisabled=queuing||!!def?.hasMask&&!isMirror&&!paintHistory.ready;
+    useLayoutEffect(()=>{
+      if(!activeEditor)return;
+      const target={session:curSession!,scene:editingScene,queue:()=>queueWorkRef.current(),disabled:generationDisabled};
+      generationControlState.update({target});
+      return ()=>{if(generationControlState.snapshot.target===target)generationControlState.update({target:null});};
+    },[activeEditor,curSession,editingScene,generationDisabled]);
     return (
       <div
-        className={`flex flex-col ${pcComboWide ? '' : 'md:flex-row'} py-3 h-full w-full overflow-hidden`}
+        className={`sds-inpaint-editor flex flex-col ${pcComboWide ? '' : 'md:flex-row'} py-3 h-full w-full overflow-hidden`}
       >
         <div
           className={`px-3 flex flex-col flex-none ${
@@ -897,133 +989,21 @@ const InPaintEditor = observer(
               />
             </div>
           )}
-          {def?.hasMask && (
-            <div
-              className={`flex items-center gap-2 md:gap-4 md:ml-auto pb-2 overflow-hidden w-full ${
-                pcComboWide ? 'md:hidden' : ''
-              }`}
-            >
-              {
-                <button
-                  className="round-button icon-only back-gray flex-none"
-                  aria-label={brushing ? '이동 모드로 전환' : '브러시 모드로 전환'}
-                  onClick={() => {
-                    setBrushing(!brushing);
-                  }}
-                >
-                  {brushing ? <FaArrowsAlt /> : <ActionIcon id="brush" />}
-                </button>
-              }
-              <div className="flex-none flex items-center gap-1">
-                <button
-                  className={`round-button ${eraserMode || focusTool ? 'back-gray' : 'back-sky'}`}
-                  onClick={() => {
-                    setEraserMode(false);
-                    setFocusTool(false);
-                    setBrushing(true);
-                  }}
-                >
-                  브러시
-                </button>
-                <button
-                  className={`round-button ${eraserMode && !focusTool ? 'back-red' : 'back-gray'}`}
-                  onClick={() => {
-                    setEraserMode(true);
-                    setFocusTool(false);
-                    setBrushing(true);
-                  }}
-                >
-                  지우개
-                </button>
-                {supportsFocus && (
-                  <Tooltip content={FOCUS_EDITOR_TEXT.toolTooltip}>
-                    <button
-                      className={`round-button icon-only ${focusTool ? 'back-sky toggle-on' : 'back-gray'}${
-                        focusEnabled && !focusTool ? ' ring-2 ring-red-500' : ''
-                      }`}
-                      aria-label={FOCUS_EDITOR_TEXT.toolLabel}
-                      aria-pressed={focusTool}
-                      onClick={selectFocusTool}
-                    >
-                      <ActionIcon id="focus-area" />
-                    </button>
-                  </Tooltip>
-                )}
-              </div>
-              {isMobile && (
-                <Tooltip content="되돌리기">
-                <button
-                  className="round-button icon-only back-gray flex-none"
-                  aria-label="되돌리기"
-                  onClick={() => {
-                    brushTool.current!.undo();
-                  }}
-                >
-                  <FaUndo />
-                </button>
-                </Tooltip>
-              )}
-              {supportsFocus && focusTool ? (
-                <>
-                  {/* 영역 도구 = 브러시 크기 자리에 「맥락 여백」(공식 Minimum Context Area, 32~96 step 8) */}
-                  <Tooltip content={FOCUS_EDITOR_TEXT.contextTooltip}>
-                    <label className="flex-none gray-label" htmlFor="focusContext">
-                      {isMobile ? '' : FOCUS_EDITOR_TEXT.contextLabel}{' '}
-                      <span className="inline-block">{focusContext}px</span>
-                    </label>
-                  </Tooltip>
-                  <input
-                    id="focusContext"
-                    type="range"
-                    min={FOCUS_CONTEXT_MIN}
-                    max={FOCUS_CONTEXT_MAX}
-                    step={FOCUS_GRID}
-                    value={focusContext}
-                    className="inline-block flex-1 min-w-[80px] md:min-w-[180px] max-w-[360px]"
-                    onPointerDown={startFocusContextSlide}
-                    onChange={(e) => {
-                      setVariantPresetField(
-                        appState.curSession,
-                        editingScene,
-                        'focusContext',
-                        normalizeFocusContext(Number(e.target.value)),
-                        UNDO_TEXT.variantFocusContext(editingScene.name),
-                      );
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  <label className="flex-none gray-label" htmlFor="brushSize">
-                    {isMobile
-                      ? ''
-                      : eraserMode
-                        ? '지우개 크기:'
-                        : '브러시 크기:'}{' '}
-                    <span className="inline-block w-4">{brushSize}</span>
-                  </label>
-                  <input
-                    id="brushSize"
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={brushSize}
-                    className="inline-block flex-1 min-w-[80px] md:min-w-[180px] max-w-[360px]"
-                    onChange={(e: any) => {
-                      setBrushSize(e.target.value);
-                      brushSizeSaved = e.target.value;
-                    }}
-                  />
-                </>
-              )}
-              <button
-                className={`round-button back-sky flex-none`}
-                onClick={() => brushTool.current!.clear()}
-              >
-                {isMobile ? '' : '마스크'}초기화
-              </button>
-            </div>
-          )}
+          {def?.hasMask && !isMirror && <div className={pcComboWide?'md:hidden':''}>
+            <InpaintDrawingTools tool={paintTool} setTool={tool=>{setPaintTool(tool);setFocusTool(false);setBrushing(true);}}
+              color={paintColor} setColor={setPaintColor} opacity={paintOpacity} setOpacity={setPaintOpacity}
+              history={paintHistory} canvas={brushTool} brushSize={Number(brushSize)}
+              setBrushSize={value=>{setBrushSize(value);brushSizeSaved=value;}}
+              onResetView={()=>{setRotation(0);zoomRef.current?.resetTransform();}}
+              focusControl={supportsFocus && <Tooltip content={FOCUS_EDITOR_TEXT.toolTooltip}>
+                <button className={`round-button icon-only ${focusTool?'back-sky toggle-on':'back-gray'}`}
+                  aria-label={FOCUS_EDITOR_TEXT.toolLabel} aria-pressed={focusTool} onClick={selectFocusTool}><ActionIcon id="focus-area"/></button>
+              </Tooltip>}
+              focusSettings={supportsFocus&&focusTool&&<label className="sds-tool-label">{FOCUS_EDITOR_TEXT.contextLabel} {focusContext}px
+                <input aria-label={FOCUS_EDITOR_TEXT.contextLabel} type="range" min={FOCUS_CONTEXT_MIN} max={FOCUS_CONTEXT_MAX} step={FOCUS_GRID}
+                  value={focusContext} onPointerDown={startFocusContextSlide} onChange={event=>setVariantPresetField(appState.curSession,editingScene,'focusContext',normalizeFocusContext(Number(event.target.value)),UNDO_TEXT.variantFocusContext(editingScene.name))}/>
+              </label>}/>
+          </div>}
           {supportsFocus && (focusTool || focusEnabled) && (
             // U4 마스크 규칙 미리보기 — 맥락 띠의 마스크는 요청 때 지워지고, 안쪽이 비면 안쪽 전체를 인페인트.
             <div
@@ -1058,15 +1038,23 @@ const InPaintEditor = observer(
           className={`flex flex-col flex-1 ${pcComboWide ? 'md:flex-none' : ''} overflow-hidden`}
         >
           {/* PC 조합 에디터 탭: 이미지만 숨기고 아래 생성 바는 남긴다(언마운트 금지 — 마스크·Focused 보존) */}
-          <div className={`flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
+          <div ref={viewportRef} data-space-pan={spaceHeld} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} className={`sds-inpaint-viewport flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
             <TransformWrapper
-              disabled={pointerTarget !== 'pan'}
-              minScale={0.7}
+              ref={zoomRef} disabled={false} limitToBounds={false}
+              panning={{disabled: !spaceHeld && pointerTarget !== 'pan'}}
+              wheel={{wheelDisabled:true,step:0.12}} doubleClick={{disabled:true}}
+              minScale={0.2} maxScale={8}
               initialScale={0.7}
               centerOnInit={true}
             >
               <TransformComponent wrapperClass="wrapper flex-none items-center justify-center">
-                <BrushTool
+                <div className="sds-canvas-rotation" style={{transform:'rotate('+rotation+'deg)'}}>
+                <WorkflowCanvas
+                  session={curSession!} inputRevision={inputRevision}
+                  pointerToImage={(element,event,width,height)=>canvasPointerPoint(element,event,width,height,rotation)}
+                  brushPreviewEnabled={activeEditor&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
+                  tool={spaceHeld||pointerTarget!=='brush'?'pan':paintTool}
+                  color={paintColor} opacity={paintOpacity} onHistoryChange={setPaintHistory} onPickColor={setPaintColor}
                   brushSize={brushSize}
                   eraserMode={eraserMode}
                   mask={mask ? base64ToDataUri(mask) : undefined}
@@ -1085,94 +1073,23 @@ const InPaintEditor = observer(
                         rect={focusRect}
                         context={focusContext}
                         visible={focusEnabled || focusTool}
-                        interactive={pointerTarget === 'focus'}
+                        interactive={!spaceHeld && pointerTarget === 'focus'}
+                        pointerToImage={(element,event,width,height)=>canvasPointerPoint(element,event,width,height,rotation)}
                         onCommit={commitFocusDrag}
                       />
                     ) : undefined
                   }
                 />
-              </TransformComponent>
-              {!isMobile && def.hasMask && (
-                <div className="canvas-tooltip dark:text-white dark:bg-gray-600">
-                  ctrl+z 로 실행 취소 가능
                 </div>
-              )}
+              </TransformComponent>
             </TransformWrapper>
           </div>
-          <div className="flex-none flex ml-auto gap-2 items-center mr-2 mt-2">
-            <button
-              className={`round-button back-gray h-8 w-16 flex items-center justify-center`}
-              aria-label="결과 이미지를 원본으로 적용"
-              onClick={async () => {
-                if (!image || !editingScene.preset.image) return;
-                await imageService.writeVibeImage(
-                  curSession!,
-                  editingScene.preset.image,
-                  image,
-                );
-              }}
-            >
-              <FaArrowLeft size={20} />
-            </button>
-            <TaskProgressBar fast />
-            <button
-              className={`round-button back-green h-8 w-16 md:w-36 flex items-center justify-center`}
-              aria-label="생성"
-              onClick={async () => {
-                if (isMirror) {
-                  if (!curSession?.mirrorImage) {
-                    appState.pushMessage('미러 이미지를 먼저 업로드해주세요.');
-                    return;
-                  }
-                  await refreshMirrorCanvas();
-                }
-                await saveMask();
-                const onGenComplete = (path: string) => {
-                  (async () => {
-                    const data = await imageService.fetchImage(path);
-                    setImage(dataUriToBase64(data!));
-                  })();
-                };
-                // 미러·조합 모드 I2I 는 조합 수만큼 예약(활성 조각이 없는 열이 있으면 0 — 생성 경로와 같은 규칙)
-                const queued = isMirror
-                  ? await queueMirrorWorkflow(
-                      curSession!,
-                      editingScene.workflowType,
-                      editingScene.preset,
-                      editingScene,
-                      1,
-                      onGenComplete,
-                    )
-                  : await queueI2IWorkflow(
-                      curSession!,
-                      editingScene.workflowType,
-                      editingScene.preset,
-                      editingScene,
-                      1,
-                      onGenComplete,
-                    );
-                if (queued === 0) {
-                  appState.pushMessage(COMBO_EMPTY_TEXT);
-                  return;
-                }
-                taskQueueService.run();
-              }}
-            >
-              <FaPlay size={15} />
-            </button>
-            {taskQueueService.isRunning() && (
-              <Tooltip content="중지">
-                <button
-                  className={`round-button back-red h-8 w-16 md:w-36 flex items-center justify-center`}
-                  onClick={() => {
-                    taskQueueService.removeAllTasks();
-                    taskQueueService.stop();
-                  }}
-                >
-                  <FaStop size={15} />
-                </button>
-              </Tooltip>
-            )}
+          <div className="sds-inpaint-generation sds-shared-generation">
+            {editingScene.workflowType==='SDInpaint'&&<div className="sds-generation-caption">
+              <div className="sds-effective-mode" role="status">{!paintHistory.ready?'마스크 확인 중…':paintHistory.hasMask?'인페인트 · 마스크 영역 변형':'I2I · 이미지 전체 변형 (마스크 없음)'}</div>
+              {!isMobile&&<p className="sds-canvas-shortcuts">{['Tab: 펜 전환','휠: 크기','Ctrl+휠: 확대','우클릭: 지우기','Ctrl+우클릭: 스포이드','Space+드래그: 이동','Space+휠: 회전'].map(text=><span key={text}>{text}</span>)}</p>}
+            </div>}
+            <TaskQueueControl queueCurrent={queueWork} queueDisabled={generationDisabled}/>
           </div>
         </div>
       </div>
