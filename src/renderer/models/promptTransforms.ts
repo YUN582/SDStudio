@@ -52,13 +52,36 @@ function caretSegmentOf(text: string, selectionStart: number): CaretSegment {
   return { segmentStart, segmentEnd, segment, leading, trailing, core };
 }
 
+/** Comments delimit active prompt segments; a caret inside a comment has no weight. */
+function weightSegmentOf(text: string, selectionStart: number): CaretSegment | undefined {
+  const caret = clamp(selectionStart, 0, text.length);
+  let left = 0;
+  let right = text.length;
+  for (const comment of promptCommentRanges(text)) {
+    if (comment.end <= caret) {
+      left = comment.end;
+      continue;
+    }
+    if (comment.start <= caret) return undefined;
+    right = comment.start;
+    break;
+  }
+  const segment = caretSegmentOf(text.slice(left, right), caret - left);
+  return {
+    ...segment,
+    segmentStart: left + segment.segmentStart,
+    segmentEnd: left + segment.segmentEnd,
+  };
+}
+
 /** 커서 구획의 현재 가중치(모바일 칩 표시용). 빈 구획이면 undefined. */
 export function getPromptWeightAtSelection(
   text: string,
   selectionStart: number,
 ): PromptWeightInfo | undefined {
-  const { core } = caretSegmentOf(text, selectionStart);
-  if (!core) return undefined;
+  const segment = weightSegmentOf(text, selectionStart);
+  if (!segment?.core) return undefined;
+  const { core } = segment;
   const weighted = core.match(WEIGHTED_PROMPT_RE);
   return {
     core,
@@ -94,9 +117,9 @@ export function adjustPromptWeightAtSelection(
 ): PromptWeightAdjustment | undefined {
   if (!Number.isFinite(delta) || delta === 0) return undefined;
 
-  const { segmentStart, segmentEnd, segment, leading, trailing, core } =
-    caretSegmentOf(text, selectionStart);
-  if (!core) return undefined;
+  const weightSegment = weightSegmentOf(text, selectionStart);
+  if (!weightSegment?.core) return undefined;
+  const { segmentStart, segmentEnd, segment, leading, trailing, core } = weightSegment;
 
   const weighted = core.match(WEIGHTED_PROMPT_RE);
   const wrappedInner = weighted?.[2] ?? core;
