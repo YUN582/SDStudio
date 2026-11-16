@@ -6,11 +6,13 @@ import { addScenesToQueue, SceneQueueFilter } from '../models/sceneQueueActions'
 import { backStackService } from '../models/BackStackService';
 
 // 툴바 overflow와 하단 도크에서도 잘리지 않도록 포털로 표시한다.
-export default function SceneQueueMenu({ children, session, type, selectedOnly }: {
+export default function SceneQueueMenu({ children, session, type, selectedOnly, customItems, disabled = false }: {
   children: ReactNode;
   session?: Session;
   type: 'scene' | 'inpaint';
   selectedOnly: boolean;
+  customItems?: {text:string;onClick:()=>void}[];
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -18,7 +20,7 @@ export default function SceneQueueMenu({ children, session, type, selectedOnly }
   const panel = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const focusRequested = useRef(false);
-  const show = () => { if (session) setOpen(true); };
+  const show = () => { if (session && !disabled) setOpen(true); };
 
   useEffect(() => { setOpen(false); }, [session, type]);
   useEffect(() => {
@@ -71,7 +73,7 @@ export default function SceneQueueMenu({ children, session, type, selectedOnly }
     {/* 분할 화살표 ▾(2026-10-04): PC 는 폭 최소 28px(min-w-7·좌우 6px)·높이 32 — 18px 이던 폭이 너무 좁아 누르기 어려웠다.
         모바일은 .round-button 의 36×36 최소 크기 그대로. 씬 툴바·하단 예약 도크가 이 한 곳을 같이 쓴다. SPEC_GUIDE §2. */}
     <button ref={toggle} type="button" className="round-button back-sky px-1 md:px-1.5 md:min-w-7 h-8"
-      aria-label="부분 일괄 예약 옵션" aria-expanded={open} disabled={!session}
+      aria-label={customItems?'현재 작업 예약 옵션':'부분 일괄 예약 옵션'} aria-expanded={open} disabled={!session||disabled}
       onClick={() => { focusRequested.current = !open; setOpen(!open); }}
       onKeyDown={(e) => {
         if (e.key === 'ArrowDown') {
@@ -85,8 +87,10 @@ export default function SceneQueueMenu({ children, session, type, selectedOnly }
     {open && createPortal(<div ref={panel} role="group" aria-label="부분 일괄 예약"
       className="fixed z-[var(--z-widget)] bg-[var(--c-surface-2)] text-default border line-color rounded-lg shadow-lg p-1 flex flex-col gap-1"
       style={{ ...position, maxWidth: 'calc(100vw - 8px)' }}>
-      <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('empty')}>빈 씬만 일괄 예약</button>
-      <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('no-favorites')}>즐겨찾기 이미지 없는 씬만 예약</button>
+      {customItems ? customItems.map(item=><button key={item.text} type="button" className="btn-ghost text-left px-3 py-2" disabled={disabled} onClick={()=>{setOpen(false);item.onClick();}}>{item.text}</button>) : <>
+        <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('empty')}>빈 씬만 일괄 예약</button>
+        <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('no-favorites')}>즐겨찾기 이미지 없는 씬만 예약</button>
+      </>}
     </div>, document.body)}
   </span>;
 }

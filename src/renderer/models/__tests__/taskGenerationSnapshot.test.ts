@@ -281,7 +281,7 @@ describe('TaskQueueService 예약 생성 설정 스냅샷', () => {
     captureGenerationSnapshot.mockResolvedValue(snapshot);
     const queueWorkflowSpy = jest
       .spyOn(taskQueueModule, 'queueWorkflow')
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(1);
     const session = { selectedWorkflow: { type: 'SDImageGen' } } as any;
     const scene = { name: 'scene', type: 'scene' } as any;
 
@@ -310,7 +310,7 @@ describe('TaskQueueService 예약 생성 설정 스냅샷', () => {
     };
     const queueWorkflowSpy = jest
       .spyOn(taskQueueModule, 'queueWorkflow')
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(1);
     const session = { selectedWorkflow: { type: 'SDImageGen' } } as any;
     const scene = { name: 'scene', type: 'scene' } as any;
 

@@ -2485,6 +2485,7 @@ export const queueWorkflow = async (
       generationSnapshot,
     );
   }
+  return prompts.length;
 };
 
 /**

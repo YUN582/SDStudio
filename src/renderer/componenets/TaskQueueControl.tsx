@@ -1,5 +1,5 @@
 import SceneQueueMenu from './SceneQueueMenu';
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { FaPlay, FaStop } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
 import { FaTimes } from 'react-icons/fa';
@@ -13,6 +13,7 @@ import Tooltip from './Tooltip';
 import { OVERLAY_CLOSE_BUTTON_CLASS, OVERLAY_CLOSE_ICON_SIZE } from './ModalOverlay';
 import { addScenesToQueue } from '../models/sceneQueueActions';
 import { REQUEST_DELAY_TEXT } from '../models/requestTiming';
+import { generationControlState } from '../models/generationControl';
 import { BOOST_TEXT } from '../models/boostMode';
 
 interface ProgressBarProps {
@@ -320,7 +321,28 @@ const TaskQueueList = ({
   );
 };
 
-const TaskQueueControl = observer(({}) => {
+interface QueueControlProps { queueCurrent?: () => Promise<boolean>; queueDisabled?: boolean; }
+const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueControlProps) => {
+  const control=useSyncExternalStore(generationControlState.subscribe,generationControlState.getSnapshot);
+  const target=control.target?.session===appState.curSession?control.target:null;
+  const queue=queueCurrent??target?.queue;
+  const disabled=control.busy||queueDisabled||!!target?.disabled;
+  const enqueue=async(start:boolean)=>{
+    if(disabled||generationControlState.snapshot.busy)return;
+    generationControlState.update({busy:true});
+    try {
+      const queued=queue?await queue():appState.curSession
+        ?await addScenesToQueue(appState.curSession,queueType,false):false;
+      if(!queued||!start)return;
+      const costs=taskQueueService.calculateCost();
+      if(costs.length){
+        const message=costs.map(x=>x.text+' (씬: '+x.scene+')').slice(0,10).join('\n');
+        if(!await appState.confirmAsync({text:'Anlas를 소모하는 유료 세팅입니다. 계속합니까?\n'+message}))return;
+      }
+      taskQueueService.run();
+    }catch(error){appState.pushMessage('생성 예약 실패: '+(error as Error).message,'error');}
+    finally{generationControlState.update({busy:false});}
+  };
   const [_, rerender] = useState<{}>({});
   const [showList, setShowList] = useState(false);
   // 목록 펼침 방향: 컨트롤(플로팅 위젯 포함)이 화면 위쪽 절반이면 아래로 펼친다
@@ -409,28 +431,17 @@ const TaskQueueControl = observer(({}) => {
       >
         <TaskProgressBar fit={v2} />
       </div>
-      <SceneQueueMenu session={appState.curSession} type={queueType} selectedOnly={appState.selectedSceneCount(queueType) > 0}>
-      <button
-        type="button"
-        className="round-button back-sky px-2 h-8 lg:px-6 disabled:opacity-50"
-        title={queueType === 'inpaint' ? '이미지변형 씬 일괄 예약 (선택한 씬이 있으면 선택 씬만)' : '씬 일괄 예약 (선택한 씬이 있으면 선택 씬만)'}
-        aria-label="씬 일괄 예약"
-        disabled={!appState.curSession}
-        onClick={() => {
-          if (appState.curSession) {
-            // 보고 있는 탭의 종류로 예약한다(queueType). 선택 예약 여부도 같은 종류의 선택 수로만 판단해
-            // 다른 탭에서 고른 이름으로 같은 이름의 씬을 예약하지 않는다.
-            void addScenesToQueue(
-              appState.curSession,
-              queueType,
-              appState.selectedSceneCount(queueType) > 0,
-            );
-          }
-        }}
-      >
-        <ActionIcon id="queue-add" size={18} />
-      </button>
-      </SceneQueueMenu>
+      {queue ? <SceneQueueMenu session={appState.curSession} type="inpaint" selectedOnly={false} disabled={disabled} customItems={[
+        {text:'현재 작업 예약',onClick:()=>void enqueue(false)}, {text:'현재 작업 예약 후 시작',onClick:()=>void enqueue(true)},
+      ]}><button type="button" className="round-button back-sky px-2 h-8 lg:px-6 disabled:opacity-50"
+        title="현재 편집 작업 예약" aria-label="현재 편집 작업 예약" disabled={disabled} onClick={()=>void enqueue(false)}><ActionIcon id="queue-add" size={18}/></button></SceneQueueMenu>
+        : <SceneQueueMenu session={appState.curSession} type={queueType} selectedOnly={appState.selectedSceneCount(queueType)>0}>
+          <button type="button" className="round-button back-sky px-2 h-8 lg:px-6 disabled:opacity-50" title="씬 일괄 예약" aria-label="씬 일괄 예약"
+            disabled={disabled||!appState.curSession} onClick={()=>{
+              if(!appState.curSession)return;
+              void addScenesToQueue(appState.curSession,queueType,appState.selectedSceneCount(queueType)>0);
+            }}><ActionIcon id="queue-add" size={18}/></button>
+        </SceneQueueMenu>}
       {/* 예약 전부 제거는 확인 없이 즉시(의도된 동작) — 이름·툴팁만 붙인다(X11) */}
       <Tooltip content="모든 예약 제거">
         <button
@@ -444,33 +455,12 @@ const TaskQueueControl = observer(({}) => {
         </button>
       </Tooltip>
       {!taskQueueService.isRunning() ? (
-        <Tooltip content="예약된 생성 시작">
+        <Tooltip content={queue?"현재 작업 예약 추가 후 생성":"전체 씬 예약 추가 후 생성"}>
         <button
           className={v2 ? 'round-button back-green flex-none !h-10 min-w-[96px] px-4 gap-2 !rounded-xl font-bold text-[15px]' : `round-button back-green px-2 h-8 lg:px-6`}
           aria-label="생성 시작"
-          onClick={() => {
-            (async () => {
-              const costs = taskQueueService.calculateCost();
-              const message = costs
-                .map((x) => `${x.text} (씬: ${x.scene})`)
-                .slice(0, 10)
-                .join('\n');
-              if (costs.length > 0) {
-                appState.pushDialog({
-                  type: 'confirm',
-                  text:
-                    'Anlas를 소모하는 유료 세팅입니다. 계속합니까?' +
-                    '\n' +
-                    message,
-                  callback: () => {
-                    taskQueueService.run();
-                  },
-                });
-              } else {
-                taskQueueService.run();
-              }
-            })();
-          }}
+          disabled={disabled||!appState.curSession}
+          onClick={()=>void enqueue(true)}
         >
           <FaPlay size={15} />
           {v2 && <span>생성</span>}

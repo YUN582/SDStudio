@@ -81,7 +81,7 @@ export const queueScene = async (
     generationSnapshot ??
     (await taskQueueService.captureGenerationSnapshot());
   if (scene.type === 'scene') {
-    await queueWorkflow(
+    return await queueWorkflow(
       session,
       session.selectedWorkflow!,
       scene,
@@ -91,7 +91,7 @@ export const queueScene = async (
   } else {
     const inpaintScene = scene as InpaintScene;
     if (inpaintScene.workflowType === 'SDMirror') {
-      await queueMirrorWorkflow(
+      return await queueMirrorWorkflow(
         session,
         inpaintScene.workflowType,
         inpaintScene.preset,
@@ -102,7 +102,7 @@ export const queueScene = async (
         mirrorCanvasMemo,
       );
     } else {
-      await queueI2IWorkflow(
+      return await queueI2IWorkflow(
         session,
         scene.workflowType,
         scene.preset,
@@ -359,7 +359,7 @@ export const addScenesToQueue = async (
     } else if (filter === 'no-favorites') {
       scenes = scenes.filter((scene) => scene.mains.length === 0);
     }
-    if (scenes.length === 0) return;
+    if (scenes.length === 0) return false;
 
     const allMissing: { library: string; piece: string }[] = [];
     for (const scene of scenes) {
@@ -376,50 +376,48 @@ export const addScenesToQueue = async (
     }
 
     const doQueue = async () => {
+      let queued=0;
       let generationSnapshot: GenerationSettingsSnapshot;
       try {
         generationSnapshot = await taskQueueService.captureGenerationSnapshot();
       } catch (e) {
         console.error('일괄 예약 생성 설정을 읽지 못했습니다:', e);
         appState.pushMessage('생성 설정을 읽지 못해 예약하지 못했습니다.');
-        return;
+        return false;
       }
       // 미러 씬은 같은 원본·모드의 합성 캔버스를 묶음 안에서 한 번만 만든다(2026-10-02 P1)
       const mirrorCanvasMemo = createMirrorCanvasMemo();
       await taskQueueService.withProgressBatch(async () => {
         for (const scene of scenes) {
           try {
-            await queueScene(
+            const count = await queueScene(
               session,
               scene,
               appState.samples,
               generationSnapshot,
               mirrorCanvasMemo,
             );
+            if (count > 0) queued++;
           } catch (e: any) {
             appState.pushMessage(`프롬프트 에러 (${scene.name}): ${e.message}`);
           }
         }
       });
+      return queued>0;
     };
 
     if (allMissing.length > 0) {
       const list = allMissing
         .map((m) => `<${m.library}.${m.piece}>`)
         .join(', ');
-      appState.pushDialog({
-        type: 'confirm',
-        text: `존재하지 않는 프롬프트조각이 발견되었습니다:\n${list}\n\n로컬 프롬프트조각으로 새로 만들까요?\n(빈 조각이 생성되며, 내용은 직접 채워주세요)`,
-        callback: async () => {
-          createMissingPiecesForSession(session, allMissing);
-          await doQueue();
-        },
-      });
-      return;
+      const proceed=await appState.confirmAsync({text:`존재하지 않는 프롬프트조각이 발견되었습니다:\n${list}\n\n로컬 프롬프트조각으로 새로 만들까요?\n(빈 조각이 생성되며, 내용은 직접 채워주세요)`});
+      if(!proceed)return false;
+      createMissingPiecesForSession(session,allMissing);
     }
-    await doQueue();
+    return await doQueue();
   } catch (e: any) {
     appState.pushMessage(`프롬프트 에러: ${e.message}`);
+    return false;
   }
 };
 

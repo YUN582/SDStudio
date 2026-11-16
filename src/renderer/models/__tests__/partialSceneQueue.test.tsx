@@ -1,8 +1,8 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
-const queueWorkflow = jest.fn(async () => {});
-const queueI2IWorkflow = jest.fn(async () => {});
+const queueWorkflow = jest.fn(async () => 1);
+const queueI2IWorkflow = jest.fn(async () => 1);
 const capture = jest.fn(async () => ({ model: 'snapshot' }));
 const batch = jest.fn(async (run: () => Promise<void>) => run());
 // 선택은 (종류, 이름) 쌍 — sceneSelection.ts 계약. 기본은 일반 씬 탭에서 선택한 상태.
@@ -74,6 +74,12 @@ test('inpaint filtering uses output images, not the input image', async () => {
   await addScenesToQueue(session, 'inpaint', false, 'empty');
   expect(queueI2IWorkflow).toHaveBeenCalledTimes(1);
   expect(session.getScenes).toHaveBeenCalledWith('inpaint');
+});
+
+test('disabled combinations do not report queued work or trigger play on an old queue', async () => {
+  queueWorkflow.mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+  expect(await addScenesToQueue(session, 'scene', false)).toBe(false);
+  expect(await addScenesToQueue(session, 'scene', false)).toBe(true);
 });
 test('hover does not open; arrow opens options; option reserves once; Escape closes', async () => {
   (global as any).IS_REACT_ACT_ENVIRONMENT = true;
