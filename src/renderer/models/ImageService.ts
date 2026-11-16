@@ -15,6 +15,7 @@ import { assert } from './util';
 import { isOutputImageFile, outputImageExtOf, PNG_IMAGE_EXT } from './imageFormats';
 import {
   projectPath,
+  sceneOutputDir,
   PROJECT_IMAGE_ROOTS,
   PROJECT_SCENE_IMAGE_ROOTS,
   PROJECT_SCENE_MASK_ROOTS,
@@ -426,8 +427,16 @@ export class ImageService extends EventTarget {
       const oldPath = projectPath(imgDir, session.name, oldName);
       const newPath = projectPath(imgDir, session.name, newName);
       try {
+        if (imgDir === 'outs' && await backend.existFile(newPath)) {
+          throw new Error('새 이름으로 된 이미지 폴더가 이미 있습니다.');
+        }
+        const hadOutput = imgDir === 'outs' && await backend.existFile(oldPath);
         await backend.renameDir(oldPath, newPath);
+        if (hadOutput && (await backend.existFile(oldPath) || !(await backend.existFile(newPath)))) {
+          throw new Error('씬 이미지 폴더 이동을 확인하지 못했습니다.');
+        }
       } catch (e) {
+        if (imgDir === 'outs') throw e;
         console.error('rename scene error:', e);
       }
     }
@@ -452,10 +461,12 @@ export class ImageService extends EventTarget {
     oldName: string,
     newName: string,
   ): Promise<void> {
+    const scene = session.inpaints.get(oldName);
+    if (!scene) throw new Error(`변형 씬 "${oldName}"을(를) 찾을 수 없습니다.`);
     const moves: { from: string; to: string; dir: boolean }[] = [
       {
-        from: projectPath('inpaints', session.name, oldName),
-        to: projectPath('inpaints', session.name, newName),
+        from: sceneOutputDir(session.name, scene, oldName),
+        to: sceneOutputDir(session.name, scene, newName),
         dir: true,
       },
       ...maskDirList.map((root) => ({
@@ -477,7 +488,12 @@ export class ImageService extends EventTarget {
     const done: typeof moves = [];
     for (const m of pending) {
       try {
-        if (m.dir) await backend.renameDir(m.from, m.to);
+        if (m.dir) {
+          await backend.renameDir(m.from, m.to);
+          if (await backend.existFile(m.from) || !(await backend.existFile(m.to))) {
+            throw new Error('변형 작업 이미지 폴더 이동을 확인하지 못했습니다.');
+          }
+        }
         else await backend.renameFile(m.from, m.to);
         done.push(m);
       } catch (e) {
@@ -564,9 +580,10 @@ export class ImageService extends EventTarget {
         }
       }
 
-      // 비워진 source 폴더 정리 (남은 파일이 있으면 deleteDir가 실패할 수 있음 → 무시)
+      // Only remove empty directories. A source scene may contain variant
+      // folders, including image trash entries, or a file that failed to copy.
       try {
-        await backend.deleteDir(srcDir);
+        if ((await backend.listFiles(srcDir)).length === 0) await backend.deleteDir(srcDir);
       } catch (e) {
         /* 무시 */
       }
@@ -758,7 +775,7 @@ export class ImageService extends EventTarget {
   }
 
   getInPaintDir(session: Session, scene: InpaintScene) {
-    return projectPath('inpaints', session.name, scene.name);
+    return sceneOutputDir(session.name, scene);
   }
 
   getVibesDir(session: Session) {

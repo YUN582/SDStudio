@@ -106,7 +106,7 @@ jest.mock('../index', () => ({
   },
   isMobile: false,
   gameService: {},
-  taskQueueService: { addLog: jest.fn() },
+  taskQueueService: { addLog: jest.fn(), statsTasksFromScene: () => ({ done: 0, total: 0 }) },
   imageService: {
     invalidateCacheBatch: jest.fn(async () => {}),
     getOutputDir: (_s: any, scene: any) => dirOf(scene),
@@ -130,7 +130,8 @@ jest.mock('../appStateRef', () => ({
 import { TrashService } from '../TrashService';
 import { sessionService } from '../index';
 import { setWorkspaceLayoutActive } from '../storageLayout';
-import { Scene, Session } from '../types';
+import { InpaintScene, Scene, Session } from '../types';
+import { sceneOutputDir } from '../projectPaths';
 import { undoRef, UNDO_TEXT, UndoService } from '../undoService';
 import { SceneStructureOps } from '../sceneStructureUndo';
 import { cleanGameRanks, mergeImageOrder, rankingForFiles } from '../imageRanking';
@@ -146,6 +147,37 @@ import {
 } from '../deleteUndo';
 
 const lockMock = sessionService.guardCrossWindowLock as jest.Mock;
+
+test('nested variant files restore to their own work folder after image or scene trash', async () => {
+  const session = makeSession(scene('Parent', ['same.png']));
+  const variant = new InpaintScene();
+  variant.name = 'Repair';
+  variant.sceneRef = 'Parent';
+  variant.outputInSourceScene = true;
+  variant.imageMap = ['same.png'];
+  session.addScene(variant);
+  const { trash } = await makeOps();
+  const dir = sceneOutputDir(session.name, variant);
+  const file = dir + '/same.png';
+  files.set(file, 'variant');
+
+  await expect(trash.moveSceneToTrash(session, session.scenes.get('Parent')!)).rejects.toThrow('변형 작업');
+  expect((await trash.moveImagesToTrashDetailed(session, variant, [file])).moved).toEqual([file]);
+  expect((await trash.restoreImages(session, variant, ['same.png'])).restored).toEqual(['same.png']);
+  expect(files.get(file)).toBe('variant');
+  const slot = await trash.moveSceneToTrash(session, variant);
+  expect(files.get(`inpaints/P/.trash/${slot}/same.png`)).toBe('variant');
+  await trash.renameVariantTrashSource(session, 'Parent', 'Renamed');
+  const parent = session.scenes.get('Parent')!;
+  session.scenes.delete('Parent');
+  parent.name = 'Renamed';
+  session.addScene(parent);
+  movePrefix('outs/P/Parent', 'outs/P/Renamed');
+  const restored = await trash.restoreScene(session, slot!);
+  expect(restored).toMatchObject({ outputInSourceScene: true, sceneRef: 'Renamed' });
+  expect(files.get('outs/P/Renamed/variants/Repair/same.png')).toBe('variant');
+  expect(files.get('outs/P/Renamed/same.png')).toBe('Parent:same.png');
+});
 
 // ---- 하네스 ----
 function makeService() {

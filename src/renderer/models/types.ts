@@ -398,6 +398,7 @@ export interface IInpaintScene extends IAbstractScene {
   preset?: any;
   sceneRef?: string;
   sourceImage?: string;
+  outputInSourceScene?: true;
   slots?: IPromptPieceSlot[];
   mirrorCropX?: number;
   // I2I 조합 모드(2026-10-04 B4, comboMode.ts·SPEC §7-4) — 없으면 조합 모드 아님(5.4.0 은 무시).
@@ -413,6 +414,7 @@ export class InpaintScene extends AbstractScene implements IInpaintScene {
   @observable accessor preset: any | undefined = undefined;
   @observable accessor sceneRef: string | undefined = undefined;
   @observable accessor sourceImage: string | undefined = undefined;
+  @observable accessor outputInSourceScene: true | undefined = undefined;
   @observable accessor slots: PromptPieceSlot[] = [];
   @observable accessor mirrorCropX: number | undefined = undefined;
   @observable accessor comboMode: ComboMode | undefined = undefined;
@@ -423,6 +425,9 @@ export class InpaintScene extends AbstractScene implements IInpaintScene {
     const scene = new InpaintScene();
     Object.assign(scene, json);
     scene.type = 'inpaint';
+    scene.outputInSourceScene = json.outputInSourceScene === true && scene.sceneRef
+      ? true
+      : undefined;
     try {
       scene.preset = json.preset && workFlowService.presetFromJSON(json.preset);
       if (json.preset && !scene.preset) return null;
@@ -454,6 +459,7 @@ export class InpaintScene extends AbstractScene implements IInpaintScene {
       preset: this.preset?.toJSON(),
       sceneRef: this.sceneRef,
       sourceImage: this.sourceImage,
+      ...(this.outputInSourceScene && { outputInSourceScene: true as const }),
       ...(this.slots.length > 0 && {
         slots: this.slots.map((slot) => slot.map((piece) => piece.toJSON())),
       }),
@@ -890,6 +896,7 @@ export interface GallaryImageContextAlt {
   path: string[];
   scene?: GenericScene;
   starable?: boolean;
+  exportImages?: ReadonlyMap<GenericScene, readonly string[]>;
 }
 
 export interface SceneContextAlt {

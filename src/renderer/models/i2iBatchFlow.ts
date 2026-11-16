@@ -258,6 +258,7 @@ async function createVariantCopyScenes(
         ...inpaintSceneResolutionFields(workflow, src, image?.resolution),
         // 원본 씬 연결 — 결과 보기 「원본 씬으로 이미지 복사」·이미지 상세의 변형 씬 목록
         sceneRef: combo.sceneRef,
+        outputInSourceScene: true,
         // 조합 깊은 복사(toJSON→fromJSON — 원본 씬과 조각 객체를 공유하지 않음)·조합 모드
         slots: combo.slots,
         comboMode: combo.comboMode,

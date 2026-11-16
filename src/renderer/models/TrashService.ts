@@ -1,10 +1,11 @@
-import { backend, templateService, sessionService } from '.';
+import { backend, templateService, sessionService, taskQueueService } from '.';
 import { persistService } from './PersistenceService';
 import { GenericScene, IInpaintScene, IScene, Session, genericSceneFromJSON } from './types';
 import { imageService } from '.';
 import { isOutputImageFile, PNG_IMAGE_EXT } from './imageFormats';
 import {
   projectPath,
+  sceneOutputDir,
   projectFolderPath,
   projectJsonPath,
   workspacePath,
@@ -278,10 +279,7 @@ export class TrashService extends EventTarget {
   // ===== Image trash =====
 
   private getImageTrashDir(session: Session, scene: GenericScene): string {
-    const base = scene.type === 'scene'
-      ? projectPath('outs', session.name, scene.name)
-      : projectPath('inpaints', session.name, scene.name);
-    return base + '/' + IMAGE_TRASH_DIR;
+    return sceneOutputDir(session.name, scene) + '/' + IMAGE_TRASH_DIR;
   }
 
   private getImageTrashMetaPath(session: Session, scene: GenericScene): string {
@@ -379,9 +377,7 @@ export class TrashService extends EventTarget {
     filenames: string[],
   ): Promise<ImageTrashRestoreResult> {
     const trashDir = this.getImageTrashDir(session, scene);
-    const outputDir = scene.type === 'scene'
-      ? projectPath('outs', session.name, scene.name)
-      : projectPath('inpaints', session.name, scene.name);
+    const outputDir = sceneOutputDir(session.name, scene);
     const metaPath = this.getImageTrashMetaPath(session, scene);
     return this.imageMetaQueue.run(metaPath, async () => {
       const meta = await this.loadImageTrashMeta(session, scene);
@@ -582,6 +578,15 @@ export class TrashService extends EventTarget {
       new Error(
         `씬 "${scene.name}"을(를) 휴지통으로 옮기지 못해 삭제하지 않았습니다. ${reason}`,
       );
+    if (scene.type === 'scene' && [...session.inpaints.values()].some(
+      (variant) => variant.outputInSourceScene && variant.sceneRef === scene.name,
+    )) {
+      throw fail('이 폴더를 사용하는 변형 작업을 먼저 휴지통으로 옮겨 주세요.');
+    }
+    if (scene.type === 'inpaint' && scene.outputInSourceScene) {
+      const { total, done } = taskQueueService.statsTasksFromScene(session, scene);
+      if (total > done) throw fail('생성 예약을 완료하거나 제거해 주세요.');
+    }
     const imgDir: 'outs' | 'inpaints' = scene.type === 'scene' ? 'outs' : 'inpaints';
 
     // 1) 슬롯 이름 — 기록 키·휴지통 폴더·마스크 파일·sceneData.name 을 모두 이 이름으로 맞춘다.
@@ -623,7 +628,7 @@ export class TrashService extends EventTarget {
     }
 
     // 3) 씬 이미지 폴더 → .trash/<슬롯> (원본 폴더가 있을 때만 — 이미지 없는 씬은 폴더가 없어 정상).
-    const srcDir = projectPath(imgDir, session.name, scene.name);
+    const srcDir = sceneOutputDir(session.name, scene);
     const dstDir = projectPath(imgDir, session.name, IMAGE_TRASH_DIR, slot);
     if (await backend.existFile(srcDir)) {
       try {
@@ -731,6 +736,27 @@ export class TrashService extends EventTarget {
     return sceneTrashBelongsTo(entry, physicalDirOf(projectName));
   }
 
+  async renameVariantTrashSource(session: Session, oldName: string, newName: string): Promise<void> {
+    this.ensureLoaded();
+    const prefix = session.name + ':';
+    const updated: IInpaintScene[] = [];
+    for (const [key, entry] of Object.entries(this.data.scenes)) {
+      const scene = entry.sceneData;
+      if (key.startsWith(prefix) && this.sceneEntryBelongs(session.name, entry) &&
+          scene.type === 'inpaint' && scene.outputInSourceScene && scene.sceneRef === oldName) {
+        scene.sceneRef = newName;
+        updated.push(scene);
+      }
+    }
+    if (updated.length === 0) return;
+    try {
+      await this.saveTrash();
+    } catch (error) {
+      for (const scene of updated) scene.sceneRef = oldName;
+      throw error;
+    }
+  }
+
   getDeletedScenes(projectName: string): {
     name: string;
     type: 'scene' | 'inpaint';
@@ -797,6 +823,10 @@ export class TrashService extends EventTarget {
     }
     // 폴더 이름(키)과 씬 이름이 어긋난 옛 기록에서도 이미지 폴더와 씬이 짝을 이루도록 키 이름을 쓴다.
     if (restoredScene.name !== sceneName) restoredScene.name = sceneName;
+    if (restoredScene.type === 'inpaint' && restoredScene.outputInSourceScene &&
+        (!restoredScene.sceneRef || !session.scenes.has(restoredScene.sceneRef))) {
+      throw new Error('변형 작업을 복원하려면 원본 씬을 먼저 복원해 주세요.');
+    }
 
     const fail = (reason: string) =>
       new Error(`씬 "${sceneName}"을(를) 휴지통에서 복원하지 못했습니다. ${reason}`);
@@ -846,7 +876,7 @@ export class TrashService extends EventTarget {
     // 2) 씬 이미지 폴더 → 원래 위치 (projectPath 경유 — 신 배치 자동 분기)
     const imgDir: 'outs' | 'inpaints' = sceneType === 'scene' ? 'outs' : 'inpaints';
     const srcDir = projectPath(imgDir, session.name, IMAGE_TRASH_DIR, sceneName);
-    const dstDir = projectPath(imgDir, session.name, sceneName);
+    const dstDir = sceneOutputDir(session.name, restoredScene);
     if (await backend.existFile(srcDir)) {
       // 원래 자리에 같은 이름 폴더가 있으면 병합하지 않는다(PC Windows renameDir 은 실패 시
       // 복사로 넘어가 합쳐지고, Android 는 거부 — 존재 확인을 먼저 해 양쪽을 같게).
@@ -858,6 +888,10 @@ export class TrashService extends EventTarget {
       }
       let moveError: unknown = undefined;
       try {
+        if (restoredScene.type === 'inpaint' && restoredScene.outputInSourceScene) {
+          const parentDir = dstDir.slice(0, dstDir.lastIndexOf('/'));
+          await backend.writeFile(parentDir + '/.gitkeep', '');
+        }
         await backend.renameDir(srcDir, dstDir);
       } catch (e) {
         moveError = e;
@@ -1823,9 +1857,20 @@ export class TrashService extends EventTarget {
         } catch (e) {
           continue;
         }
-        for (const sceneDir of sceneDirs) {
-          if (sceneDir === IMAGE_TRASH_DIR || sceneDir.startsWith('.')) continue;
-          const trashMetaPath = projectPath(imgDir, projectName, sceneDir, IMAGE_TRASH_DIR, TRASH_META_FILE);
+        const outputDirs = sceneDirs
+          .filter((name) => !name.startsWith('.'))
+          .map((name) => projectPath(imgDir, projectName, name));
+        if (imgDir === 'outs') {
+          for (const parent of [...outputDirs]) {
+            const jobs = await backend.listFiles(parent + '/variants').catch(() => []);
+            for (const job of jobs) {
+              if (!invalidProjectName(job)) outputDirs.push(parent + '/variants/' + job);
+            }
+          }
+        }
+        for (const outputDir of outputDirs) {
+          const trashDir = outputDir + '/' + IMAGE_TRASH_DIR;
+          const trashMetaPath = trashDir + '/' + TRASH_META_FILE;
           if (!(await backend.existFile(trashMetaPath))) continue;
           // meta 읽고-쓰기 직렬화(U0-a T3) — 키는 getImageTrashMetaPath 와 같은 경로 문자열.
           await this.imageMetaQueue.run(trashMetaPath, async () => {
@@ -1839,9 +1884,7 @@ export class TrashService extends EventTarget {
               // 시계를 다시 돌린다 — 등록이 없으면 자동 정리 대상에서 영구히 빠진다.
               try {
                 const actual = (
-                  await backend.listFiles(
-                    projectPath(imgDir, projectName, sceneDir, IMAGE_TRASH_DIR),
-                  )
+                  await backend.listFiles(trashDir)
                 ).filter(isOutputImageFile);
                 for (const f of actual) {
                   if (!(f in meta)) {
@@ -1853,9 +1896,8 @@ export class TrashService extends EventTarget {
               for (const [filename, deletedAt] of Object.entries(meta)) {
                 const age = now - deletedAt;
                 if (age >= IMAGE_RETENTION_MS) {
-                  const trashPath = projectPath(
-                    imgDir, projectName, sceneDir, IMAGE_TRASH_DIR, filename,
-                  );
+                  if (invalidProjectName(filename)) continue;
+                  const trashPath = trashDir + '/' + filename;
                   let removed = false;
                   try {
                     await backend.deleteFile(trashPath);

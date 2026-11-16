@@ -49,6 +49,7 @@ import webpackPaths from '../../.erb/configs/webpack.paths';
 import { Config } from './config';
 import { launchCustomImageEditor } from './customImageEditor';
 import { registerEditedImageMetadata } from './editedImageMetadata';
+import { migrateVariantOutputs } from './variantOutputMigration';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
 import { extractStealthBits, embedStealthBits, canEmbed } from './stealth';
 import { spawn } from 'child_process';
@@ -365,6 +366,13 @@ async function readFileAsDataURL(filePath: any) {
 
 const DEFAULT_APP_DIR = app.getPath('userData') + '/' + 'SDStudio';
 let APP_DIR = DEFAULT_APP_DIR;
+let variantMigrationRun: ReturnType<typeof migrateVariantOutputs> | undefined;
+
+ipcMain.handle('migrate-variant-outputs', (event) => {
+  if (event.sender.id !== generationHostWcId) return { migrated: 0, deferred: 0 };
+  variantMigrationRun ??= migrateVariantOutputs(APP_DIR);
+  return variantMigrationRun;
+});
 // 프로그램 설치 폴더(패키징된 실행 파일이 있는 폴더). 개발 실행은 null.
 const INSTALL_DIR = resolveInstallDir(app.isPackaged, process.execPath);
 

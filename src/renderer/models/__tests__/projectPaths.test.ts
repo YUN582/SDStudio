@@ -20,12 +20,38 @@ import {
   projectJsonPath,
   projectPath,
   resolveProjectDir,
+  sceneOutputDir,
+  sceneOutputSegments,
 } from '../projectPaths';
 import { dirDeleteViolation } from '../../backends/dataPathGuard';
 import {
   setWorkspaceLayoutActive,
   registerProjectDir,
 } from '../storageLayout';
+
+describe('source-scene variant output', () => {
+  const legacy = { type: 'inpaint', name: 'Repair', sceneRef: 'Source' } as const;
+  const nested = { ...legacy, outputInSourceScene: true } as const;
+
+  afterEach(() => setWorkspaceLayoutActive(false));
+
+  it('keeps legacy work readable and isolates new work by name', () => {
+    expect(sceneOutputDir('Project', legacy)).toBe('inpaints/Project/Repair');
+    expect(sceneOutputDir('Project', nested)).toBe('outs/Project/Source/variants/Repair');
+    expect(sceneOutputDir('Project', nested, 'Renamed')).toBe('outs/Project/Source/variants/Renamed');
+    expect(sceneOutputSegments(nested).join('/')).toBe('outs/Source/variants/Repair');
+  });
+
+  it('uses the registered workspace and rejects invalid nested components', () => {
+    setWorkspaceLayoutActive(true);
+    registerProjectDir('VariantProject', 'VariantProject__12345678');
+    expect(sceneOutputDir('VariantProject', nested)).toBe(
+      'workspace/VariantProject__12345678/outs/Source/variants/Repair',
+    );
+    expect(() => sceneOutputDir('VariantProject', { ...nested, sceneRef: '../Source' })).toThrow();
+    expect(() => sceneOutputDir('VariantProject', nested, '.trash')).toThrow();
+  });
+});
 
 describe('projectPath 바이트 동일성 (기존 문자열 결합 대비)', () => {
   const name = '내 프로젝트';

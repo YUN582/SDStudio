@@ -30,6 +30,8 @@ import { isOutputImageFile } from './imageFormats';
 import { isWorkspaceBakHealCandidate } from './trashList';
 import {
   projectPath,
+  sceneOutputDir,
+  sceneOutputSegments,
   projectFolderPath,
   projectJsonPath,
   workspacePath,
@@ -1211,6 +1213,13 @@ export class SessionService extends ResourceSyncService<Session> {
               });
             }
           }
+          for (const variant of session.inpaints.values()) {
+            if (!variant.outputInSourceScene) continue;
+            imgCopyDirs.push({
+              src: sceneOutputDir(origName, variant),
+              dst: sceneOutputDir(newName, variant),
+            });
+          }
           // inpaint_orgs, inpaint_masks, vibes, references
           for (const flatDir of ['inpaint_orgs', 'inpaint_masks', 'vibes', 'references'] as const) {
             let files: string[];
@@ -1225,9 +1234,9 @@ export class SessionService extends ResourceSyncService<Session> {
           }
           // scene/inpaint directories
           for (const { src, dst } of imgCopyDirs) {
-            let files: string[];
-            try { files = await backend.listFiles(src); } catch (e) { continue; }
-            for (const f of files) {
+            let files: { name: string }[];
+            try { files = await backend.listFilesWithStats(src); } catch (e) { continue; }
+            for (const { name: f } of files) {
               if (f.startsWith('.')) continue;
               try {
                 await backend.copyFile(src + '/' + f, dst + '/' + f);
@@ -2571,7 +2580,7 @@ export class SessionService extends ResourceSyncService<Session> {
 
     // 모든 디렉토리를 병렬로 스캔
     const sceneNames = Array.from(session.scenes.values()).map((s) => s.name);
-    const inpaintNames = Array.from(session.inpaints.values()).map((s) => s.name);
+    const inpaintScenes = Array.from(session.inpaints.values());
 
     const [sceneResults, inpaintResults, inpaintOrgs, inpaintMasks, vibes, references] = await Promise.all([
       // 씬별 이미지 (병렬)
@@ -2580,9 +2589,9 @@ export class SessionService extends ResourceSyncService<Session> {
         files: await ignoreError(backend.listFiles(projectPath('outs', session.name, name))),
       }))),
       // 인페인트별 이미지 (병렬)
-      Promise.all(inpaintNames.map(async (name) => ({
-        name,
-        files: await ignoreError(backend.listFiles(projectPath('inpaints', session.name, name))),
+      Promise.all(inpaintScenes.map(async (scene) => ({
+        scene,
+        files: await ignoreError(backend.listFiles(sceneOutputDir(session.name, scene))),
       }))),
       ignoreError(backend.listFiles(projectPath('inpaint_orgs', session.name))),
       ignoreError(backend.listFiles(projectPath('inpaint_masks', session.name))),
@@ -2613,12 +2622,12 @@ export class SessionService extends ResourceSyncService<Session> {
         name: prefix + 'inpaint_masks/' + image,
       });
     }
-    for (const { name, files } of inpaintResults) {
+    for (const { scene, files } of inpaintResults) {
       for (const image of files) {
         if (!isOutputImageFile(image)) continue;
         entries.push({
-          path: projectPath('inpaints', session.name, name, image),
-          name: prefix + 'inpaints/' + name + '/' + image,
+          path: sceneOutputDir(session.name, scene) + '/' + image,
+          name: prefix + [...sceneOutputSegments(scene), image].join('/'),
         });
       }
     }
@@ -3092,9 +3101,27 @@ export const renameScene = async (
   // "newName 폴더는 있는데 세션엔 없다"고 오인할 수 있다. 작업 동안 세션을 in-flight 로
   // 표시해 그 사이 자동 저장이 해당 세션을 건너뛰게 한다.
   await sessionService.withLock([session.name], async () => {
+    const variants = [...session.inpaints.values()].filter(
+      (variant) => variant.outputInSourceScene && variant.sceneRef === oldName,
+    );
+    if (variants.some((variant) => {
+      const stats = taskQueueService.statsTasksFromScene(session, variant);
+      return stats.total > stats.done;
+    })) {
+      throw new Error('연결된 변형 작업의 생성 예약을 완료하거나 제거한 뒤 이름을 바꿔 주세요.');
+    }
     await imageService.onRenameScene(session, oldName, newName);
+    try {
+      await trashService.renameVariantTrashSource(session, oldName, newName);
+    } catch (error) {
+      await imageService.onRenameScene(session, newName, oldName);
+      throw error;
+    }
     const scene = session.scenes.get(oldName)!;
     scene.name = newName;
+    for (const variant of session.inpaints.values()) {
+      if (variant.sceneRef === oldName) variant.sceneRef = newName;
+    }
     // 순서 보존: Map은 삽입 순서를 유지하므로 delete→set 하면 새 이름이 맨 뒤로 밀린다.
     // 기존 키 자리에 새 이름을 끼워 Map을 재구성해 원래 위치를 지킨다(moveScene 재구성 패턴).
     const rebuilt = new Map();
@@ -3127,6 +3154,12 @@ export const renameInpaintScene = async (
     if (session.inpaints.has(newName)) {
       throw new Error(`같은 이름의 변형 씬 "${newName}"이(가) 이미 있습니다.`);
     }
+    if (scene.outputInSourceScene) {
+      const stats = taskQueueService.statsTasksFromScene(session, scene);
+      if (stats.total > stats.done) {
+        throw new Error('생성 예약을 완료하거나 제거한 뒤 변형 작업 이름을 바꿔 주세요.');
+      }
+    }
     await imageService.renameInpaintSceneFiles(session, oldName, newName);
     scene.name = newName;
     // 순서 보존(renameScene 과 같은 재구성)
@@ -3149,6 +3182,11 @@ export const mergeScene = async (
   targetName: string,
 ) => {
   if (sourceName === targetName) return;
+  if ([...session.inpaints.values()].some(
+    (variant) => variant.outputInSourceScene && variant.sceneRef === sourceName,
+  )) {
+    throw new Error('이 폴더를 사용하는 변형 작업을 먼저 휴지통으로 옮겨 주세요.');
+  }
   const target = session.scenes.get(targetName);
   if (!target) return;
   await imageService.mergeSceneImages(session, sourceName, targetName);

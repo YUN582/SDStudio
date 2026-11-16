@@ -17,6 +17,7 @@ import {
   physicalDirOf,
   PROJECT_JSON_FILE,
 } from './storageLayout';
+import type { GenericScene, IInpaintScene } from './types';
 
 export const PROJECT_JSON_ROOT = 'projects';
 
@@ -131,6 +132,24 @@ export function projectPath(
   return segments.length
     ? root + '/' + name + '/' + segments.join('/')
     : root + '/' + name;
+}
+
+type OutputScene = Pick<GenericScene, 'name' | 'type'> &
+  Pick<IInpaintScene, 'sceneRef' | 'outputInSourceScene'>;
+
+export function sceneOutputSegments(scene: OutputScene, name = scene.name): [ProjectImageRoot, ...string[]] {
+  if (scene.type === 'scene') return ['outs', name];
+  if (scene.outputInSourceScene === true && scene.sceneRef) {
+    assertValidProjectName(scene.sceneRef);
+    assertValidProjectName(name);
+    return ['outs', scene.sceneRef, 'variants', name];
+  }
+  return ['inpaints', name];
+}
+
+export function sceneOutputDir(project: string, scene: OutputScene, name = scene.name): string {
+  const [root, ...segments] = sceneOutputSegments(scene, name);
+  return projectPath(root, project, ...segments);
 }
 
 // 프로젝트 이름 → 물리 디렉터리 세그먼트 리졸버.

@@ -3,6 +3,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 export type Channels =
+  | 'migrate-variant-outputs'
   | 'write-file'
   | 'read-file'
   | 'delete-file'

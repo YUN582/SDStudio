@@ -23,7 +23,7 @@ import { runMobilePermissionOnboarding } from './mobilePermissions';
 import { waitForStorageAccess } from './storagePermissionGate';
 import { migrationService } from './MigrationService';
 import { applyMobileV2Default, StorageDetectKind } from './mobileV2Default';
-import { setWorkspaceLayoutActive } from './storageLayout';
+import { isWorkspaceLayout, setWorkspaceLayoutActive } from './storageLayout';
 import { WORKSPACE_ROOT } from './projectPaths';
 import type { Session } from './types';
 
@@ -305,6 +305,21 @@ export async function bootstrapApp(): Promise<void> {
           setWorkspaceLayoutActive(true);
         }
       } catch (e2) {}
+    }
+
+    if (window.electron && isWorkspaceLayout() && !bootWarnings?.saveLocationFallback &&
+        !bootWarnings?.configLoadFailure && taskQueueService.isGenerationHost) {
+      try {
+        const result = await window.electron.ipcRenderer.invoke('migrate-variant-outputs');
+        if (result?.migrated > 0) {
+          appState.pushMessage(`변형 작업 ${result.migrated}개의 저장 경로를 이관했습니다.`, 'info');
+        }
+        if (result?.deferred > 0) {
+          appState.pushMessage('일부 변형 작업의 저장 경로 이관을 보류했습니다. 기존 파일은 보존했습니다.', 'info');
+        }
+      } catch (error) {
+        console.error('변형 결과 저장 경로 이관 실패:', error);
+      }
     }
 
     // 1.7) 모바일 기본 배치=V2 (2026-09-27, 5.4.0 부터): 새 설치는 조용히 V2, 기존 사용자는 한 번 V2 로 바꾸고
