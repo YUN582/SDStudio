@@ -303,28 +303,28 @@ const ConfirmWindow = observer(() => {
               )}
             <div
               className={
-                'justify-end mt-4 ' +
+                'mt-4 ' +
                 (curDialog.type === 'select' || curDialog.type === 'dropdown' || curDialog.type === 'checkbox'
                   ? 'flex flex-col gap-2'
-                  : 'flex items-center')
+                  : curDialog.type === 'confirm' ? 'flex flex-col items-center gap-3' : 'flex items-center justify-center')
               }
             >
               {curDialog.type === 'confirm' && (
                 <>
                   {curDialog.showSkipConfirm && (
-                    <label className="flex items-center gap-2 mr-3 min-w-0 text-sm text-muted cursor-pointer select-none">
+                    <label className="flex items-center justify-center gap-2 min-w-0 text-sm text-muted cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={skipConfirm}
                         onChange={(e) => setSkipConfirm(e.target.checked)}
-                        className="w-4 h-4 rounded accent-sky-500"
+                        className="w-4 h-4 shrink-0 rounded accent-sky-500"
                       />
                       이번 세션에서 다시 묻지 않음
                     </label>
                   )}
                   {curDialog.confirmCheck && (
                     <label
-                      className="flex items-center gap-2 mr-3 min-w-0 text-sm text-muted cursor-pointer select-none"
+                      className="flex items-center justify-center gap-2 min-w-0 text-sm text-muted cursor-pointer select-none"
                       data-confirm-check=""
                     >
                       <input
@@ -340,9 +340,10 @@ const ConfirmWindow = observer(() => {
                     </label>
                   )}
                   {/* [확인][취소] 순서 고정. 색은 위험도로만 — 중립 파랑, 파괴적(danger) 빨강 */}
+                  <div className="flex flex-wrap items-center justify-center gap-2">
                   <button
                     className={
-                      'mr-2 px-4 py-2 rounded r-btn clickable ' +
+                      'px-4 py-2 rounded r-btn clickable ' +
                       (curDialog.danger ? 'back-red' : 'back-sky')
                     }
                     data-danger={curDialog.danger ? String(curDialog.danger) : undefined}
@@ -356,6 +357,7 @@ const ConfirmWindow = observer(() => {
                   >
                     {curDialog.cancelText ?? '취소'}
                   </button>
+                  </div>
                 </>
               )}
               {curDialog.type === 'yes-only' && (
