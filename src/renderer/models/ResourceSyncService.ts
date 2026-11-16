@@ -419,9 +419,17 @@ export abstract class ResourceSyncService<
     // 순서 보장 + 최신본 병합으로 처리된다.
     // (이 재확인과 write 의 큐 등록 사이엔 await 가 없어, 이후 시작되는 경로 변경은
     //  rename 직전의 persistService.flushPath 가 이 쓰기를 먼저 소진한다)
-    await persistService.write(this.getPath(name), payload);
+    try {
+      await persistService.write(this.getPath(name), payload);
+    } catch (error) {
+      if (String(error instanceof Error ? error.message : error).includes('WORKSPACE_CHANGED:')) return 'retry';
+      throw error;
+    }
+    this.resourceWritten(rc, payload);
     return 'done';
   }
+
+  protected resourceWritten(_instance: T, _data: string): void {}
 
   // 손실 방지 훅. 기본은 항상 허용. SessionService 가 오버라이드해
   // outs/inpaints 폴더(실제 씬 흔적)와 대조하여 위험한 쓰기를 막을 수 있다.
@@ -486,6 +494,10 @@ export abstract class ResourceSyncService<
 
   async update() {
     await this.flush();
+    return this.refreshList();
+  }
+
+  async refreshList() {
     try {
       this.resourceList = await this.getList();
       this.listState = 'ready';

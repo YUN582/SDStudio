@@ -70,7 +70,11 @@ jest.mock('../index', () => ({
   },
   imageService: { invalidateCacheBatch: jest.fn(async () => {}) },
   templateService: { removeProject: jest.fn(async () => {}) },
-  sessionService: { guardCrossWindowLock: jest.fn(async () => true) },
+  sessionService: {
+    guardCrossWindowLock: jest.fn(async () => true),
+    workspaceProjectId: jest.fn(() => undefined),
+    workspaceDirForId: jest.fn(() => undefined),
+  },
 }));
 jest.mock('../PersistenceService', () => ({
   persistService: {

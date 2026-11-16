@@ -379,6 +379,11 @@ export async function bootstrapApp(): Promise<void> {
 
   // 4) ready 이후 비차단 백그라운드 작업 — UI 표시를 막지 않는다
   // 자동 저장 루프 (반환하지 않음)
+  window.electron?.ipcRenderer.on('workspace-changed', () => {
+    if (appState.bootReady && !appState.configLoadFailure) {
+      sessionService.refreshList().catch(error => console.warn('workspace 목록 갱신 실패:', error));
+    }
+  });
   sessionService.runLoop().catch((e) => {
     console.error('자동 저장 루프 중단(치명적 — 저장 미가동 위험):', e);
   });

@@ -779,10 +779,14 @@ class MigrationService {
       name: led.logicalName,
       folder: led.folder,
     };
-    await backend.writeFile(
-      workspacePath(led.dir, PROJECT_META_FILE),
-      JSON.stringify(meta),
-    );
+    if (window.electron) {
+      await window.electron.ipcRenderer.invoke(
+        'workspace-create-project-dir', workspacePath(led.dir, PROJECT_META_FILE),
+        JSON.stringify(meta), true,
+      );
+    } else {
+      await backend.writeFile(workspacePath(led.dir, PROJECT_META_FILE), JSON.stringify(meta));
+    }
 
     // ④ 이미지 6루트(정규 순서) — 구 존재 시에만 이동(멱등).
     if (led.moveImages) {

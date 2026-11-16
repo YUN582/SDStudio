@@ -50,6 +50,7 @@ import { Config } from './config';
 import { launchCustomImageEditor } from './customImageEditor';
 import { registerEditedImageMetadata } from './editedImageMetadata';
 import { migrateVariantOutputs } from './variantOutputMigration';
+import { createWorkspaceAccess } from './workspaceAccess';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
 import { extractStealthBits, embedStealthBits, canEmbed } from './stealth';
 import { spawn } from 'child_process';
@@ -366,11 +367,25 @@ async function readFileAsDataURL(filePath: any) {
 
 const DEFAULT_APP_DIR = app.getPath('userData') + '/' + 'SDStudio';
 let APP_DIR = DEFAULT_APP_DIR;
+const workspaceAccess = createWorkspaceAccess(() => APP_DIR, () => broadcast('workspace-changed'));
+ipcMain.handle('workspace-snapshot', () => workspaceAccess.snapshot());
+ipcMain.handle('workspace-create-project-dir', (_event, relativePath, data, migrating = false) =>
+  workspaceAccess.createProjectDirectory(relativePath, data, migrating));
+ipcMain.handle('workspace-task-output', (_event, relativePath) => workspaceAccess.resolveTaskOutput(relativePath));
 let variantMigrationRun: ReturnType<typeof migrateVariantOutputs> | undefined;
 
 ipcMain.handle('migrate-variant-outputs', (event) => {
   if (event.sender.id !== generationHostWcId) return { migrated: 0, deferred: 0 };
-  variantMigrationRun ??= migrateVariantOutputs(APP_DIR);
+  if (!variantMigrationRun) {
+    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active').map(entry => entry.dir));
+    variantMigrationRun = migrateVariantOutputs(APP_DIR, async (file, previous, next) => {
+      const location = workspaceAccess.workspaceLocation(path.relative(APP_DIR, file));
+      if (!location || location.tail.join('/') !== 'project.json' || fsSync.readFileSync(file, 'utf8') !== previous) {
+        throw new Error('이관 중 프로젝트가 변경됐습니다.');
+      }
+      workspaceAccess.writeWorkspaceFile(location, next, 'utf8');
+    }, active);
+  }
   return variantMigrationRun;
 });
 // 프로그램 설치 폴더(패키징된 실행 파일이 있는 폴더). 개발 실행은 null.
@@ -819,6 +834,11 @@ ipcMain.handle('read-file', async (event, filename) => {
 });
 
 ipcMain.handle('write-file', async (event, filename, data) => {
+  const location = workspaceAccess.workspaceLocation(filename);
+  if (location) return workspaceAccess.writeWorkspaceFile(location, data, 'utf8', {
+    allowMetaRepair: location.tail[0] === 'meta.json',
+    allowInactive: ['meta.json', 'project.json.deleted'].includes(location.tail[0]),
+  });
   const dir = path.dirname(APP_DIR + '/' + filename);
   await fs.mkdir(dir, { recursive: true });
   const tmpFile = APP_DIR + '/' + uuidv4();
@@ -841,6 +861,9 @@ ipcMain.handle('write-global-file', async (event, filename, data) => {
 });
 
 ipcMain.handle('copy-file', async (event, src, dest) => {
+  if (workspaceAccess.workspaceLocation(dest)) {
+    return workspaceAccess.outputToWorkspace(dest, target => fs.copyFile(path.join(APP_DIR, src), target));
+  }
   const dir = path.dirname(APP_DIR + '/' + dest);
   await fs.mkdir(dir, { recursive: true });
   await fs.copyFile(APP_DIR + '/' + src, APP_DIR + '/' + dest);
@@ -979,11 +1002,11 @@ async function encodeImageFile(
 
 // 생성 이미지 PNG → WebP 변환 (NAI 프롬프트 메타데이터를 EXIF ImageDescription 으로 이월).
 ipcMain.handle('convert-to-webp', async (event, srcRel, destRel, quality) => {
-  await encodeImageFile(APP_DIR + '/' + srcRel, APP_DIR + '/' + destRel, {
+  await workspaceAccess.outputToWorkspace(destRel, target => encodeImageFile(APP_DIR + '/' + srcRel, target, {
     format: 'webp',
     quality: quality ?? 80,
     carryMetadata: true,
-  });
+  }));
 });
 
 ipcMain.handle('read-data-file', async (event, arg) => {
@@ -992,6 +1015,9 @@ ipcMain.handle('read-data-file', async (event, arg) => {
 
 ipcMain.handle('write-data-file', async (event, filename, data) => {
   const binaryData = Buffer.from(data, 'base64');
+  const location = workspaceAccess.workspaceLocation(filename);
+  if (location) return workspaceAccess.saveWorkspaceData(location,
+    new Uint8Array(binaryData.buffer, binaryData.byteOffset, binaryData.byteLength));
   const dir = path.dirname(APP_DIR + '/' + filename);
   await fs.mkdir(dir, { recursive: true });
   const tmpFile = APP_DIR + '/' + uuidv4();
@@ -1022,6 +1048,7 @@ ipcMain.handle('rename-file', async (event, oldfile, newfile) => {
   const newPath = path.join(APP_DIR, newfile);
   watchHandles.delete(oldPath);
   watchHandles.delete(newPath);
+  if (workspaceAccess.renameWorkspaceFile(oldfile, newfile)) return;
   await fs.mkdir(path.dirname(newPath), { recursive: true });
   return await fs.rename(oldPath, newPath);
 });
@@ -1062,6 +1089,8 @@ ipcMain.handle('rename-dir', async (event, oldfile, newfile) => {
       watchHandles.delete(curPath);
     }
   }
+
+  if (await workspaceAccess.renameWorkspaceDirectory(oldfile, newfile)) return;
 
   if (platform === 'win32') {
     await fs.mkdir(path.dirname(newPath), { recursive: true });
@@ -1353,7 +1382,7 @@ ipcMain.handle(
   ) => {
     try {
       const srcAbs = APP_DIR + '/' + inputPath;
-      const destAbs = APP_DIR + '/' + outputPath;
+      await workspaceAccess.outputToWorkspace(outputPath, async (destAbs) => {
       // optimize 미지정 = 순수 리사이즈(썸네일 생성 등). 포맷 변환·EXIF 이월 없이
       // 확장자대로 인코딩한다(기존 동작 불변).
       if (!optimize) {
@@ -1379,6 +1408,7 @@ ipcMain.handle(
         resize: { maxWidth, maxHeight },
         carryMetadata: true,
         preserveStealth,
+      });
       });
     } catch (e: any) {
       console.error('resize-image error:', e);
@@ -1819,12 +1849,11 @@ const qualityMap: any = {
 
 ipcMain.handle('remove-bg', async (event, inputImageBase64, outputPath) => {
   try {
-    outputPath = path.join(APP_DIR, outputPath);
-    await localAI.runModel(
+    await workspaceAccess.outputToWorkspace(outputPath, target => localAI.runModel(
       inputImageBase64,
       qualityMap[config.removeBgQuality ?? 'normal'],
-      outputPath,
-    );
+      target,
+    ));
   } catch (e: any) {
     console.error('remove-bg error:', e);
     throw new Error('배경 제거 실패: ' + (e.message || e));

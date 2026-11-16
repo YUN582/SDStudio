@@ -1,5 +1,6 @@
 import { backend, templateService, sessionService, taskQueueService } from '.';
 import { persistService } from './PersistenceService';
+import type { WorkspaceEntry, WorkspaceSnapshot } from './workspaceSnapshot';
 import { GenericScene, IInpaintScene, IScene, Session, genericSceneFromJSON } from './types';
 import { imageService } from '.';
 import { isOutputImageFile, PNG_IMAGE_EXT } from './imageFormats';
@@ -53,6 +54,7 @@ interface TrashSceneEntry {
   // 신 배치 물리 폴더(이름__짧은id) — 같은 이름 프로젝트(휴지통의 옛 P 와 활성 P)의 씬
   // 기록을 구분한다. 없으면(구 배치·구버전 기록) 프로젝트 이름(키 접두)으로만 판정.
   projectDir?: string;
+  projectId?: string;
 }
 
 /**
@@ -256,6 +258,38 @@ export class TrashService extends EventTarget {
       }
     }
     this.loaded = true;
+  }
+
+  async rememberWorkspaceSceneIds(aliases: Map<string, string>, snapshot: WorkspaceSnapshot): Promise<void> {
+    if (!this.loaded) return;
+    const folders = new Set(snapshot.dirs.map(dir => dir.toLowerCase()));
+    const bySuffix = new Map<string, WorkspaceEntry[]>();
+    const folderSuffix = (dir: string) => /__([0-9a-f]{8})$/i.exec(dir)?.[1].toLowerCase();
+    for (const project of snapshot.entries) {
+      const suffix = folderSuffix(project.dir);
+      if (!suffix) continue;
+      const matches = bySuffix.get(suffix) ?? [];
+      matches.push(project);
+      bySuffix.set(suffix, matches);
+    }
+    const linked: TrashSceneEntry[] = [];
+    for (const [key, entry] of Object.entries(this.data.scenes)) {
+      if (entry.projectId || !entry.projectDir) continue;
+      let id = aliases.get(entry.projectDir);
+      if (!id && !folders.has(entry.projectDir.toLowerCase())) {
+        const suffix = folderSuffix(entry.projectDir);
+        const matches = suffix ? bySuffix.get(suffix) ?? [] : [];
+        const project = matches.length === 1 ? matches[0] : undefined;
+        if (project?.id && project.name === key.split(':', 1)[0] &&
+            ['active', 'deleted'].includes(project.state) &&
+            project.id.replace(/-/g, '').toLowerCase().slice(0, 8) === suffix &&
+            sessionService.workspaceDirForId(project.id) === project.dir) id = project.id;
+      }
+      if (id) { entry.projectId = id; linked.push(entry); }
+    }
+    if (!linked.length) return;
+    try { await this.saveTrash(); }
+    catch (error) { for (const entry of linked) delete entry.projectId; throw error; }
   }
 
   async saveTrash(): Promise<void> {
@@ -664,7 +698,10 @@ export class TrashService extends EventTarget {
     const entry: TrashSceneEntry = { sceneData, deletedAt: Date.now() };
     if (slot !== scene.name) entry.originalName = scene.name;
     const projectDir = isWorkspaceLayout() ? physicalDirOf(session.name) : undefined;
-    if (projectDir) entry.projectDir = projectDir;
+    if (projectDir) {
+      entry.projectDir = projectDir;
+      entry.projectId = sessionService.workspaceProjectId(session.name);
+    }
     this.data.scenes[this.sceneKey(session.name, slot)] = entry;
 
     session.removeScene(scene.type, scene.name);
@@ -720,6 +757,11 @@ export class TrashService extends EventTarget {
     root: ProjectImageRoot,
     leaf: string,
   ): string {
+    if (isWorkspaceLayout() && entry?.projectId) {
+      const dir = sessionService.workspaceDirForId(entry.projectId);
+      if (!dir) throw new Error('휴지통 프로젝트 폴더를 확인할 수 없습니다.');
+      return workspacePath(dir, root, IMAGE_TRASH_DIR, leaf);
+    }
     if (
       isWorkspaceLayout() &&
       entry?.projectDir &&
@@ -733,6 +775,7 @@ export class TrashService extends EventTarget {
   // 이 프로젝트(지금 그 이름으로 열려 있는 것) 소속 기록인지. 구 배치는 이름만으로 판정.
   private sceneEntryBelongs(projectName: string, entry: TrashSceneEntry): boolean {
     if (!isWorkspaceLayout()) return true;
+    if (entry.projectId) return entry.projectId === sessionService.workspaceProjectId(projectName);
     return sceneTrashBelongsTo(entry, physicalDirOf(projectName));
   }
 
@@ -836,6 +879,23 @@ export class TrashService extends EventTarget {
     const key = this.sceneKey(session.name, sceneName);
     const entry = this.data.scenes[key];
     if (!entry) throw new Error('씬을 휴지통에서 찾을 수 없습니다');
+    if (window.electron && sessionService.workspaceProjects.has(session.name)) {
+      await sessionService.refreshList();
+      if (sessionService.getLoaded(session.name) !== session) {
+        throw new Error('프로젝트 폴더가 바뀌었습니다. 프로젝트를 다시 열어 주세요.');
+      }
+      const current = this.data.scenes[key];
+      if (current !== entry) {
+        if (!current || current.deletedAt !== entry.deletedAt || current.projectDir !== entry.projectDir ||
+            !this.sceneEntryBelongs(session.name, current)) {
+          throw new Error('씬 휴지통 항목이 바뀌었습니다. 목록을 다시 열어 주세요.');
+        }
+        entry.projectId = current.projectId;
+      }
+      if (entry.projectId && sessionService.workspaceDirForId(entry.projectId) !== sessionService.workspaceProjects.get(session.name)?.dir) {
+        throw new Error('프로젝트 폴더 또는 ID가 충돌해 씬 복원을 보류했습니다.');
+      }
+    }
     // 신 배치: 같은 이름의 다른 프로젝트(휴지통의 옛 프로젝트 등) 소속 기록은 여기서 복원하지 않는다.
     if (!this.sceneEntryBelongs(session.name, entry)) {
       throw new Error('이 씬은 같은 이름의 다른 프로젝트 휴지통 항목이라 여기서 복원할 수 없습니다');
@@ -908,6 +968,10 @@ export class TrashService extends EventTarget {
 
     // 2) 씬 이미지 폴더 → 원래 위치 (projectPath 경유 — 신 배치 자동 분기)
     const imgDir: 'outs' | 'inpaints' = sceneType === 'scene' ? 'outs' : 'inpaints';
+    if (isWorkspaceLayout() && window.electron && entry) {
+      if (entry.projectId && !sessionService.workspaceDirForId(entry.projectId)) return;
+      if (!entry.projectId && entry.projectDir && !(await backend.existFile(workspacePath(entry.projectDir)))) return;
+    }
     const srcDir = projectPath(imgDir, session.name, IMAGE_TRASH_DIR, sceneName);
     const dstDir = sceneOutputDir(session.name, restoredScene);
     if (await backend.existFile(srcDir)) {
@@ -1416,7 +1480,7 @@ export class TrashService extends EventTarget {
     if (isWorkspaceLayout()) {
       const dir = physicalDirOf(newName);
       const changed = await this.moveSceneKeys(oldName, newName, (entry) =>
-        sceneTrashBelongsTo(entry, dir),
+        entry.projectId ? entry.projectId === sessionService.workspaceProjectId(newName) : sceneTrashBelongsTo(entry, dir),
       );
       if (changed) await this.saveTrash();
       return;

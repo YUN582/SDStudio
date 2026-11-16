@@ -60,6 +60,16 @@ beforeEach(() => {
   writeFile.mockClear();
 });
 
+test('workspace conflict preserves dirty state until a later successful write', async () => {
+  const service = new TestService();
+  service.setResource('Project', { name: 'Project' });
+  writeFile.mockRejectedValueOnce(new Error('WORKSPACE_CHANGED: external edit'));
+  await service.runFlush();
+  expect(service.isDirty('Project')).toBe(true);
+  await service.runFlush();
+  expect(service.isDirty('Project')).toBe(false);
+});
+
 describe('ResourceSyncService flush/writeResource 재시도 로직', () => {
   test("'skip-keep'(일시적 보류) 이면 저장하지 않고 dirty 를 유지한다(회복 시 재시도)", async () => {
     const svc = new TestService();

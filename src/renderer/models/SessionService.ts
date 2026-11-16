@@ -1,3 +1,4 @@
+import type { WorkspaceEntry, WorkspaceSnapshot, WorkspaceScan } from './workspaceSnapshot';
 import extractChunks from 'png-chunks-extract';
 import { Buffer } from 'buffer';
 import { observable } from 'mobx';
@@ -251,10 +252,14 @@ export class SessionService extends ResourceSyncService<Session> {
       folder: opts?.folder ?? this.folderMap[name] ?? '',
     };
     try {
-      await backend.writeFile(
+      if (window.electron) {
+        await window.electron.ipcRenderer.invoke('workspace-create-project-dir', workspacePath(dir, PROJECT_META_FILE), JSON.stringify(meta));
+      } else {
+        await backend.writeFile(
         workspacePath(dir, PROJECT_META_FILE),
         JSON.stringify(meta),
       );
+      }
     } catch (e) {
       // meta.json 기록 실패 → 등록을 되돌려 "경로는 풀리는데 meta 는 없는" 갈라짐 방지.
       unregisterProjectDir(name);
@@ -295,12 +300,275 @@ export class SessionService extends ResourceSyncService<Session> {
   // 프로젝트 목록·folderMap(meta.folder 파생)·레지스트리를 채운다. project.json
   // 부재+project.json.deleted 존재 = 소프트 삭제 상태(목록 제외 — 구 .deleted 와
   // 동일 의미, 휴지통 스캔이 별도로 소비). meta 파손/부재 폴더는 경고 후 스킵.
+            workspaceSnapshot: WorkspaceSnapshot = { dirs: [], entries: [] };
+            workspaceProjects = new Map<string, WorkspaceEntry>();
+            workspaceWrites = new WeakMap<Session, string>();
+            workspaceNotices = new Map<string, string>();
+            workspacePendingScan?: Promise<WorkspaceScan>;
+            workspaceRefresh?: Promise<void>;
+
+            refreshList() {
+              if (!isWorkspaceLayout() || !window.electron) return super.refreshList();
+              if (!this.workspaceRefresh) {
+                this.workspaceRefresh = super.refreshList().finally(() => {
+                  this.workspaceRefresh = undefined;
+                });
+              }
+              return this.workspaceRefresh;
+            }
+
+            renameDesktopWorkspaceEntry(oldName: string, newName: string) {
+              const entry = this.workspaceProjects.get(oldName);
+              if (!entry) return;
+              this.workspaceProjects.delete(oldName);
+              this.workspaceProjects.set(newName, { ...entry, name: newName });
+            }
+
+            workspaceProjectId(name: string) {
+              return this.workspaceProjects.get(name)?.id;
+            }
+
+            workspaceDirForId(id: string) {
+              const matches = this.workspaceSnapshot.entries.filter(
+                (entry) => entry.id === id,
+              );
+              if (
+                matches.length === 1 &&
+                ["active", "deleted"].includes(matches[0].state)
+              )
+                return matches[0].dir;
+            }
+
+            workspaceNotice(name: string, key: string, message: string) {
+              if (this.workspaceNotices.get(name) === key) return;
+              this.workspaceNotices.set(name, key);
+              getAppState().pushMessage(message, "error");
+            }
+
+            async saveDetachedWorkspaceEdit(name: string, instance: Session) {
+              const data = JSON.stringify(instance.toJSON());
+              if (data === this.workspaceWrites.get(instance)) return;
+              const recovery = "workspace_recovery/" + v4() + ".json";
+              await backend.writeFile(recovery, data);
+              this.workspaceWrites.set(instance, data);
+              this.workspaceNotice(
+                name,
+                "saved-recovery",
+                '"' + name + '" 편집 내용을 ' + recovery + "에 보관했습니다.",
+              );
+            }
+
+            async add(name: string) {
+              if (isWorkspaceLayout() && window.electron) {
+                await this.refreshList();
+                if (
+                  this.workspaceProjects.has(name) ||
+                  this.workspaceSnapshot.entries.some(
+                    (entry) => entry.name === name && entry.state !== "deleted",
+                  )
+                )
+                  throw new Error(
+                    "같은 이름의 프로젝트가 이미 있거나 저장소 상태를 확인할 수 없습니다.",
+                  );
+              }
+              return await super.add(name);
+            }
+
+            scanDesktopWorkspace() {
+              if (!this.workspacePendingScan) {
+                this.workspacePendingScan =
+                  this.reconcileDesktopWorkspace().finally(() => {
+                    this.workspacePendingScan = undefined;
+                  });
+              }
+              return this.workspacePendingScan;
+            }
+
+            async reconcileDesktopWorkspace(): Promise<WorkspaceScan> {
+              let snapshot: WorkspaceSnapshot =
+                await window.electron.ipcRenderer.invoke("workspace-snapshot");
+              let repaired = false;
+              for (const entry of snapshot.entries) {
+                if (entry.state === "needs-meta") {
+                  repaired =
+                    !!(await this.recoverWorkspaceMeta(entry.dir)) || repaired;
+                } else if (
+                  entry.state === "incomplete" &&
+                  entry.hasBackup &&
+                  !this.isLoaded(entry.name ?? "") &&
+                  !snapshot.entries.some(
+                    (other) =>
+                      other.name === entry.name && other.state === "active",
+                  )
+                ) {
+                  repaired =
+                    (await this.restoreProjectJsonFromBak(entry.dir)) ||
+                    repaired;
+                }
+              }
+              if (repaired)
+                snapshot =
+                  await window.electron.ipcRenderer.invoke(
+                    "workspace-snapshot",
+                  );
+              const previous = this.workspaceProjects;
+              const current = new Map<string, WorkspaceEntry>();
+              const names: string[] = [];
+              const folderMap: Record<string, string | null> = Object.create(null);
+              const folders = new Set(this.folderOrderKnown());
+
+              for (const [name, entry] of previous) {
+                const deleted = snapshot.entries.some(
+                  (item) =>
+                    item.dir === entry.dir &&
+                    item.id === entry.id &&
+                    item.state === "deleted",
+                );
+                if (
+                  !deleted &&
+                  (snapshot.dirs.includes(entry.dir) ||
+                    snapshot.entries.some(
+                      (item) =>
+                        item.id === entry.id && item.state !== "deleted",
+                    ))
+                )
+                  continue;
+                const resource = this.entries.get(name);
+                if (resource && resource.state !== "ready") continue;
+                const instance = resource?.instance;
+                if (instance) {
+                  try {
+                    await this.saveDetachedWorkspaceEdit(name, instance);
+                  } catch {
+                    this.workspaceNotice(
+                      name,
+                      "recovery-failed",
+                      '"' +
+                        name +
+                        '" 폴더를 찾을 수 없습니다. 복구 사본을 저장할 수 없어 현재 편집을 메모리에 유지합니다.',
+                    );
+                    continue;
+                  }
+                  const app = getAppState();
+                  if (app.curSession === instance) app.curSession = undefined;
+                  this.evict(name);
+                }
+                if (physicalDirOf(name) === entry.dir) unregisterProjectDir(name);
+              }
+
+              for (const entry of snapshot.entries) {
+                if (
+                  entry.state !== "active" &&
+                  entry.state !== "changed" &&
+                  entry.state !== "conflict"
+                )
+                  continue;
+                const { name, dir, id, folder } = entry;
+ if (!name || !id) continue;
+                const old = previous.get(name);
+                const keep = old?.id === id && old.dir === dir;
+                if (entry.state !== "active") {
+                  const message =
+                    entry.state === "changed"
+                      ? "디스크의 project.json이 바뀌었습니다. 외부 파일과 앱의 편집 내용을 확인하기 전까지 저장을 보류합니다."
+                      : "같은 이름이나 ID를 가진 프로젝트 폴더가 충돌합니다. 폴더를 정리할 때까지 쓰기를 보류합니다.";
+                  this.workspaceNotice(
+                    name,
+                    entry.state,
+                    '"' + name + '": ' + message,
+                  );
+                  if (!keep) continue;
+                } else if (
+                  old &&
+                  old.id !== id &&
+                  this.entries.get(name)?.instance
+                ) {
+                  this.workspaceNotice(
+                    name,
+                    "replaced",
+                    '"' +
+                      name +
+                      '" 경로의 프로젝트 ID가 달라져 자동으로 열지 않았습니다.',
+                  );
+                  continue;
+                } else {
+                  this.workspaceNotices.delete(name);
+                }
+                if (current.has(name)) continue;
+                current.set(name, entry);
+                registerProjectDir(name, dir);
+                names.push(name);
+                folderMap[name] = folder || null;
+                if (folder) {
+                  let parent = "";
+                  for (const part of folder.split("/")) {
+                    parent = parent ? parent + "/" + part : part;
+                    folders.add(parent);
+                  }
+                }
+              }
+
+              for (const [name, entry] of previous) {
+                if (current.has(name)) continue;
+                if (
+                  snapshot.entries.some(
+                    (item) =>
+                      item.dir === entry.dir && item.state === "deleted",
+                  ) &&
+                  !this.entries.get(name)?.instance
+                )
+                  continue;
+                const inTransit = snapshot.entries.find(
+                  (item) => item.id === entry.id && item.state !== "deleted",
+                );
+                const directoryStillPresent = snapshot.dirs.includes(entry.dir);
+                if (
+                  inTransit ||
+                  directoryStillPresent ||
+                  this.entries.get(name)?.instance
+                )
+                  current.set(name, entry);
+              }
+
+              this.workspaceSnapshot = snapshot;
+              this.workspaceProjects = current;
+              const aliases = new Map<string, string>();
+              for (const [name, entry] of previous) {
+                const fresh = current.get(name);
+                if (
+                  fresh && fresh.id === entry.id &&
+                  fresh.dir !== entry.dir &&
+                  fresh.state === "active"
+                ) {
+                  if (fresh.id) aliases.set(entry.dir, fresh.id);
+                  const instance = this.entries.get(name)?.instance;
+                  if (instance) imageService.refreshBatch(instance).catch(() => {});
+                }
+              }
+              for (const entry of snapshot.entries) {
+                if (
+                  (entry.state === "active" || entry.state === "deleted") &&
+                  entry.id && this.workspaceDirForId(entry.id)
+                ) {
+                  if (entry.id) aliases.set(entry.dir, entry.id);
+                }
+              }
+              if (taskQueueService.isGenerationHost) {
+                await trashService.rememberWorkspaceSceneIds(aliases, snapshot).catch(
+                  (error) => console.error("씬 휴지통 경로 갱신 실패:", error),
+                );
+              }
+              return { names, folderMap, folderList: [...folders] };
+            }
+
+
   protected async scanResources(): Promise<{
     names: string[];
     folderMap: { [name: string]: string | null };
     folderList: string[];
   }> {
     if (!isWorkspaceLayout()) return super.scanResources();
+    if (window.electron) return this.scanDesktopWorkspace();
 
     const names: string[] = [];
     const folderMap: { [name: string]: string | null } = {};
@@ -1805,6 +2073,7 @@ export class SessionService extends ResourceSyncService<Session> {
       // 미실행으로 원 상태 보존.
       await this.updateWorkspaceMeta(oldName, { name: newName });
       renameProjectDirKey(oldName, newName);
+      this.renameDesktopWorkspaceEntry(oldName, newName);
       // 메모리 이동 (base rename 의 파일 rename 제외판)
       this.entries.delete(oldName);
       this.entries.set(newName, e);
@@ -2161,8 +2430,13 @@ export class SessionService extends ResourceSyncService<Session> {
     return missing;
   }
 
+  protected resourceWritten(instance: Session, data: string) {
+    if (isWorkspaceLayout() && window.electron) this.workspaceWrites.set(instance, data);
+  }
+
   async getHook(rc: Session, name: string) {
     rc.name = name;
+    if (this.workspaceProjects.has(name)) this.workspaceWrites.set(rc, JSON.stringify(rc.toJSON()));
   }
 
   async migrate(rc: any) {

@@ -1,4 +1,9 @@
 import { v4 } from 'uuid';
+
+async function resolveWorkspaceTaskPath(outputPath: string): Promise<string> {
+  if (!window.electron || !outputPath.startsWith('workspace/')) return outputPath;
+  return window.electron.ipcRenderer.invoke('workspace-task-output', outputPath);
+}
 import {
   CharacterReference,
   convertResolution,
@@ -347,7 +352,7 @@ class GenerateImageTaskHandler implements TaskHandler {
     let prompt = lowerPromptNode(job.prompt!);
     console.log('lowered prompt: ' + prompt);
     // 같은 ms 의 다른 요청과 이름이 겹치지 않는 단조 증가 타임스탬프(outputFileName, B0).
-    const outputFilePath = nextOutputPngPath(task.params.outputPath);
+    const outputFilePath = nextOutputPngPath(await resolveWorkspaceTaskPath(task.params.outputPath));
     if (prompt === '') {
       prompt = '1girl';
     }
@@ -979,7 +984,7 @@ class RemoveBgTaskHandler implements TaskHandler {
   }
 
   async handleTask(task: Task, run: TaskQueueRun) {
-    const outputFilePath = nextOutputPngPath(task.params.outputPath);
+    const outputFilePath = nextOutputPngPath(await resolveWorkspaceTaskPath(task.params.outputPath));
     const job = task.params.job as AugmentJob;
     await localAIService.removeBg(job.image!, outputFilePath);
     finishOrBridgeImage(task, outputFilePath);
@@ -1030,7 +1035,7 @@ class AugmentTaskHandler implements TaskHandler {
   }
 
   async handleTask(task: Task, run: TaskQueueRun, ctx?: TaskAttemptContext) {
-    const outputFilePath = nextOutputPngPath(task.params.outputPath);
+    const outputFilePath = nextOutputPngPath(await resolveWorkspaceTaskPath(task.params.outputPath));
     const job = task.params.job as AugmentJob;
     let prompt = lowerPromptNode(job.prompt!);
     const params: ImageAugmentInput = {
@@ -1109,7 +1114,7 @@ class UpscaleTaskHandler implements TaskHandler {
 
   async handleTask(task: Task, run: TaskQueueRun, ctx?: TaskAttemptContext) {
     const job = task.params.job as UpscaleJob;
-    const outputFilePath = task.params.outputPath + '/' + v4() + '.' + PNG_IMAGE_EXT;
+    const outputFilePath = (await resolveWorkspaceTaskPath(task.params.outputPath)) + '/' + v4() + '.' + PNG_IMAGE_EXT;
     const image = job.imagePath
       ? dataUriToBase64(await backend.readDataFile(job.imagePath))
       : job.image;
