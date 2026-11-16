@@ -2240,11 +2240,26 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       });
     }, [curSession]);
 
+    const deleteGalleryPaths = async (targets: string[]) => {
+        const deletion = beginImageDelete(curSession!);
+        try {
+          for (const [owner, files] of groupImagePaths(targets, imageOwners)) {
+            const result = await deletion.delete(owner, files);
+            for (const path of result.moved) selectedImages.current.delete(path);
+          }
+        } finally {
+          deletion.commit();
+        }
+        gallaryRef.current?.refresh();
+        gallaryRef2.current?.refresh();
+        forceUpdate({});
+      };
+
     const onDeleteImages = async (scene: GenericScene) => {
       // 삭제 대상은 실행 시점에 재계산한다 — 렌더 시점 스냅샷(paths)을 쓰면
       // 다이얼로그가 떠 있는 동안 새로 생성된 이미지(표시 순서상 맨 윗줄)가
       // 삭제 목록에서 빠져 화면에 남는 간헐 버그가 있었다.
-      const currentPaths = () => getScenePaths(scene);
+      const currentPaths = () => getPaths();
       // 이동 실패(파일 잠금 등)는 공용 deleteImageFiles 가 한 번 알린다(호출부에서 다시 알리지 않음, X13).
       // 「다시 묻지 않음」은 장수와 무관하게 이미지 삭제 전부에 적용(v5.4.0 범위) — 고르는 메뉴(select)와
       // n등 이하의 입력 창은 늘 띄우고, 그 뒤 개수 확인 창만 설정에 따라 생략한다(deleteFlowRules).
@@ -2266,7 +2281,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           },
         ],
         callback: async (value) => {
-          const notFav = (x: string) => !isMainImage || !isMainImage(x);
+          const notFav = (path: string) => !imageOwners.get(path)?.mains.includes(path.split('/').pop()!);
           // 확인 창은 대상 개수를 보인다(삭제 확인 문구 단일 출처, 2026-10-03 E1). 대상은 실행 시점에 다시 계산한다.
           const confirmDelete = (
             count: number,
@@ -2278,7 +2293,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
               return;
             }
             const doDel = async () => {
-              await deleteImageFilesRecorded(curSession!, targets(), scene);
+              await deleteGalleryPaths(targets());
             };
             if (shouldSkipImageDeleteConfirm(appState.skipImageDeleteConfirm, count)) {
               void doDel();
@@ -2333,9 +2348,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         selectedImages.current,
         Array.from(imageOwners.keys()),
       );
-      const hasVariantResults = activePaths.some((path) => imageOwners.get(path) !== scene);
-      const mixedScope = selectedTab < 2 && (imageFilter === 'variant' || hasVariantResults);
-      if (plan.kind === 'scene-menu' && !mixedScope) {
+      if (plan.kind === 'scene-menu') {
         onDeleteImages(scene);
         return;
       }
@@ -2343,23 +2356,10 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         appState.pushMessage(NO_SELECTED_IMAGES_MESSAGE);
         return;
       }
-      const targets = plan.kind === 'scene-menu' ? activePaths : plan.paths;
+      const targets = plan.paths;
       if (targets.length === 0) return;
-      const doDel = async () => {
-        const deletion = beginImageDelete(curSession!);
-        try {
-          for (const [owner, files] of groupImagePaths(targets, imageOwners)) {
-            const result = await deletion.delete(owner, files);
-            for (const path of result.moved) selectedImages.current.delete(path);
-          }
-        } finally {
-          deletion.commit();
-        }
-        gallaryRef.current?.refresh();
-        gallaryRef2.current?.refresh();
-        forceUpdate({});
-      };
-      if (plan.kind !== 'scene-menu' && shouldSkipImageDeleteConfirm(appState.skipImageDeleteConfirm, targets.length)) {
+      const doDel = () => deleteGalleryPaths(targets);
+      if (shouldSkipImageDeleteConfirm(appState.skipImageDeleteConfirm, targets.length)) {
         void doDel();
         return;
       }
@@ -2369,25 +2369,19 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           kind: 'image',
           count: targets.length,
           outcome: { trashDays: IMAGE_RETENTION_DAYS },
-          extra: plan.kind === 'scene-menu' ? '현재 목록에 표시된 이미지가 대상입니다.' : undefined,
+          
         }),
-        showSkipConfirm: plan.kind !== 'scene-menu' && showImageDeleteSkipOption(targets.length),
+        showSkipConfirm: showImageDeleteSkipOption(targets.length),
         callback: doDel,
       });
     };
 
     const getPaths = useCallback(() => {
-      const groups = imageFilter === 'variant' ? [] : [scene];
-      if (imageFilter !== 'original') {
-        groups.push(...linkedImageVariants(scene, curSession!.inpaints.values()));
-      }
-      return groups.flatMap((owner) => {
-        const outputs = getScenePaths(owner);
-        return selectedTab !== 1 ? outputs : outputs.filter((path) =>
-          owner.mains.includes(path.split('/').pop()!),
-        );
-      });
-    }, [getScenePaths, scene, curSession, imageFilter, selectedTab]);
+      return imageService.getSceneGalleryEntries(curSession!, scene)
+        .filter(entry => imageFilter === 'all' || (imageFilter === 'original' ? entry.owner === scene : entry.owner !== scene))
+        .filter(entry => selectedTab !== 1 || entry.owner.mains.includes(entry.filename))
+        .map(entry => entry.path);
+    }, [scene, curSession, imageFilter, selectedTab]);
 
     // ===== 이미지 그리드 키보드 네비게이션 =====
     const focusedImageIndex = focusedImagePath
