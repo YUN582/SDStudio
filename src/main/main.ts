@@ -47,6 +47,7 @@ const { exiftool } = require('exiftool-vendored');
 const chokidar = require('chokidar');
 import webpackPaths from '../../.erb/configs/webpack.paths';
 import { Config } from './config';
+import { launchCustomImageEditor } from './customImageEditor';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
 import { extractStealthBits, embedStealthBits, canEmbed } from './stealth';
 import { spawn } from 'child_process';
@@ -1463,6 +1464,10 @@ const os = require('os');
 
 async function openImageEditor(inputPath: string) {
   const editor = config.imageEditor ?? 'photoshop';
+  if (editor === 'custom' && process.platform === 'win32') {
+    await launchCustomImageEditor(config.customImageEditorPath, path.resolve(inputPath));
+    return;
+  }
   const homeDir = os.homedir();
   const gimpBaseDirCand1 = path.join(homeDir, 'AppData', 'Local', 'Programs');
   const gimpBaseDirCand2 = 'C:\\Program Files';
@@ -1526,8 +1531,11 @@ async function openImageEditor(inputPath: string) {
   }
 
   const editorsToTry = ['photoshop', 'gimp', 'mspaint'];
-  editorsToTry.splice(editorsToTry.indexOf(editor), 1);
-  editorsToTry.unshift(editor);
+  const preferredIndex = editorsToTry.indexOf(editor);
+  if (preferredIndex !== -1) {
+    editorsToTry.splice(preferredIndex, 1);
+    editorsToTry.unshift(editor);
+  }
   const runProgram = async (program: string) => {
     // mac 만 앱 번들을 open -a 로 열고, win/linux 는 실행 파일 직접 실행.
     const command =

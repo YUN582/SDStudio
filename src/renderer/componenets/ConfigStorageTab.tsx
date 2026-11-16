@@ -12,20 +12,31 @@ import { SaveLocationRestartButton } from './SaveLocationPendingBar';
 
 /* ── 탭 2: 이미지 편집 및 배경 제거 ── */
 const ImageEditTab = ({
-  imageEditor, setImageEditor,
+  imageEditor, setImageEditor, customImageEditorPath, selectCustomImageEditor,
   useLocalBgRemoval, setUseLocalBgRemoval,
   ready, stage, progress, stageTexts,
   useGPU, setUseGPU, quality, setQuality,
 }: any) => (
   <div className="space-y-4">
     <div>
-      <label className="block text-sm font-semibold gray-label mb-1">선호 이미지 편집기</label>
-      <select className="mt-1 block w-full rounded-md line-color shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+      <label htmlFor="cfgImageEditor" className="block text-sm font-semibold gray-label mb-1">선호 이미지 편집기</label>
+      <select id="cfgImageEditor" className="mt-1 block w-full rounded-md line-color shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
         value={imageEditor} onChange={(e) => setImageEditor(e.target.value)}>
         <option value="photoshop">포토샵</option>
         <option value="gimp">GIMP</option>
         <option value="mspaint">그림판</option>
+        {platform.supportsCustomImageEditor && <option value="custom">사용자 지정</option>}
       </select>
+      {platform.supportsCustomImageEditor && imageEditor === 'custom' && (
+        <div className="mt-2 space-y-2">
+          <div className="text-xs text-muted break-all">
+            {customImageEditorPath || '이미지 편집기의 실행 파일(.exe)을 선택해주세요.'}
+          </div>
+          <button type="button" className="btn px-3 py-2 back-gray rounded" onClick={selectCustomImageEditor}>
+            실행 파일 선택
+          </button>
+        </div>
+      )}
       {platform.isLinux && (
         <p className="text-xs text-muted mt-1">
           리눅스에서는 GIMP만 지원됩니다 (PATH 의 gimp 실행).

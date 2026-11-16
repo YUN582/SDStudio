@@ -16,6 +16,7 @@ const backend = {
   }),
   getDataRoot: jest.fn(async () => '/data-root'),
   selectDir: jest.fn(async (): Promise<string | undefined> => undefined),
+  selectFile: jest.fn(async (): Promise<string | undefined> => undefined),
   checkWritable: jest.fn(async (_folder: string) => ({ ok: true as boolean, code: undefined as string | undefined })),
   listFilesWithStats: jest.fn(async () => []),
   getRuntimeDiag: jest.fn(async () => ({ cpus: 8, uvThreadpool: 8 })),
@@ -108,6 +109,7 @@ jest.mock('../platform', () => {
     get(target: any, key: string) {
       if (key === 'isMobile') return mockMobile;
       if (key === 'isLinux') return false;
+      if (key === 'supportsCustomImageEditor') return !mockMobile;
       if (key === 'supportsRemoveBg') return !mockMobile;
       if (key === 'maxImageConcurrency') return mockMobile ? 2 : 8;
       return target[key];
@@ -717,6 +719,22 @@ test.each(MOBILE_CASES)('4-모바일 %s: 배지 → 저장 인자', async (_n, c
   expect(await save()).toEqual({ ...BASE_SAVE, ...c.expected });
   expect(dirty()).toBe(false);
   c.after?.();
+});
+
+test('사용자 지정 이미지 편집기는 실행 파일을 선택한 뒤 저장된다', async () => {
+  const executable = 'C:\\Program Files\\CELSYS\\CLIPStudioPaint.exe';
+  backend.selectFile.mockResolvedValueOnce(executable);
+  await open(false);
+  const panel = await selectTab('저장 경로');
+  const select = panel.querySelector<HTMLSelectElement>('#cfgImageEditor')!;
+  await act(async () => {
+    select.value = 'custom';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await click(buttonByText(panel, '실행 파일 선택'));
+  expect(panel.textContent).toContain(executable);
+  expect(dirty()).toBe(true);
+  expect(await save()).toEqual({ ...BASE_SAVE, imageEditor: 'custom', customImageEditorPath: executable });
 });
 
 // ─── 5. 즉시 저장 필드는 「저장」이 덮어쓰지 않는다 ───

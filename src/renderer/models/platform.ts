@@ -20,6 +20,7 @@ const isLinux = !isMobile && window.navigator.platform.startsWith('Linux');
 export const platform = {
   isMobile,
   isLinux,
+  supportsCustomImageEditor: !isMobile && window.navigator.platform.startsWith('Win'),
 
   // --- 튜닝 상수 ---
   imageCacheSize: isMobile ? 64 : 256,

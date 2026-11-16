@@ -11,6 +11,7 @@ import {
   sessionService,
 } from '../models';
 import { Config, ImageEditor, RemoveBgQuality, UiThemeConfig, UiToolbarConfig } from '../../main/config';
+import { platform } from '../models/platform';
 import { defaultLayoutTemplateId } from '../models/layoutTemplates';
 import {
   MODERN_COMPANION_DEFAULTS,
@@ -824,7 +825,8 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   } = useHScrollHint<HTMLDivElement>();
 
   // state
-  const [imageEditor, setImageEditor] = useState('');
+  const [imageEditor, setImageEditor] = useState<ImageEditor>('photoshop');
+  const [customImageEditorPath, setCustomImageEditorPath] = useState('');
   const [useGPU, setUseGPU] = useState(false);
   const [whiteMode, setWhiteMode] = useState(false);
   const [requestDelayMs, setRequestDelayMs] = useState(REQUEST_DELAY_DEFAULT_MS);
@@ -891,7 +893,13 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       .getDataRoot()
       .catch(() => config.saveLocation ?? '');
     setWhiteMode(config.whiteMode ?? false);
-    setImageEditor(config.imageEditor ?? 'photoshop');
+    const preferredEditor = config.imageEditor ?? 'photoshop';
+    setImageEditor(
+      preferredEditor === 'custom' && !platform.supportsCustomImageEditor
+        ? 'photoshop'
+        : preferredEditor,
+    );
+    setCustomImageEditorPath(config.customImageEditorPath ?? '');
     setUseGPU(config.useCUDA ?? false);
     setQuality(config.removeBgQuality ?? 'normal');
     setRefreshImage(config.refreshImage ?? false);
@@ -1064,7 +1072,22 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
 
   const stageTexts = ['모델 다운로드 중...', '모델 가중치 다운로드 중...', '모델 압축 푸는 중...'];
 
+  const selectCustomImageEditor = async () => {
+    try {
+      const executable = await backend.selectFile({
+        filters: [{ name: '실행 파일', extensions: ['exe'] }],
+      });
+      if (executable) setCustomImageEditorPath(executable);
+    } catch {
+      appState.pushMessage('이미지 편집기 실행 파일을 선택하지 못했습니다.', 'error');
+    }
+  };
+
   const handleSave = async () => {
+    if (platform.supportsCustomImageEditor && imageEditor === 'custom' && !customImageEditorPath) {
+      appState.pushMessage('이미지 편집기의 실행 파일(.exe)을 먼저 선택해주세요.', 'error');
+      return;
+    }
     const old = await backend.getConfig();
     // 짧은 지연 경고(T3): 권장 최소값(REQUEST_DELAY_WARNING_BELOW_MS) 미만으로 바꿔 저장하면 저장 전에 묻는다. 선택형 확인 창 —
     // [이해했습니다]=저장, [다시 알리지 않음]=저장+표식, 취소·Esc·뒤로 가기=저장하지 않음.
@@ -1083,7 +1106,10 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     }
     const config: Config = {
       ...old,
-      imageEditor: imageEditor as ImageEditor,
+      imageEditor,
+      ...(platform.supportsCustomImageEditor && customImageEditorPath
+        ? { customImageEditorPath }
+        : {}),
       useCUDA: useGPU,
       modelType: 'quality',
       removeBgQuality: quality as RemoveBgQuality,
@@ -1244,7 +1270,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       case 'login':
         return <LoginTab {...{ accessToken, setAccessToken, loggedIn, loginWithToken, roundTag, multiTokenAutoRotate, setMultiTokenAutoRotate, multiTokenRotateWarning, setMultiTokenRotateWarning, multiTokenRotateTarget, setMultiTokenRotateTarget, multiTokenBalanceRotate, setMultiTokenBalanceRotate, multiTokenRotateBalance, setMultiTokenRotateBalance, boostSettings, setBoostSettings, boostModeChoice, setBoostModeChoice }} />;
       case 'storage':
-        return <StorageImageTab {...{ saveLocation, dataRoot, selectFolder, clearImageCache, refreshImage, setRefreshImage, defaultExportFolder, setDefaultExportFolder, selectDefaultExportFolder, autoConvertWebp, setAutoConvertWebp, autoWebpQuality, setAutoWebpQuality, imageEditor, setImageEditor, useLocalBgRemoval, setUseLocalBgRemoval, ready, stage, progress, stageTexts, useGPU, setUseGPU, quality, setQuality }} />;
+        return <StorageImageTab {...{ saveLocation, dataRoot, selectFolder, clearImageCache, refreshImage, setRefreshImage, defaultExportFolder, setDefaultExportFolder, selectDefaultExportFolder, autoConvertWebp, setAutoConvertWebp, autoWebpQuality, setAutoWebpQuality, imageEditor, setImageEditor, customImageEditorPath, selectCustomImageEditor, useLocalBgRemoval, setUseLocalBgRemoval, ready, stage, progress, stageTexts, useGPU, setUseGPU, quality, setQuality }} />;
       case 'system':
         return <SystemTab {...{ requestDelayMs, setRequestDelayMs, requestDelayJitterMs, setRequestDelayJitterMs, storageWriteGuard, setStorageWriteGuard, exportConcurrency, setExportConcurrency, autoConvertWebp, setAutoConvertWebp, autoWebpQuality, setAutoWebpQuality }} />;
       case 'drive':
@@ -1270,7 +1296,10 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   // saveLocation 은 선택 즉시 저장되므로 제외. 객체(uiTheme/uiToolbar)는 JSON 직렬화 비교.
   const dirty =
     savedCfg != null &&
-    (imageEditor !== (savedCfg.imageEditor ?? 'photoshop') ||
+    (imageEditor !== (savedCfg.imageEditor === 'custom' && !platform.supportsCustomImageEditor
+      ? 'photoshop'
+      : savedCfg.imageEditor ?? 'photoshop') ||
+      customImageEditorPath !== (savedCfg.customImageEditorPath ?? '') ||
       useGPU !== (savedCfg.useCUDA ?? false) ||
       quality !== (savedCfg.removeBgQuality ?? 'normal') ||
       refreshImage !== (savedCfg.refreshImage ?? false) ||

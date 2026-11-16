@@ -4,7 +4,7 @@ import {
   ModelVersion,
 } from '../renderer/backends/imageGen';
 
-export type ImageEditor = 'photoshop' | 'gimp' | 'mspaint';
+export type ImageEditor = 'photoshop' | 'gimp' | 'mspaint' | 'custom';
 
 export type ModelType = 'fast' | 'quality';
 
@@ -31,6 +31,7 @@ export interface ImageSaveSettings {
 
 export interface Config {
   imageEditor?: ImageEditor;
+  customImageEditorPath?: string;
   modelType?: ModelType;
   removeBgQuality?: RemoveBgQuality;
   useLocalBgRemoval?: boolean;

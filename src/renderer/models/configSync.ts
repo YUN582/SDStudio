@@ -96,6 +96,7 @@ export const CONFIG_SYNC_EXCLUDED = [
   'useLocalBgRemoval',
   'modelType',
   'imageEditor',
+  'customImageEditorPath',
   'refreshImage',
   'defaultExportFolder',
   'downloadSettings',
