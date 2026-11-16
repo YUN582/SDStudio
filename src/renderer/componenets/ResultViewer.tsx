@@ -92,6 +92,7 @@ import {
 import {
   recordImageOrder,
   setImageFavorites,
+  toggleGalleryFavorites,
   toggleImageBookmarkRecorded,
   toggleImageFavorite,
 } from '../models/imageStateUndo';
@@ -2060,8 +2061,9 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     const isFavorite = (path: string) => {
       return !!imageOwners.get(path)?.mains.includes(path.split('/').pop()!);
     };
-    const imagePaths = imageFilter === 'original' ? paths
-      : imageFilter === 'variant' ? variantPaths : [...paths, ...variantPaths];
+    const imagePaths = imageService.getSceneGalleryEntries(curSession!, scene)
+      .filter(entry => imageFilter === 'all' || (imageFilter === 'original' ? entry.owner === scene : entry.owner !== scene))
+      .map(entry => entry.path);
     const favoritePaths = imagePaths.filter(isFavorite);
     const activePaths = selectedTab === 0 ? imagePaths : selectedTab === 1 ? favoritePaths : [];
     const closeVariants = () => {
@@ -2148,10 +2150,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
 
     const onToggleFavoriteSelected = useCallback(() => {
       if (selectedImages.current.size === 0) return;
-      // 선택 이미지 즐겨찾기 일괄 전환 — 파일마다 반전, 되돌리기는 1항목(U3a)
-      for (const [owner, files] of groupImagePaths(selectedImages.current, imageOwners)) {
-        setImageFavorites(curSession!, owner, files.map((p) => p.split('/').pop()!), 'toggle');
-      }
+      toggleGalleryFavorites(curSession!, groupImagePaths(selectedImages.current, imageOwners));
       if (gallaryRef.current) gallaryRef.current.refresh();
       if (gallaryRef2.current) gallaryRef2.current.refresh();
       sessionService.markDirty(curSession!.name);

@@ -257,31 +257,8 @@ export class ExportPresetService {
         separator,
       );
       for (const scene of scenes) {
-        const cands = gameService.getOutputs(session, scene);
-        const dir = imageService.getOutputDir(session, scene);
-        const imageMap: any = {};
-        cands.forEach((x) => {
-          imageMap[x] = true;
-        });
-        const images: string[] = [];
-        if (selectedImages) {
-          const wanted = new Set(selectedImages.get(scene));
-          images.push(...cands.filter((name) => wanted.has(`${dir}/${name}`)));
-        } else if (fav) {
-          if (scene.mains.length) {
-            for (const main of scene.mains) {
-              if (imageMap[main]) images.push(main);
-            }
-          } else {
-            if (cands.length) {
-              images.push(cands[0]);
-            }
-          }
-        } else {
-          for (const cand of cands) {
-            images.push(cand);
-          }
-        }
+        const images = imageService.getSceneExportEntries(session, scene, fav,
+          selectedImages ? selectedImages.get(scene) ?? [] : undefined);
         // 캐릭터 프리셋 파일명 옵션 적용 (토글 off 면 접두/접미사 미적용)
         const characterPreset = applyCharacterAffix
           ? characterAffix
@@ -303,13 +280,14 @@ export class ExportPresetService {
           finalPresetPrefix = finalPresetPrefix.replace(regex, separator);
           finalPresetSuffix = finalPresetSuffix.replace(regex, separator);
         }
-        const isMirror = scene.type === 'inpaint' && (scene as InpaintScene).workflowType === 'SDMirror';
         for (let i = 0; i < images.length; i++) {
-          let imgPath = dir + '/' + images[i];
+          const { owner } = images[i];
+          const isMirror = owner.type === 'inpaint' && owner.workflowType === 'SDMirror';
+          let imgPath = images[i].path;
           if (isMirror) {
             const imgData = await imageService.fetchImage(imgPath);
             if (imgData) {
-              const cropped = await cropMirrorResultFromDataUri(imgData, (scene as InpaintScene).mirrorCropX);
+              const cropped = await cropMirrorResultFromDataUri(imgData, (owner as InpaintScene).mirrorCropX);
               const tmpPath = 'tmp/' + v4() + '.png';
               await backend.writeDataFile(tmpPath, cropped);
               imgPath = tmpPath;

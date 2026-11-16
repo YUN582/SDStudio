@@ -12,6 +12,7 @@
 // · 생성 설정 적용은 프로젝트(세션) 부분만 — 환경설정(config)·글로벌 프리셋 대상은 기록하지 않는다.
 // · 서비스는 models/index.ts 가 configureImageStateUndo 로 넣는다(순환 import 회피 — 테스트는 ops 를 직접 넘긴다).
 import { runInAction } from 'mobx';
+import { galleryFavoritePlan } from './sceneImageVariants';
 import { cloneRanking, rankingForFiles, RankingSnapshot, roundStartRanking, sameRanking } from './imageRanking';
 import { captureSceneFields, flushSceneFieldEdit, SceneFieldKey } from './sceneFieldUndo';
 import { sceneInSession } from './sceneStructureUndo';
@@ -207,6 +208,14 @@ export function setFavoritesInScenes(
     group?.commit();
   }
   return total;
+}
+
+/** One gallery action adds all selected favorites, or removes all if every image is already a favorite. */
+export function toggleGalleryFavorites(session: Session, groups: ReadonlyMap<GenericScene, readonly string[]>): number {
+  const plan = galleryFavoritePlan(groups);
+  if (!plan.count) return 0;
+  return setFavoritesInScenes(session, plan.targets.map(target => ({ ...target, on: plan.add })),
+    `이미지 ${plan.count}장 즐겨찾기 ${plan.add ? '지정' : '해제'}`);
 }
 
 // ── 이미지 북마크(씬당 1개) ────────────────────────────────────────────────

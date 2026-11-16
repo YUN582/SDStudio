@@ -7,7 +7,16 @@ const getOutputs = jest.fn((_session, _scene) => ['image.webp']);
 const platform = { supportsTargetFolder: true, maxImageConcurrency: 2, exportConcurrency: 2 };
 const state: any = { pushDialogAsync: jest.fn(), pushMessage: jest.fn(), showExportComplete: jest.fn(), getAppliedCharacterPreset: () => undefined };
 jest.mock('..', () => ({
-  imageService: { refreshBatch, getOutputDir: (session: any, scene: any) => `${session.name}/${scene.name}` },
+  imageService: {
+    refreshBatch,
+    getOutputDir: (session: any, scene: any) => `${session.name}/${scene.name}`,
+    getSceneExportEntries: (session: any, scene: any, favoritesOnly: boolean, selectedPaths?: Iterable<string>) => {
+      const { linkedImageVariants, orderGalleryEntries, selectGalleryExportEntries } = require('../sceneImageVariants');
+      const owners = [scene, ...linkedImageVariants(scene, session.inpaints?.values() ?? [])];
+      const entries = orderGalleryEntries(owners.map(owner => getOutputs(session, owner).map(filename => ({ owner, filename, path: `${session.name}/${owner.name}/${filename}` }))), scene);
+      return selectGalleryExportEntries(entries, favoritesOnly, selectedPaths);
+    },
+  },
   gameService: { refreshList: jest.fn(), getOutputs },
   sessionService: { getFolderOf: () => null, folderLeafName: () => '' },
   zipService: { zipFiles, isZipping: false },
@@ -115,6 +124,16 @@ test('mobile ignores desktop target folders and uses publication', async () => {
   await service.exportPackage('scene', undefined, { ...exportFormToPreset(emptyExportForm()), targetFolder: '/target' });
   expect(copyFileToAbsolute).not.toHaveBeenCalled();
   expect(publishExport).toHaveBeenCalledTimes(1);
+});
+
+test('normal scene favorite export includes its edited result instead of the original', async () => {
+  const source = { name: 'source', type: 'scene', mains: [] };
+  const edit = { name: 'edit', type: 'inpaint', workflowType: 'SDInpaint', sceneRef: 'source', mains: ['same.png'] };
+  session.getScenes = () => [source];
+  session.inpaints = new Map([['edit', edit]]);
+  getOutputs.mockReturnValue(['same.png']);
+  await service.exportPackage('scene', undefined, exportFormToPreset(emptyExportForm()));
+  expect(zipFiles.mock.calls[0][0]).toEqual([{ path: 'original-project/edit/same.png', name: 'source.png' }]);
 });
 
 test('direct ZIP choice reaches archive creation and publication with .zip', async () => {

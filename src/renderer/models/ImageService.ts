@@ -22,6 +22,7 @@ import {
   ProjectImageRoot,
 } from './projectPaths';
 import { v4 } from 'uuid';
+import { GALLERY_ORDER_KEY, galleryImageKey, linkedImageVariants, orderGalleryEntries, selectGalleryExportEntries } from './sceneImageVariants';
 
 export const supportedImageSizes = [200, 400, 500];
 const imageDirList = [...PROJECT_SCENE_IMAGE_ROOTS];
@@ -761,6 +762,24 @@ export class ImageService extends EventTarget {
       return [];
     }
     return this.inpaints[session.name][scene.name];
+  }
+
+  get galleryOrderKey() { return GALLERY_ORDER_KEY; }
+
+  getGalleryImageKey(owner: GenericScene, filename: string, scene: GenericScene) {
+    return galleryImageKey(owner, filename, scene);
+  }
+
+  getSceneGalleryEntries(session: Session, scene: GenericScene) {
+    const owners = [scene, ...linkedImageVariants(scene, session.inpaints.values())];
+    return orderGalleryEntries(owners.map(owner => {
+      const directory = this.getOutputDir(session, owner);
+      return gameService.getOutputs(session, owner).map(filename => ({ owner, filename, path: directory + '/' + filename }));
+    }), scene);
+  }
+
+  getSceneExportEntries(session: Session, scene: GenericScene, favoritesOnly: boolean, selectedPaths?: Iterable<string>) {
+    return selectGalleryExportEntries(this.getSceneGalleryEntries(session, scene), favoritesOnly, selectedPaths);
   }
 
   getOutputDir(session: Session, scene: GenericScene) {

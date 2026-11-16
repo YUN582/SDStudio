@@ -29,6 +29,11 @@ const images = Object.assign(new TrackedEvents(), {
   fetchImageSmall: jest.fn(async () => 'preview-current'),
   fetchVibeImage: jest.fn(async () => 'representative'),
   getOutputDir: (_session: any, scene: any) => scene.outputDir ?? 'outs/project/scene',
+  getSceneGalleryEntries: (session: any, scene: any) => {
+    const { linkedImageVariants, orderGalleryEntries } = require('../sceneImageVariants');
+    return orderGalleryEntries([scene, ...linkedImageVariants(scene, session.inpaints.values())].map((owner: any) =>
+      game.getOutputs(session, owner).map((filename: string) => ({ owner, filename, path: images.getOutputDir(session, owner) + '/' + filename }))), scene);
+  },
 });
 const sessions = Object.assign(new TrackedEvents(), {
   getSceneBookmark: () => undefined,
@@ -172,6 +177,11 @@ test.each([false, true])('scene cards count linked results and preview their fil
     expect(container.textContent).toContain('head bump2');
     expect(currentImage()).toBe('original-cover');
 
+    await act(async () => { runInAction(() => { variant.mains.push('result.png'); }); });
+    expect(currentImage()).toBe('preview-current');
+    expect(images.fetchImageSmall).toHaveBeenLastCalledWith(`${variant.outputDir}/result.png`, expect.any(Number));
+    expect(container.querySelector('.border-yellow-400')).not.toBeNull();
+
     const navigate = (action: string) => window.dispatchEvent(new CustomEvent('scene-image-nav', {
       detail: { sceneName: scene.name, sceneType: scene.type, action },
     }));
@@ -189,6 +199,7 @@ test.each([false, true])('scene cards count linked results and preview their fil
 });
 
 test('hidden cards detach display subscriptions, preserve DOM and catch up once', async () => {
+  outputs = []; // With no results, the work's representative image loader is used.
   await renderCard();
   const card = container.firstChild;
   expect(getImage).toHaveBeenCalledTimes(1);
@@ -215,6 +226,7 @@ test('hidden cards detach display subscriptions, preserve DOM and catch up once'
 });
 
 test.each(['resolve', 'reject'] as const)('discard %s from an obsolete image request after reactivation', async (finish) => {
+  outputs = [];
   const old = deferred();
   getImage.mockReturnValueOnce(old.promise).mockResolvedValue('fresh');
   await renderCard();
@@ -225,6 +237,7 @@ test.each(['resolve', 'reject'] as const)('discard %s from an obsolete image req
 });
 
 test('newer image events win and changing getImage identity does not resubscribe', async () => {
+  outputs = [];
   await renderCard();
   const old = deferred();
   getImage.mockReturnValueOnce(old.promise).mockResolvedValue('newest');

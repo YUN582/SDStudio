@@ -535,19 +535,13 @@ export const SceneCell = observer(
     const cellSizes3 = ['', '', ''];
 
     const originalOutputs = gameService.getOutputs(curSession, scene);
-    const outputs = originalOutputs.map((filename) => ({ owner: scene, filename }));
-    for (const owner of linkedImageVariants(scene, curSession.inpaints.values())) {
-      for (const filename of gameService.getOutputs(curSession, owner)) {
-        outputs.push({ owner, filename });
-      }
-    }
+    const outputs = imageService.getSceneGalleryEntries(curSession, scene);
     const totalImages = outputs.length;
     const previewOutput = outputs[previewIndex];
-    const fallbackOutput = scene.type === 'scene' && originalOutputs.length === 0
-      ? outputs.find(({ owner, filename }) => owner.mains.includes(filename)) ?? outputs[0]
-      : undefined;
+    const fallbackOutput = outputs.find(entry => entry.owner === scene && entry.filename === scene.mains[0])
+      ?? outputs.find(({ owner, filename }) => owner.mains.includes(filename)) ?? outputs[0];
     const currentOutput = previewOutput ?? fallbackOutput;
-    const currentFavoriteCount = (currentOutput?.owner ?? scene).mains.length;
+    const currentFavoriteCount = outputs.filter(({ owner, filename }) => owner.mains.includes(filename)).length;
     const currentPreviewIsFavorite = currentOutput
       ? currentOutput.owner.mains.includes(currentOutput.filename)
       : currentFavoriteCount > 0;
@@ -556,7 +550,7 @@ export const SceneCell = observer(
     const previewPath = previewOutput
       ? `${imageService.getOutputDir(curSession, previewOutput.owner)}/${previewOutput.filename}`
       : undefined;
-    const fallbackPath = fallbackOutput
+    const fallbackPath = fallbackOutput && (fallbackOutput.owner !== scene || scene.type === 'inpaint')
       ? `${imageService.getOutputDir(curSession, fallbackOutput.owner)}/${fallbackOutput.filename}`
       : undefined;
 
@@ -1116,7 +1110,7 @@ export const SceneCell = observer(
       <div
         id={`scene-cell-${scene.type}-${scene.name}`}
         className={`${disableHover ? '' : 'group '}relative z-0 ${isMobile ? 'm-[5px]' : 'm-[8.5px]'} p-1 rounded-lg bg-[var(--c-surface-2)] border-2 ${
-          currentPreviewIsFavorite
+          currentFavoriteCount > 0
             ? 'border-yellow-400 '
             : isSelected
               ? 'border-sky-500 '
