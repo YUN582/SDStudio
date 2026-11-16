@@ -1117,6 +1117,7 @@ const ResultDetailView = observer(
     const [selectedIndex, setSelectedIndex] =
       useState<number>(initialSelectedIndex);
     const [paths, setPaths] = useState<string[]>(getPaths());
+    const viewedImagePath = paths[selectedIndex];
     const [filename, setFilename] = useState<string>(
       paths[selectedIndex].split('/').pop()!,
     );
@@ -1141,31 +1142,30 @@ const ResultDetailView = observer(
     const [uc, setUc] = useState<string>('');
     const [_, forceUpdate] = useState<{}>({});
     useEffect(() => {
-      let cancelled = false;
+      if (!viewedImagePath) return;
+      let request = 0;
       const fetchImage = async () => {
-        if (!paths[selectedIndex]) return;
+        const currentRequest = ++request;
         setImage(undefined);
         setImageLoadFailed(false);
         setUpscaleInfo(undefined);
         try {
-          let base64Image = await imageService.fetchImage(
-            paths[selectedIndex],
-          )!;
-          if (!base64Image) {
+          const fullImage = await imageService.fetchImage(viewedImagePath);
+          if (currentRequest !== request) return;
+          if (!fullImage) {
             throw new Error('이미지 파일을 찾을 수 없습니다.');
           }
-          if (cancelled) return;
-          setImage(base64Image!);
-          base64Image = dataUriToBase64(base64Image!);
-          const upscalePath = paths[selectedIndex];
+          setImage(fullImage);
+          const base64Image = dataUriToBase64(fullImage);
           void getImageDimensions(base64Image).then(({ width, height }) => {
             const cost = estimateNaiUpscaleCost(width, height);
-            if (!cancelled) setUpscaleInfo({ path: upscalePath, cost });
+            if (currentRequest === request) setUpscaleInfo({ path: viewedImagePath, cost });
           }).catch((e) => {
-            if (!cancelled) setUpscaleInfo({ path: upscalePath, error: e?.message ?? '이미지 확인 실패' });
+            if (currentRequest === request) setUpscaleInfo({ path: viewedImagePath, error: e?.message ?? '이미지 확인 실패' });
           });
           try {
             const job = await extractPromptDataFromBase64(base64Image);
+            if (currentRequest !== request) return;
             if (job) {
               const { prompt, seed, promptGuidance, sampling, steps, uc } = job;
               setMiddlePrompt(prompt);
@@ -1185,6 +1185,7 @@ const ResultDetailView = observer(
               setUc('');
             }
           } catch (e: any) {
+            if (currentRequest !== request) return;
             setMiddlePrompt('');
             setCharacterPrompts([]);
             setSeed('');
@@ -1193,9 +1194,9 @@ const ResultDetailView = observer(
             setSteps('');
             setUc('');
           }
-          setFilename(paths[selectedIndex].split('/').pop()!);
+          setFilename(viewedImagePath.split('/').pop()!);
         } catch (e: any) {
-          if (cancelled) return;
+          if (currentRequest !== request) return;
           console.log(e);
           setImage(undefined);
           setImageLoadFailed(true);
@@ -1209,10 +1210,24 @@ const ResultDetailView = observer(
           setFilename('');
         }
       };
+      const onImageInvalidated = (event: Event) => {
+        const detail = (event as CustomEvent<{ path: string; paths?: string[] }>).detail;
+        if (detail?.path === viewedImagePath || detail?.paths?.includes(viewedImagePath)) {
+          void fetchImage();
+        }
+      };
+      void fetchImage();
+      imageService.addEventListener('image-cache-invalidated', onImageInvalidated);
+      return () => {
+        request++;
+        imageService.removeEventListener('image-cache-invalidated', onImageInvalidated);
+      };
+    }, [viewedImagePath, imageRetryRevision]);
+
+    useEffect(() => {
       const rerender = () => {
         forceUpdate({});
       };
-      fetchImage();
       filenameRef.current = paths[selectedIndex].split('/').pop()!;
       const handleKeyDown = async (e: KeyboardEvent) => {
         // 입력 칸 포커스 중엔 전부, 확인 창이 열려 있으면 Delete/Backspace 무시(2026-11-01 U0-b E7)
@@ -1300,14 +1315,11 @@ const ResultDetailView = observer(
       window.addEventListener('keydown', handleKeyDown);
       window.addEventListener('shortcut-action', handleShortcut);
       sessionService.addEventListener('main-image-updated', rerender);
-      imageService.addEventListener('image-cache-invalidated', fetchImage);
       gameService.addEventListener('updated', refreshPaths);
       return () => {
-        cancelled = true;
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('shortcut-action', handleShortcut);
         sessionService.removeEventListener('main-image-updated', rerender);
-        imageService.removeEventListener('image-cache-invalidated', fetchImage);
         gameService.removeEventListener('updated', refreshPaths);
       };
     }, [selectedIndex, paths, imageRetryRevision]);
@@ -1382,12 +1394,12 @@ const ResultDetailView = observer(
       if (!image) return;
       appState.openExternalImage(dataUriToBase64(image), scene);
     };
-    const upscaleTitle = upscaleInfo?.error ?? '가로·세로 2배 · 원본 유지 · Anlas 사용';
-    const upscaleDisabled =
-      upscalePreparing || upscaleInfo?.path !== paths[selectedIndex] || !upscaleInfo?.cost;
+    const currentUpscaleInfo = upscaleInfo?.path === viewedImagePath ? upscaleInfo : undefined;
+    const upscaleTitle = currentUpscaleInfo?.error ?? '가로·세로 2배 · 원본 유지 · Anlas 사용';
+    const upscaleDisabled = upscalePreparing || !currentUpscaleInfo?.cost;
     const upscaleLabel = upscalePreparing
       ? '예약 중…'
-      : `업스케일 ×2 · ${upscaleInfo?.path === paths[selectedIndex] && upscaleInfo.cost ? `${upscaleInfo.cost} Anlas` : upscaleInfo?.error ? '미지원' : '…'}`;
+      : `업스케일 ×2 · ${currentUpscaleInfo?.cost ? `${currentUpscaleInfo.cost} Anlas` : currentUpscaleInfo?.error ? '미지원' : '…'}`;
     const actUpscale = async () => {
       const path = paths[selectedIndex];
       const session = curSession;
