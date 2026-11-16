@@ -199,75 +199,98 @@ export function getPromptCommentAtSelection(
   );
 }
 
-/**
- * 커서 기준 주석 토글(모바일 키보드 위 칩 # 버튼, 2026-10-03).
- * - 주석 안(getPromptCommentAtSelection)이면 그 주석의 여는·닫는 `##` 만 지운다(안쪽 텍스트 보존).
- * - 아니면 커서 쉼표 구획의 core(앞뒤 공백 제외, 가중치 래퍼 포함)를 `##core##` 로 감싼다.
- *   빈 구획이거나, 감싸면 다른 주석의 짝이 바뀌는 경우(core 안의 `##`, 다른 곳의 짝 없는 `##` 등)는 undefined.
- * 가중치는 건드리지 않는다. 저장 데이터·NAI 전송 처리(stripPromptComments)는 그대로.
- */
+/** Toggle a prompt comment, including its trailing comma and horizontal spacing. */
 export function togglePromptCommentAtSelection(
   text: string,
   selectionStart: number,
   selectionEnd: number,
+  useSelectedText = false,
 ): PromptWeightAdjustment | undefined {
-  const comment = getPromptCommentAtSelection(text, selectionStart);
+  const exact = useSelectedText && selectionStart !== selectionEnd;
+  const ranges = promptCommentRanges(text);
+  let comment = exact
+    ? ranges.find(
+        (range) =>
+          range.start <= selectionStart && selectionEnd <= range.end,
+      )
+    : getPromptCommentAtSelection(text, selectionStart);
+  if (
+    !exact &&
+    comment?.end === selectionStart &&
+    selectionStart < text.length &&
+    !/[,\s]/.test(text[selectionStart])
+  ) {
+    comment = ranges.find((range) => range.start === selectionStart);
+  }
   if (comment) {
     const { start, end } = comment;
-    const innerEnd = end - 4;
-    const mapPosition = (position: number) => {
-      const p = clamp(position, 0, text.length);
-      if (p <= start) return p;
-      if (p <= start + 2) return start;
-      if (p <= end - 2) return p - 2;
-      if (p <= end) return innerEnd;
-      return p - 4;
+    const map = (position: number) => {
+      const point = clamp(position, 0, text.length);
+      if (point <= start) return point;
+      if (point <= start + 2) return start;
+      if (point <= end - 2) return point - 2;
+      if (point <= end) return end - 4;
+      return point - 4;
     };
     return {
       text:
         text.slice(0, start) +
         text.slice(start + 2, end - 2) +
         text.slice(end),
-      selectionStart: mapPosition(selectionStart),
-      selectionEnd: mapPosition(selectionEnd),
+      selectionStart: map(selectionStart),
+      selectionEnd: map(selectionEnd),
     };
   }
-
-  const { segmentStart, leading, core } = caretSegmentOf(text, selectionStart);
-  if (!core) return undefined;
-  const coreStart = segmentStart + leading.length;
-  const coreEnd = coreStart + core.length;
+  const left =
+    [...ranges].reverse().find((range) => range.end <= selectionStart)?.end ?? 0;
+  const right =
+    ranges.find((range) => range.start > selectionStart)?.start ??
+    text.length;
+  const { segmentStart, leading, core } = caretSegmentOf(
+    text.slice(left, right),
+    selectionStart - left,
+  );
+  const start = exact
+    ? selectionStart
+    : left + segmentStart + leading.length;
+  const contentEnd = exact ? selectionEnd : start + core.length;
+  const content = text.slice(start, contentEnd);
+  if (!content.trim()) return;
+  const remainder = text.slice(contentEnd);
+  const separator = /,[^\S\r\n]*$/.test(content)
+    ? remainder.match(/^[^\S\r\n]*/)
+    : remainder.match(
+        /^(?:[^\S\r\n]*,[^\S\r\n]*|[^\S\r\n]+(?=\r?\n|$))/,
+      );
+  const end = contentEnd + (separator?.[0].length ?? 0);
+  const selected = text.slice(start, end);
   const next =
-    text.slice(0, coreStart) + '##' + core + '##' + text.slice(coreEnd);
-
-  // 감싼 뒤의 주석 범위가 「기존 주석(위치만 이동) + 새 주석 하나」와 정확히 같을 때만 허용한다.
-  // core 안에 `##` 가 섞였거나 다른 곳에 짝 없는 `##` 가 있으면 짝이 바뀌어 여기서 거부된다.
-  const expected = [
-    ...promptCommentRanges(text).map((r) =>
-      r.end <= coreStart ? r : { start: r.start + 4, end: r.end + 4 },
-    ),
-    { start: coreStart, end: coreEnd + 4 },
-  ].sort((a, b) => a.start - b.start);
+    text.slice(0, start) + "##" + selected + "##" + text.slice(end);
+  const expected = ranges.map((range) =>
+    range.end <= start
+      ? range
+      : { start: range.start + 4, end: range.end + 4 },
+  );
+  expected.push({ start, end: end + 4 });
+  expected.sort((a, b) => a.start - b.start);
   const actual = promptCommentRanges(next);
   if (
     actual.length !== expected.length ||
     actual.some(
-      (r, i) => r.start !== expected[i].start || r.end !== expected[i].end,
+      (range, i) =>
+        range.start !== expected[i].start ||
+        range.end !== expected[i].end,
     )
-  ) {
-    return undefined;
-  }
-
-  const mapPosition = (position: number) => {
-    const p = clamp(position, 0, text.length);
-    if (p < coreStart) return p;
-    if (p <= coreEnd) return p + 2;
-    return p + 4;
+  )
+    return;
+  const map = (position: number) => {
+    const point = clamp(position, 0, text.length);
+    return point < start ? point : point <= end ? point + 2 : point + 4;
   };
   return {
     text: next,
-    selectionStart: mapPosition(selectionStart),
-    selectionEnd: mapPosition(selectionEnd),
+    selectionStart: map(selectionStart),
+    selectionEnd: map(selectionEnd),
   };
 }
 

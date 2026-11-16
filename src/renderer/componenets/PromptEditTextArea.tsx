@@ -355,6 +355,17 @@ class CursorMemorizeEditor {
     return true;
   }
 
+  async toggleComment() {
+    const [start, end] = this.getCaretPosition();
+    const adjusted = togglePromptCommentAtSelection(this.curText, start, end, true);
+    if (!adjusted) return;
+    this.pushHistory();
+    this.compositionBuffer = [];
+    this.updateCurText(adjusted.text);
+    this.updateDOM(adjusted.text, adjusted.selectionStart, false);
+    await this.setCaretPosition([adjusted.selectionStart, adjusted.selectionEnd]);
+  }
+
   getCurWord(start: number) {
     let curText = this.domText;
     let startIdx = start;
@@ -514,7 +525,18 @@ class CursorMemorizeEditor {
   }
 
   async handleKeyDown(e: any) {
+    // Consume synchronously: the global Ctrl+3 tab shortcut must not also run.
+    const commentShortcut = e.ctrlKey && !e.altKey && !e.metaKey &&
+      !e.shiftKey && !e.isComposing && (e.code === 'Digit3' || e.key === '3');
+    if (commentShortcut) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     await mutex.runExclusive(async () => {
+      if (commentShortcut) {
+        await this.toggleComment();
+        return;
+      }
       const koreanRegex = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/g;
       const selection = window.getSelection()!;
       const range = selection.getRangeAt(0);
@@ -1286,12 +1308,13 @@ const NativeEditTextArea = observer(
         );
       };
 
-      const toggleComment = () => {
+      const toggleComment = (useSelectedText = false) => {
         applyCaretEdit(
           togglePromptCommentAtSelection(
             textareaRef.current.value,
             textareaRef.current.selectionStart,
             textareaRef.current.selectionEnd,
+            useSelectedText,
           ),
         );
       };
@@ -1471,7 +1494,13 @@ const NativeEditTextArea = observer(
                 adjustWeight(e.deltaY < 0 ? 0.05 : -0.05);
               }}
               onKeyDown={(e: any) => {
-                if (
+                if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey &&
+                    !e.isComposing && (e.code === 'Digit3' || e.key === '3')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeAutoComplete();
+                  toggleComment(true);
+                } else if (
                   e.ctrlKey &&
                   (e.key === 'ArrowUp' || e.key === 'ArrowDown')
                 ) {
