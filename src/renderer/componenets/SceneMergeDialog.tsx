@@ -128,7 +128,7 @@ const SceneMergeForm = observer(function SceneMergeForm({ request }: { request: 
             {picking ? `합칠 씬 선택 (${selected.length}개)` : '남길 씬'}
           </legend>
           <div className="grid gap-2 overflow-auto p-1"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(7rem, 1fr))', maxHeight: '34vh' }}>
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(7rem, 1fr))', maxHeight: '24rem' }}>
             {cards.map((scene) => (
               <SceneMergeCard key={scene.name} session={session} scene={scene}
                 pressed={picking ? selected.includes(scene) : target === scene}

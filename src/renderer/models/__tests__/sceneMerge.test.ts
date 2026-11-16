@@ -30,7 +30,7 @@ const refresh = jest.fn(async () => {});
 const stats = jest.fn((_session: any, _scene: any) => ({ total: 0, done: 0 }));
 jest.mock('..', () => ({
   backend,
-  imageService: { refreshBatch: refresh },
+  imageService: { refreshBatch: refresh, getSceneGalleryEntries: (_session: any, scene: any) => scene.imageMap.map((filename: string)=>({owner:scene,filename,path:out+'/'+scene.name+'/'+filename})) },
   imageHistoryService: { relinkMergedScenes: relinkHistory },
   sessionService: {
     isMirror: () => false,
@@ -106,6 +106,9 @@ test.each([false, true])('merges files, favorites, and both variant layouts (ove
   expect(target.resolution).toBe('portrait');
   expect(target.slots[0].map((p) => p.prompt)).toEqual(overwrite ? ['second'] : ['first', 'second']);
   expect(target.mains).toEqual(['a.png', 'a_merged1.png']);
+  expect(target.meta.get('__sdstudioGalleryOrderV1')).toEqual([
+    JSON.stringify([null,'a.png']),JSON.stringify([null,'a_merged1.png']),JSON.stringify([null,'b.webp']),
+  ]);
   expect(session.inpaints.get('repair')).toMatchObject({ sceneRef: 'angry', sourceImage: 'a_merged1.png' });
   expect(session.inpaints.get('legacy')).toMatchObject({ sceneRef: 'angry', sourceImage: 'b.webp', outputInSourceScene: false });
   expect(await fs.readFile(local(out + '/angry/a.png'), 'utf8')).toBe('target png');

@@ -6,6 +6,7 @@ import { isOutputImageFile } from './imageFormats';
 import { assertValidProjectName, projectPath, sceneOutputDir } from './projectPaths';
 import { mergeSceneCombinations } from './sceneMergeCombinations';
 import type { Scene, Session } from './types';
+import { GALLERY_ORDER_KEY, galleryImageKey } from './sceneImageVariants';
 
 type SourceImages = Map<string, Map<string, string>>;
 
@@ -27,6 +28,7 @@ export async function mergeSelectedScenes(
   }
   return sessionService.withLock([project], async () => {
     const scenes = [target, ...sources];
+    const galleries = scenes.map(scene => ({scene, entries: imageService.getSceneGalleryEntries(session, scene)}));
     const sourceNames = new Set(sources.map((source) => source.name));
     const targetName = target.name;
     const targetDir = sceneOutputDir(project, target);
@@ -184,6 +186,11 @@ export async function mergeSelectedScenes(
         ...target.mains.filter((name) => targetFiles.includes(name)),
         ...mapped((source, files) => source.mains.flatMap((name) => files.get(name) ?? [])),
       ])];
+      nextTarget.meta[GALLERY_ORDER_KEY] = galleries.flatMap(({scene,entries}) => entries.flatMap(entry => {
+        const filename = entry.owner.type === 'scene' && scene !== target
+          ? imageNames.get(scene.name)?.get(entry.filename) : entry.filename;
+        return filename ? [galleryImageKey(entry.owner, filename, target)] : [];
+      }));
       const game = (target.game ?? []).filter((p) => targetFiles.includes(p.path)).map((p) => ({ ...p }));
       for (const source of sources) {
         const files = imageNames.get(source.name)!;
@@ -218,6 +225,7 @@ export async function mergeSelectedScenes(
         target.slots = slots;
         target.imageMap = nextTarget.imageMap;
         target.mains = nextTarget.mains;
+        target.meta.set(GALLERY_ORDER_KEY, nextTarget.meta[GALLERY_ORDER_KEY]);
         target.game = nextTarget.game;
         target.round = nextTarget.round;
         target.imageAccounts = nextTarget.imageAccounts;
