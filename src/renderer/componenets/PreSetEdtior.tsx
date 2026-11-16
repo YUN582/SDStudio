@@ -1,3 +1,4 @@
+import { linkedInpaintInputPath } from '../models/inpaintInput';
 import * as React from 'react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import * as mobx from 'mobx';
@@ -235,8 +236,9 @@ const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
           className={`round-button back-sky`}
           onClick={async () => {
             if (!getField()) return;
-            const path = imageService.getVibeImagePath(curSession!, getField());
             try {
+              const work=input.fieldType==='preset'&&input.field==='image'?variantSceneOfPreset(curSession,preset):undefined;
+              const path=(work&&linkedInpaintInputPath(imageService,curSession!,work))||imageService.getVibeImagePath(curSession!,getField());
               await backend.openImageEditor(path);
               await backend.watchImage(path);
             } catch {
@@ -2837,7 +2839,7 @@ const WFRInline = observer(({ element }: WFElementProps) => {
               value={getField()}
               disabled={false}
               onChange={(val) => setField(val, 'edit')}
-              placeholder={variantSeed ? SEED_INPUT_TEXT.placeholder : undefined}
+              placeholder={variantSeed ? (type === 'SDInpaint' ? '비우면 랜덤' : SEED_INPUT_TEXT.placeholder) : undefined}
               key={key}
             />
           </InlineEditorField>

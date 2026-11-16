@@ -22,6 +22,7 @@ import {
   ProjectImageRoot,
 } from './projectPaths';
 import { v4 } from 'uuid';
+import { fetchInpaintInput, maskHasPaint } from './inpaintInput';
 import { GALLERY_ORDER_KEY, galleryImageKey, linkedImageVariants, orderGalleryEntries, selectGalleryExportEntries } from './sceneImageVariants';
 
 export const supportedImageSizes = [200, 400, 500];
@@ -92,6 +93,11 @@ class LRUCache<K, V> {
 }
 
 export class ImageService extends EventTarget {
+  maskHasPaint = maskHasPaint;
+
+  fetchInpaintInput(session: Session, scene: InpaintScene, preset = scene.preset, includeDrawing = true) {
+    return fetchInpaintInput(this, session, scene, preset, includeDrawing);
+  }
   private refreshBatchInFlight = new Map<string, Promise<void>>();
   images: { [key: string]: { [key: string]: string[] } };
   inpaints: { [key: string]: { [key: string]: string[] } };

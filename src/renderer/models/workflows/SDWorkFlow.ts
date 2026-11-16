@@ -452,7 +452,7 @@ const createSDI2IHandler = (type: string) => {
     // 전부 이 핸들러를 지나므로(미러·조합 전개·이미지 변형 메뉴·대량 작업) 여기 한 곳에서만 적용한다.
     // 씬 프리셋 객체는 바꾸지 않는다(사본) — 메인을 못 읽으면 씬 값 그대로 + 경고.
     preset = resolveVariantSampling(session, preset);
-    // 시드(2026-11-03 이슈 #9, SPEC §11): 변형 씬 시드(프리셋 seed) → 변형 씬 시드 그룹 → 메인 사전 세팅 프롬프트 시드 → 랜덤.
+    // 빈 인페인트 시드는 랜덤. 다른 변형은 프리셋 → 시드 그룹 → 메인 → 랜덤.
     // applyMainSampling 은 seed 를 덮지 않는다(샘플링 필드 목록에 없음) — 씬 프리셋 seed 가 1순위.
     // 메인을 못 읽으면 메인 시드 단계는 없음(undefined).
     const mainRead = readMainSampling(session);
@@ -461,16 +461,18 @@ const createSDI2IHandler = (type: string) => {
       preset,
       mainRead.ok ? mainRead.main.shared?.seed : undefined,
     );
-    const image = preset.image.endsWith('.png')
+    const image = scene?.type === 'inpaint' && ['SDInpaint', 'SDI2I'].includes(scene.workflowType)
+      ? dataUriToBase64(await imageService.fetchInpaintInput(session, scene, preset))
+      : preset.image.endsWith('.png')
       ? dataUriToBase64(
           (await imageService.fetchVibeImage(session, preset.image))!,
         )
       : preset.image;
-    const isInpaint = type === 'SDInpaint';
-    const getMask = async () =>
-      dataUriToBase64(
-        (await imageService.fetchVibeImage(session, preset.mask))!,
-      );
+    const maskData = type === 'SDInpaint' && preset.mask
+      ? dataUriToBase64((await imageService.fetchVibeImage(session, preset.mask))!) : '';
+    const autoI2I = type === 'SDInpaint' && !(scene?.type === 'inpaint' && scene.workflowType === 'SDMirror') &&
+      !(await imageService.maskHasPaint(maskData));
+    const isInpaint = type === 'SDInpaint' && !autoI2I;
     // 조합 전개 결과(미러·I2I·인페인트 조합 모드 — variantCombo, SPEC §7-4)가 실려 있으면 그것을, 아니면 단일 프롬프트.
     // 인페인트 조합 모드도 마스크·Focused 는 프리셋 그대로(조합마다 같은 마스크·영역).
     // 단일 프롬프트도 `<조각>` 은 생성 경로처럼 푼다(2026-10-04 B4 C4 — 예전엔 글자 그대로 보냈다).
@@ -505,11 +507,11 @@ const createSDI2IHandler = (type: string) => {
       backend: preset.backend,
       vibes: (preset.vibes || []).map((v: any) => (v.toJSON ? v.toJSON() : { ...v })),
       strength: preset.strength,
-      noise: preset.noise,
+      noise: autoI2I ? (preset.noise ?? 0) : preset.noise,
       overrideResolution: preset.overrideResolution,
       originalImage: isInpaint ? preset.originalImage : true,
       image: image,
-      mask: isInpaint && preset.mask ? await getMask() : '',
+      mask: isInpaint ? maskData : '',
       // 예약 때 정한 시작 시드 — 장마다의 시드는 큐가 seedForImageIndex 로 잇는다(sd/sd_i2i/sd_inpaint 공용)
       seed,
     };

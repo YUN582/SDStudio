@@ -15,6 +15,8 @@ jest.mock('..', () => {
   return {
     backend: { getConfig: jest.fn(), lookupTag: jest.fn(async () => null) },
     imageService: {
+      maskHasPaint: jest.fn(async()=>true),
+      fetchInpaintInput: jest.fn(async(_session:any,_scene:any,preset:any)=>preset.image.endsWith('.png')?'data:image/png;base64,FETCHED':'data:image/png;base64,'+preset.image),
       fetchVibeImage: (...a: any[]) => (fetchVibeImage as any)(...a),
       storeVibeImage: jest.fn(async () => 'stored.png'),
       getOutputDir: jest.fn(() => 'inpaints/project/scene'),
@@ -259,6 +261,24 @@ describe('readMainSampling·resolveVariantSampling 폴백', () => {
 describe('핸들러 — 잡의 샘플링 = 메인 사전 세팅', () => {
   const inpaintScene = { name: 'scene', type: 'inpaint' } as any;
 
+  test('an empty inpaint mask creates I2I without focus; painted masks remain inpaint', async () => {
+    const { imageService } = jest.requireMock('..');
+    const preset = new WFWorkFlow(SDInpaintDef).buildPreset();
+    Object.assign(preset, {
+      image: 'RAW', mask: 'mask.png', strength: 0.55,
+      focused: true, focusX: 0, focusY: 0, focusWidth: 128, focusHeight: 128,
+    });
+    imageService.maskHasPaint.mockResolvedValueOnce(false);
+    await SDInpaintDef.handler(mainSession(), inpaintScene, { type: 'text', text: '' }, [], preset, undefined, 10);
+    expect(jobs()[0]).toMatchObject({ type: 'sd_i2i', mask: '', originalImage: true, noise: 0, strength: 0.55 });
+    expect(jobs()[0].focus).toBeUndefined();
+    expect(addTask.mock.calls[0][1]).toBe(10);
+    addTask.mockClear();
+    await SDInpaintDef.handler(mainSession(), inpaintScene, { type: 'text', text: '' }, [], preset, undefined, 1);
+    expect(jobs()[0]).toMatchObject({ type: 'sd_inpaint', mask: 'FETCHED' });
+    expect(preset.mask).toBe('mask.png');
+  });
+
   test('I2I: 메인 값, 씬 고유(이미지·강도·노이즈·프롬프트·네거티브·캐릭터·좌표) 보존, 씬 프리셋 불변', async () => {
     const preset = new WFWorkFlow(SDI2IDef).buildPreset();
     Object.assign(preset, SCENE_SAMPLING, {
@@ -417,13 +437,13 @@ describe('핸들러 — 잡의 시드', () => {
     ['SDMirror', SDMirrorDef],
   ])('%s: 프리셋 → 그룹 → 메인 → 랜덤', async (wf, def) => {
     expect((await run(def, seededSession(), variantScene(wf, 777), presetOf(def, { seed: 42 }))).seed).toBe(42);
-    expect((await run(def, seededSession(), variantScene(wf, 777), presetOf(def, { seed: null }))).seed).toBe(777);
-    expect((await run(def, seededSession(), variantScene(wf), presetOf(def))).seed).toBe(MAIN_SEED);
+    expect((await run(def, seededSession(), variantScene(wf, 777), presetOf(def, { seed: null }))).seed).toBe(wf==='SDInpaint'?undefined:777);
+    expect((await run(def, seededSession(), variantScene(wf), presetOf(def))).seed).toBe(wf==='SDInpaint'?undefined:MAIN_SEED);
     expect((await run(def, seededSession(null), variantScene(wf), presetOf(def))).seed).toBeUndefined();
     // 메인을 못 읽으면 메인 시드 단계 없음(그룹까지는 그대로)
     const noMain = { name: 'project', selectedWorkflow: undefined } as any;
     expect((await run(def, noMain, variantScene(wf), presetOf(def))).seed).toBeUndefined();
-    expect((await run(def, noMain, variantScene(wf, 9), presetOf(def))).seed).toBe(9);
+    expect((await run(def, noMain, variantScene(wf, 9), presetOf(def))).seed).toBe(wf==='SDInpaint'?undefined:9);
   });
 
   test('변형 편집 칸 5종: 「시드」 줄(preset seed)이 안내 줄 바로 아래', () => {

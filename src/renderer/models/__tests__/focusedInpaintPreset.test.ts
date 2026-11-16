@@ -7,6 +7,8 @@ const addTask = jest.fn(async (_param: any, _samples: number) => {});
 jest.mock('..', () => ({
   workFlowService: { buildPreset: jest.fn() },
   imageService: {
+      maskHasPaint: jest.fn(async()=>true),
+      fetchInpaintInput: jest.fn(async(_session:any,_scene:any,preset:any)=>preset.image.endsWith('.png')?'data:image/png;base64,FETCHED':'data:image/png;base64,'+preset.image),
     fetchVibeImage: jest.fn(async () => 'data:image/png;base64,FETCHED'),
     getOutputDir: jest.fn(() => 'inpaints/project/scene'),
   },
