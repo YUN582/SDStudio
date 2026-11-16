@@ -253,7 +253,7 @@ const RULES: Rule[] = [
       // 백업 아카이브 내부의 "논리 경로"(물리 배치와 무관한 아카이브 엔트리명,
       // buildSessionDeepEntries 의 name: 필드) — 의도적 잔류. 물리 경로가 아니라
       // projectPath 대상이 아니다 (트랙1 조사 보고서 §1-6).
-      'models/SessionService.ts': 6,
+      'models/SessionService.ts': 5,
     },
   },
   {

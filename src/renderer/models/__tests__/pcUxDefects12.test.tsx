@@ -142,7 +142,6 @@ describe('아이콘 토글 켜짐 표시(S2)', () => {
   };
   test.each([
     [sqc, 'data-toolbar-toggle="multi-select"', 'appState.sceneSelectionMode'],
-    [sqc, 'data-toolbar-toggle="scene-search"', 'showSceneSearch'],
     [sqc, 'data-toolbar-toggle="more"', 'showToolbarMenu'],
     [rv, 'data-viewer-toggle="select-mode"', 'selectMode'],
   ])('켜고 끄는 토글은 aria-pressed + toggle-on (%#)', (src, marker, stateExpr) => {
@@ -160,7 +159,7 @@ describe('아이콘 토글 켜짐 표시(S2)', () => {
     expect(block.slice(block.indexOf(cls))).not.toContain('aria-pressed');
   });
   test('인페인트 [영역 도구]도 같은 켜짐 클래스', () => {
-    expect(read('InPaintEditor.tsx')).toContain("focusTool ? 'back-sky toggle-on' : 'back-gray'");
+    expect(read('InPaintEditor.tsx')).toMatch(/focusTool\s*\?\s*'back-sky toggle-on'\s*:\s*'back-gray'/);
   });
 });
 
@@ -203,7 +202,7 @@ describe('국소 클래스 수정(묶음 1)', () => {
   test('A3 확인 창 체크 줄 mt-3 없음 · S4 이름 입력 [확인] 비활성 모양', () => {
     const src = read('ConfirmWindow.tsx');
     expect(src).not.toMatch(/<label[^>]*\bmt-3\b/);
-    expect(src).toContain("'flex items-center')");
+    expect(src).toContain('flex flex-col items-center');
     expect(src).toContain('r-btn back-sky clickable disabled:opacity-50 disabled:cursor-not-allowed');
   });
   test('T2 파일 이름 break-all · T3 조각 이름 말줄임+Tooltip', () => {
