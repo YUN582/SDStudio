@@ -58,6 +58,13 @@ const base: ShortcutGateState = {
   findReplaceOpen: false,
 };
 
+test('detail viewers retain scene navigation without enabling grid deletion', () => {
+  const state = { ...base, resultViewerOpen: true, imageGridFocusable: false };
+  expect(isShortcutActionActive({ id: 'image-next-scene', category: 'image-grid', label: '', defaultKey: 'Ctrl+ArrowRight' }, state)).toBe(true);
+  expect(isShortcutActionActive({ id: 'image-delete', category: 'image-grid', label: '', defaultKey: 'Delete' }, state)).toBe(false);
+  expect(isShortcutActionActive({ id: 'image-next-scene', category: 'image-grid', label: '', defaultKey: 'Ctrl+ArrowRight' }, { ...state, dialogCount: 1 })).toBe(false);
+});
+
 const svc = new KeyboardShortcutService();
 const actionOf = (id: string) => svc.getAllActions().find((a) => a.id === id) as ShortcutAction;
 

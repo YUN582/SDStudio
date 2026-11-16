@@ -2490,15 +2490,18 @@ const QueueControl = observer(
     };
 
     const resultViewerRef = useRef<any>(null);
+    const detailSceneEntry = useRef<GenericScene | null>(null);
+    useEffect(() => { detailSceneEntry.current = null; }, [displayScene]);
     const resultViewer = useMemo(() => {
       if (displayScene) {
         // 씬 탭 이동(W1): 그리드 표시 순서(검색/필터 반영)대로 이전/다음 씬 계산.
         // 뷰어가 열려 있는 동안엔 검색어/필터를 바꿀 수 없으므로 메모 시점 목록으로 충분.
         const navScenes = getFilteredScenes();
         const navIdx = navScenes.findIndex((s) => s.name === displayScene.name);
-        const goScene = (delta: number) => {
+        const goScene = (delta: number, keepDetail = false) => {
           const next = navIdx >= 0 ? navScenes[navIdx + delta] : undefined;
           if (!next) return;
+          detailSceneEntry.current = keepDetail ? next : null;
           gameService.refreshList(curSession!, displayScene);
           setDisplayFocus(undefined);
           setFocusedScene(next);
@@ -2521,6 +2524,7 @@ const QueueControl = observer(
             <ResultViewer
               ref={resultViewerRef}
               scene={displayScene}
+              initialDetailOpen={detailSceneEntry.current === displayScene}
               focusFilename={displayFocus}
               sceneNav={{
                 hasPrev: navIdx > 0,

@@ -1159,7 +1159,10 @@ interface ResultDetailViewButton {
   onClick: (scene: GenericScene, path: string, close: () => void) => void;
 }
 
+interface SceneNavigation { hasPrev: boolean; hasNext: boolean; go: (delta: number, keepDetail?: boolean) => void }
+
 interface ResultDetailViewProps {
+  sceneNav?: SceneNavigation;
   session?: Session;
   scene: GenericScene;
   getPaths: () => string[];
@@ -1195,6 +1198,7 @@ export const ResultDetailView = observer(
     onClose,
     onViewedImageChange,
     historyEntry,
+    sceneNav,
     imageOwners,
     variantCounts,
     onOpenVariants,
@@ -1364,6 +1368,10 @@ export const ResultDetailView = observer(
       const handleShortcut = async (e: Event) => {
         if (!activeView) return;
         const action = (e as CustomEvent).detail?.action;
+        if (action === 'image-prev-scene' || action === 'image-next-scene') {
+          if (!isTextEntryFocused() && !appState.dialogs.length) sceneNav?.go(action === 'image-prev-scene' ? -1 : 1, true);
+          return;
+        }
         if (action === 'prev-image') {
           setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
         } else if (action === 'next-image') {
@@ -1422,7 +1430,7 @@ export const ResultDetailView = observer(
         sessionService.removeEventListener('main-image-updated', rerender);
         gameService.removeEventListener('updated', refreshPaths);
       };
-    }, [selectedIndex, paths, activeView, session, scene, appliedCharacterPreset, getPaths]);
+    }, [selectedIndex, paths, activeView, session, scene, appliedCharacterPreset, getPaths, sceneNav]);
 
     useEffect(() => {
       return () => {
@@ -1676,21 +1684,17 @@ export const ResultDetailView = observer(
       : [];
 
     return (
-      <div className="z-10 bg-[var(--c-surface)] w-full h-full flex min-h-0 flex-col">
-        <div className="flex flex-wrap items-center gap-2 flex-none border-b line-color px-3 py-2 md:px-4">
-          <h2 className="m-0 text-base font-semibold text-default break-words" data-result-detail-scene>
+      <div className="sds-image-detail z-10 bg-[var(--c-surface)] w-full h-full flex min-h-0 flex-col">
+        <div className="sds-detail-heading flex items-center gap-2 flex-none border-b line-color px-3 py-2 md:px-4">
+          <h2 className="m-0 text-base font-semibold text-default sds-detail-title" title={scene.name} data-result-detail-scene>
             {resultSceneLabel(scene)} {scene.name}
           </h2>
-          {variantCount > 0 && onOpenVariants && (
-            <button type="button" className="round-button back-sky" onClick={() => onOpenVariants(viewedImagePath)}>
-              변형 {variantCount}개
-            </button>
-          )}
+
         </div>
         <div className="relative min-h-0 flex flex-1 flex-col overflow-auto md:flex-row">
         {!v2 && (
-        <div className="flex-none md:w-1/3 p-2 md:p-4 overflow-y-auto">
-          <div className="flex gap-2 md:gap-3 mb-2 md:mb-6 flex-wrap w-full">
+        <div className="sds-detail-info flex-none md:w-1/3 p-2 md:p-4 overflow-y-auto">
+          <div className="sds-detail-actions flex gap-2 md:gap-3 mb-2 md:mb-6 flex-wrap w-full">
             {!isMobile && (
               <button
                 className={`round-button back-green`}
@@ -1804,7 +1808,7 @@ export const ResultDetailView = observer(
         </div>
         )}
         <div
-          className={v2 ? 'flex-1 overflow-auto relative min-h-0' : 'flex-1 overflow-auto'}
+          className={v2 ? 'sds-detail-image flex-1 overflow-auto relative min-h-0' : 'sds-detail-image flex-1 overflow-auto'}
           // 좌우 스와이프로 이미지를 넘기는 영역 — 가장자리 드로어 스와이프에 양보받는다(edgeSwipe.ts).
           data-edge-swipe-ignore=""
           onTouchStart={(e) => {
@@ -1969,11 +1973,8 @@ interface ResultViewerProps {
   // 히스토리 사이드바에서 특정 이미지로 점프할 때 포커스할 파일명
   focusFilename?: string;
   // 씬 탭 이동(W1): 뷰어를 연 채 그리드 표시 순서대로 이전/다음 씬으로 전환
-  sceneNav?: {
-    hasPrev: boolean;
-    hasNext: boolean;
-    go: (delta: number) => void;
-  };
+  sceneNav?: SceneNavigation;
+  initialDetailOpen?: boolean;
 }
 
 const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
@@ -1989,6 +1990,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       onSampleExtract,
       focusFilename,
       sceneNav,
+      initialDetailOpen = false,
     }: ResultViewerProps,
     ref,
   ) => {
@@ -2007,7 +2009,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     const selectMode = isMobile ? mobileImageSelection : selectedImages.current.size > 0;
     const [selectedImageIndex, setSelectedImageIndex] = useState<
       number | undefined
-    >(undefined);
+    >(() => initialDetailOpen && imageService.getSceneGalleryEntries(curSession!, scene).length ? 0 : undefined);
     const [focusedImagePath, setFocusedImagePath] = useState<string>();
     const [imageFilter, setImageFilter] = useState<SceneImageFilter>('all');
     const [variantSourcePath, setVariantSourcePath] = useState<string>();
@@ -3134,6 +3136,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                 scene={scene}
                 getPaths={getPaths}
                 initialSelectedIndex={selectedImageIndex}
+                sceneNav={sceneNav}
                 onViewedImageChange={setFocusedImagePath}
                 imageOwners={imageOwners}
                 variantCounts={variantCounts}
