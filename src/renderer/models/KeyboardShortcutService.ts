@@ -271,6 +271,7 @@ export class KeyboardShortcutService {
   }
 
   handleKeyDown = (e: KeyboardEvent) => {
+    if (appState.sceneMergeRequest) return;
     const normalized = KeyboardShortcutService.normalizeKey(e);
     if (!normalized) return;
 

@@ -590,6 +590,7 @@ export const SceneCell = observer(
     useEffect(() => {
       if (!isActive || !isHovered) return;
       const handler = (e: KeyboardEvent) => {
+        if (appState.sceneMergeRequest) return;
         if (isInputFocusedLocal()) return;
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
@@ -1851,6 +1852,7 @@ const QueueControl = observer(
 
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
+        if (appState.sceneMergeRequest) return;
         if (isInputFocused()) return;
 
         // 비활성 탭(display:none)의 QueueControl 인스턴스는 무시.

@@ -36,6 +36,7 @@ import {
   genericSceneFromJSON,
   GallaryImageContextAlt,
   GenericScene,
+  Scene,
   HistoryImageContextAlt,
   SDJob,
 } from '../models/types';
@@ -512,6 +513,12 @@ export const AppContextMenu = observer(() => {
       );
     } else if (id === 'duplicate') {
       duplicateScene(ctx);
+    } else if (id === 'merge-scenes') {
+      const session = appState.curSession;
+      const selected = selectedScenesLike(ctx.scene).filter((scene): scene is Scene => scene.type === 'scene');
+      if (session && ctx.scene.type === 'scene' && appState.isSceneSelected(ctx.scene) && selected.length >= 2) {
+        appState.sceneMergeRequest = { session, selected };
+      }
     } else if (id === 'export-images') {
       const scenes = appState.isSceneSelected(ctx.scene) ? selectedScenesLike(ctx.scene) : [ctx.scene];
       void appState.exportPackage(ctx.scene.type, scenes);
@@ -1118,6 +1125,12 @@ export const AppContextMenu = observer(() => {
         <Item id="export-images" onClick={handleSceneItemClick}>
           씬 이미지 내보내기
         </Item>
+        {appState.contextSceneType === 'scene' && selCount >= 2 && (
+          <Item id="merge-scenes" onClick={handleSceneItemClick}
+            hidden={({ props }) => !props?.ctx?.scene || !appState.isSceneSelected(props.ctx.scene)}>
+            씬 합치기
+          </Item>
+        )}
         <Item id="copy-to-project" onClick={handleSceneItemClick}>
           {selCount > 1
             ? `선택한 씬(${selCount}) 복사`

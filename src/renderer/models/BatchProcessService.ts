@@ -504,6 +504,7 @@ export class BatchProcessService {
         { text: '🔪 즐겨찾기 이미지 배경 제거', value: 'removeBg', group: '즐겨찾기' },
         { text: '🖥️ 해상도 변경', value: 'changeResolution', group: '씬' },
         { text: '📋 씬 내용 복제', value: 'copySceneContent', group: '씬' },
+        ...(type === 'scene' ? [{ text: '씬 합치기', value: 'mergeScenes', group: '씬' }] : []),
         { text: '📦 다른 프로젝트로 씬 복사', value: 'copyToProject', group: '씬' },
         { text: '📝 씬 이름 내보내기', value: 'exportSceneNames', group: '씬' },
         { text: '🔤 씬 이름순 정렬', value: 'sortScenes', group: '씬' },
@@ -636,6 +637,16 @@ export class BatchProcessService {
                 });
               },
             });
+            return;
+          }
+          if (value === 'mergeScenes' && type === 'scene') {
+            const session = appState.curSession;
+            if (!session) return;
+            if (session.scenes.size < 2) {
+              appState.pushMessage('씬이 2개 이상 필요합니다.');
+              return;
+            }
+            appState.sceneMergeRequest = { session };
             return;
           }
           if (value === 'copySceneContent') {

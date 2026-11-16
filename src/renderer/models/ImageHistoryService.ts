@@ -2,7 +2,7 @@ import { action, observable, runInAction } from 'mobx';
 import { backend, imageService, sessionService } from '.';
 import { toggleImageFavorite } from './imageStateUndo';
 import { persistService } from './PersistenceService';
-import { projectPath } from './projectPaths';
+import { projectPath, sceneOutputDir } from './projectPaths';
 import { getAppState } from './appStateRef';
 import { GenericScene, Session } from './types';
 
@@ -80,8 +80,13 @@ export class ImageHistoryService {
       // 무효가 된다(파일이 workspace/ 하위로 이동). 세션·씬·파일명으로 현재
       // 배치 기준 경로를 projectPath 관문으로 재계산한다 — 구 배치에서는
       // 항등이라 동작 무변경. 재계산 불가(미등록/이상 이름 throw)면 항목 폐기.
-      const rebuildPath = (e: any): string | null => {
+      const rebuildPath = async (e: GenerationHistoryEntry): Promise<string | null> => {
         try {
+          if (e.sceneType === 'inpaint') {
+            const session = await sessionService.get(e.sessionName);
+            const scene = session?.inpaints.get(e.sceneName);
+            if (scene) return sceneOutputDir(e.sessionName, scene) + '/' + e.filename;
+          }
           return (
             projectPath(
               e.sceneType === 'scene' ? 'outs' : 'inpaints',
@@ -95,7 +100,7 @@ export class ImageHistoryService {
           return null;
         }
       };
-      const valid: GenerationHistoryEntry[] = arr
+      const valid = (await Promise.all(arr
         .filter(
           (e) =>
             e &&
@@ -107,8 +112,8 @@ export class ImageHistoryService {
             (e.sceneType === 'scene' || e.sceneType === 'inpaint'),
         )
         .filter((e) => !existing || existing.has(e.sessionName))
-        .map((e) => {
-          const path = rebuildPath(e);
+        .map(async (e): Promise<GenerationHistoryEntry | null> => {
+          const path = await rebuildPath(e);
           if (!path) return null;
           return {
             id: path,
@@ -119,8 +124,7 @@ export class ImageHistoryService {
             path,
             createdAt: typeof e.createdAt === 'number' ? e.createdAt : 0,
           };
-        })
-        .filter((e): e is GenerationHistoryEntry => e !== null);
+        }))).filter((e): e is GenerationHistoryEntry => e !== null);
       const hadRuntime = this.entries.length > 0;
       runInAction(() => {
         const merged = [...this.entries];
@@ -201,6 +205,30 @@ export class ImageHistoryService {
     const before = this.entries.length;
     this.entries = this.entries.filter((e) => e.id !== id);
     if (this.entries.length !== before) this.scheduleSave();
+  }
+
+  @action
+  relinkMergedScenes(
+    project: string,
+    target: string,
+    sources: ReadonlyMap<string, ReadonlyMap<string, string>>,
+    movedPaths: ReadonlyMap<string, string>,
+  ) {
+    let changed = false;
+    this.entries = this.entries.map((entry) => {
+      if (entry.sessionName !== project) return entry;
+      const path = movedPaths.get(entry.path);
+      if (!path) return entry;
+      changed = true;
+      return {
+        ...entry,
+        id: path,
+        path,
+        sceneName: entry.sceneType === 'scene' && sources.has(entry.sceneName) ? target : entry.sceneName,
+        filename: path.split('/').pop()!,
+      };
+    });
+    if (changed) this.scheduleSave();
   }
 
   // imageService의 세션/씬 이미지 목록과 대조해 사라진 파일 항목을 제거

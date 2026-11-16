@@ -757,6 +757,39 @@ export class TrashService extends EventTarget {
     }
   }
 
+  async relinkMergedVariantSources(
+    session: Session,
+    sources: ReadonlyMap<string, ReadonlyMap<string, string>>,
+    target: string,
+  ): Promise<() => Promise<void>> {
+    this.ensureLoaded();
+    const changes: { scene: IInpaintScene; sceneRef: string; sourceImage?: string }[] = [];
+    for (const [key, entry] of Object.entries(this.data.scenes)) {
+      const scene = entry.sceneData;
+      if (!key.startsWith(session.name + ':') || !this.sceneEntryBelongs(session.name, entry) ||
+          scene.type !== 'inpaint' || !scene.sceneRef) continue;
+      const files = sources.get(scene.sceneRef);
+      if (!files) continue;
+      changes.push({ scene, sceneRef: scene.sceneRef, sourceImage: scene.sourceImage });
+      scene.sceneRef = target;
+      scene.sourceImage = scene.sourceImage && files.get(scene.sourceImage);
+    }
+    const restore = () => {
+      for (const { scene, sceneRef, sourceImage } of changes) {
+        scene.sceneRef = sceneRef;
+        scene.sourceImage = sourceImage;
+      }
+    };
+    if (changes.length) {
+      try { await this.saveTrash(); }
+      catch (error) { restore(); throw error; }
+    }
+    return async () => {
+      restore();
+      if (changes.length) await this.saveTrash();
+    };
+  }
+
   getDeletedScenes(projectName: string): {
     name: string;
     type: 'scene' | 'inpaint';

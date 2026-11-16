@@ -45,6 +45,7 @@ import ExpiredProjectsDialog from './ExpiredProjectsDialog';
 import MigrationGate from './MigrationGate';
 import SaveLocationGate from './SaveLocationGate';
 import QueueControl from './SceneQueueControl';
+import SceneMergeDialog from './SceneMergeDialog';
 import {
   FloatView,
   FloatViewProvider,
@@ -863,6 +864,7 @@ export const App = observer(() => {
               >
               <FloatViewProvider>
                 <AppContextMenu />
+                <SceneMergeDialog />
                 {historyPreview && (
                   <HistoryImagePreview key={historyPreview.entry.id} preview={historyPreview} onClose={closeHistoryImage} />
                 )}

@@ -393,6 +393,7 @@ export class AppState {
   @observable accessor sceneTemplateManagerOpen: boolean = false;
   @observable accessor exportPresetManagerOpen: boolean = false;
   @observable.ref accessor directExportRequest: import('./exportSettings').DirectExportRequest | undefined = undefined;
+  @observable.ref accessor sceneMergeRequest: import('../componenets/SceneMergeDialog').SceneMergeRequest | undefined = undefined;
   lastExportType: 'scene' | 'inpaint' = 'scene';
   lastExportSelected?: GenericScene[];
   lastExportImages?: ReadonlyMap<GenericScene, readonly string[]>;

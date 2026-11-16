@@ -1905,6 +1905,46 @@ export class SessionService extends ResourceSyncService<Session> {
     await persistService.flushPath(this.getPath(name));
   }
 
+  // Called under the project lock, after the merge files have been verified.
+  async commitSceneMerge(session: Session, next: ISession): Promise<void> {
+    const name = session.name;
+    const path = this.getPath(name);
+    if (this.getLoaded(name) !== session) throw new Error('프로젝트가 변경됐습니다.');
+    await persistService.flushPath(path);
+    const payload = JSON.stringify(next);
+    if ((await this.guardResourceWrite(name, payload)) !== 'ok') {
+      throw new Error('프로젝트를 저장할 수 없습니다.');
+    }
+    await persistService.write(path, payload);
+  }
+
+  async relinkMergedSceneBookmarks(
+    project: string,
+    target: string,
+    sources: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  ) {
+    const bookmarked = this.bookmarkData.scenes[project];
+    let changed = false;
+    if (bookmarked?.type === 'scene' && sources.has(bookmarked.name)) {
+      this.bookmarkData.scenes[project] = { name: target, type: 'scene' };
+      changed = true;
+    }
+    const destKey = project + ':' + target;
+    for (const [source, names] of sources) {
+      const key = project + ':' + source;
+      const original = this.bookmarkData.images[key];
+      if (!original) continue;
+      const filename = names.get(original);
+      if (filename && !this.bookmarkData.images[destKey]) this.bookmarkData.images[destKey] = filename;
+      delete this.bookmarkData.images[key];
+      changed = true;
+    }
+    const thumbnail = this.getThumbnailRef(project);
+    const nextImage = thumbnail && sources.get(thumbnail.scene)?.get(thumbnail.image);
+    if (nextImage) this.setThumbnailRef(project, target, nextImage);
+    if (changed) await this.saveBookmarks();
+  }
+
   // 같은 앱 실행 중 같은 프로젝트에 손실 경고를 한 번만 띄우기 위한 집합
   #lossGuardWarned = new Set<string>();
 
