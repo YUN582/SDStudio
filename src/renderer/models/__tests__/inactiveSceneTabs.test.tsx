@@ -154,7 +154,7 @@ test.each([false, true])('scene cards count linked results and preview their fil
   try {
     scene = observable({ name: 'head bump', type: 'scene', mains: [], slots: [] });
     const variant = observable({
-      name: 'inpaint', type: 'inpaint', sceneRef: scene.name, mains: [],
+      name: 'inpaint', type: 'inpaint', sceneRef: scene.name, mains: [] as string[],
       outputDir: 'outs/project/head bump/.variants/inpaint',
     });
     session.inpaints = new Map([[variant.name, variant]]);
