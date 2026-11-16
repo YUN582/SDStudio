@@ -2,6 +2,38 @@ import { appState } from './AppService';
 import { hasOpenContextMenu } from '../componenets/contextMenuBack';
 
 export interface GridModifiers { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }
+
+export type GridDirection = 'left' | 'right' | 'up' | 'down';
+
+export function gridNavigationAction(action: string, scope: 'scene' | 'image') {
+  const match = new RegExp(`^${scope}-(extend-)?(left|right|up|down)$`).exec(action);
+  return match ? { extend: !!match[1], direction: match[2] as GridDirection } : undefined;
+}
+
+/** Keep one anchor while Shift grows/shrinks the range; plain movement starts a new anchor. */
+export function gridKeyboardMove(
+  order: readonly string[], focused: string | undefined, anchor: string | undefined,
+  direction: GridDirection, columns: number, extend: boolean,
+) {
+  if (!order.length) return undefined;
+  const index = focused === undefined ? -1 : order.indexOf(focused);
+  const stride = Math.max(1, columns);
+  const delta = direction === 'left' ? -1 : direction === 'right' ? 1 : direction === 'up' ? -stride : stride;
+  const next = index < 0 ? 0 : Math.max(0, Math.min(order.length - 1, index + delta));
+  const key = order[next];
+  const rangeAnchor = extend && anchor !== undefined && order.includes(anchor)
+    ? anchor : extend && index >= 0 ? order[index] : key;
+  const start = order.indexOf(rangeAnchor);
+  return {
+    key, anchor: rangeAnchor,
+    keys: extend ? new Set(order.slice(Math.min(start, next), Math.max(start, next) + 1)) : undefined,
+  };
+}
+
+/** Card clicks must release a previously focused search field without stealing focus from controls. */
+export function focusGridSurface(event: { target: EventTarget | null; currentTarget: HTMLElement }) {
+  if (!isGridCardControl(event)) event.currentTarget.focus({ preventScroll: true });
+}
 export function gridCardUsesSelection(event: GridModifiers = {}): boolean {
   return !!(event.ctrlKey || event.metaKey || event.shiftKey);
 }

@@ -18,6 +18,10 @@ const ACTIONS: ShortcutAction[] = [
   { id: 'image-right', label: '오른쪽 이미지', category: 'image-grid', defaultKey: 'ArrowRight' },
   { id: 'image-up', label: '위 이미지', category: 'image-grid', defaultKey: 'ArrowUp' },
   { id: 'image-down', label: '아래 이미지', category: 'image-grid', defaultKey: 'ArrowDown' },
+  ...(['left', 'right', 'up', 'down'] as const).map((direction, index) => ({
+    id: `image-extend-${direction}`, label: ['왼쪽', '오른쪽', '위', '아래'][index] + ' 이미지까지 선택',
+    category: 'image-grid' as const, defaultKey: 'Shift+Arrow' + direction[0].toUpperCase() + direction.slice(1),
+  })),
   { id: 'image-open-detail', label: '상세 보기', category: 'image-grid', defaultKey: 'Enter' },
   { id: 'image-toggle-favorite', label: '즐겨찾기 토글', category: 'image-grid', defaultKey: 'Ctrl+F' },
   { id: 'image-toggle-bookmark', label: '북마크 토글', category: 'image-grid', defaultKey: 'Ctrl+B' },
@@ -45,6 +49,11 @@ const ACTIONS: ShortcutAction[] = [
   { id: 'scene-right', label: '다음 씬', category: 'scene', defaultKey: 'ArrowRight' },
   { id: 'scene-up', label: '위 씬', category: 'scene', defaultKey: 'ArrowUp' },
   { id: 'scene-down', label: '아래 씬', category: 'scene', defaultKey: 'ArrowDown' },
+  ...(['left', 'right', 'up', 'down'] as const).map((direction, index) => ({
+    id: `scene-extend-${direction}`, label: ['왼쪽', '오른쪽', '위', '아래'][index] + ' 씬까지 선택',
+    category: 'scene' as const, defaultKey: 'Shift+Arrow' + direction[0].toUpperCase() + direction.slice(1),
+  })),
+  { id: 'scene-toggle-select-space', label: '포커스 씬 선택 토글', category: 'scene', defaultKey: 'Ctrl+Space' },
   { id: 'scene-open-images', label: '씬 이미지 보기', category: 'scene', defaultKey: 'Enter' },
   { id: 'scene-open-editor', label: '씬 편집', category: 'scene', defaultKey: 'Tab' },
   { id: 'scene-queue-add', label: '포커스/선택 씬 예약 추가', category: 'scene', defaultKey: 'Ctrl+A' },
@@ -308,7 +317,7 @@ export class KeyboardShortcutService {
       e.preventDefault();
       e.stopPropagation();
       window.dispatchEvent(
-        new CustomEvent('shortcut-action', { detail: { action: actionId } }),
+        new CustomEvent('shortcut-action', { detail: { action: actionId, repeat: e.repeat } }),
       );
       return;
     }

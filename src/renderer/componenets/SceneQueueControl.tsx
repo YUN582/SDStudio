@@ -1,6 +1,6 @@
 import { openSourceVariant } from '../models/sourceVariant';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
-import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
+import { focusGridSurface, gridKeyboardMove, gridNavigationAction, gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
 import { canStartSelectionBox, mainSceneDragSurface, isOnNativeScrollbar } from '../models/dragSelection';
 import { isSceneSelected, selectedCountForType } from '../models/sceneSelection';
 import SceneQueueMenu from './SceneQueueMenu';
@@ -1801,6 +1801,7 @@ const QueueControl = observer(
           return;
         // 비활성 탭의 QueueControl은 무시 (display:none이면 offsetParent가 null)
         if (
+          !isActive || appState.imageGridFocusable || appState.resultViewerOpen ||
           !gridContainerRef.current ||
           gridContainerRef.current.offsetParent === null
         )
@@ -1809,26 +1810,14 @@ const QueueControl = observer(
         if (scenes.length === 0) return;
         const focusedSceneIndex = focusedScene ? scenes.indexOf(focusedScene) : -1;
 
-        if (
-          action === 'scene-left' ||
-          action === 'scene-right' ||
-          action === 'scene-up' ||
-          action === 'scene-down'
-        ) {
-          const idx = focusedSceneIndex;
-          if (idx < 0) {
-            setFocusedScene(scenes[0]);
-            return;
-          }
-          const cols = getGridColumnCount();
-          let next = idx;
-          if (action === 'scene-left') next = Math.max(0, idx - 1);
-          else if (action === 'scene-right')
-            next = Math.min(scenes.length - 1, idx + 1);
-          else if (action === 'scene-up') next = Math.max(0, idx - cols);
-          else if (action === 'scene-down')
-            next = Math.min(scenes.length - 1, idx + cols);
-          setFocusedScene(scenes[next]);
+        const navigation = gridNavigationAction(action, 'scene');
+        if (navigation) {
+          const next = gridKeyboardMove(scenes.map(scene => scene.name), focusedScene?.name,
+            sceneSelectionAnchor.current, navigation.direction, getGridColumnCount(), navigation.extend);
+          if (!next) return;
+          sceneSelectionAnchor.current = next.anchor;
+          setFocusedScene(scenes.find(scene => scene.name === next.key)!);
+          if (next.keys) appState.applySceneSelection({ names: next.keys, type });
         } else if (action === 'scene-open-images') {
           if (focusedSceneIndex >= 0) {
             setDisplayScene(scenes[focusedSceneIndex]);
@@ -1847,7 +1836,7 @@ const QueueControl = observer(
               appState.pushMessage(`프롬프트 에러: ${e.message}`);
             });
           }
-        } else if (action === 'scene-toggle-select') {
+        } else if (action === 'scene-toggle-select' || action === 'scene-toggle-select-space') {
           // 선택 모드 진입 + 포커스된 씬을 다중 선택에 토글.
           // 모드 진입 후엔 수정자 없는 S 키만으로 토글이 이어진다(아래 keydown 핸들러).
           if (focusedSceneIndex >= 0) {
@@ -1878,6 +1867,7 @@ const QueueControl = observer(
       getGridColumnCount,
       setDisplayScene,
       setEditingScene,
+      isActive, curSession, type, selectedCount,
     ]);
 
     const isInputFocused = useCallback(() => {
@@ -2179,9 +2169,6 @@ const QueueControl = observer(
               ) => {
                 if (!scene.sceneRef) {
                   appState.pushMessage('원본 씬이 없습니다.');
-                  // A chained edit's immediate source belongs to another work, not this root scene.
-                  // Copying to the root must never delete a same-named, unrelated root image.
-                  if (scene.sourceInpaint) return undefined;
                   return;
                 }
                 const orgScene = curSession!.scenes.get(scene.sceneRef);
@@ -2193,6 +2180,9 @@ const QueueControl = observer(
                 // 되돌리기(2차 묶음 5): 복사 + 원본 이미지 휴지통 = 1항목(deleteUndo.copyImageToOriginalRecorded — 되돌림 = 원본 복원 →
                 // 복사본 휴지통, 다시 실행 = 역순). 복사는 원본 형식 유지·겹치지 않는 이름(E9 — webp 가 .png 로 복사되던 결함도 함께 해소)
                 const { copied } = await copyImageToOriginalRecorded(session, orgScene, path, async (created) => {
+                  // A chained edit's immediate source belongs to another work, not this root scene.
+                  // Copying to the root must never delete a same-named, unrelated root image.
+                  if (scene.sourceInpaint) return undefined;
                   let sourcePath = scene.sourceImage
                     ? `${imageService.getImageDir(session, orgScene)}/${scene.sourceImage}`
                     : undefined;
@@ -3252,11 +3242,13 @@ const QueueControl = observer(
             return (
               <div
                 ref={gridContainerRef}
-                onMouseDownCapture={sceneReorder.start}
+                tabIndex={0}
+                aria-label="씬 이미지 그리드"
+                onMouseDownCapture={(event) => { focusGridSurface(event); sceneReorder.start(event); }}
                 className={
                   useGrid
-                    ? 'overflow-auto w-full content-start relative'
-                    : 'flex flex-wrap overflow-auto justify-start items-start content-start relative'
+                    ? 'overflow-auto w-full content-start relative outline-none'
+                    : 'flex flex-wrap overflow-auto justify-start items-start content-start relative outline-none'
                 }
                 style={
                   useGrid

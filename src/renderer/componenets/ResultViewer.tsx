@@ -4,7 +4,7 @@ import { openSourceVariant } from '../models/sourceVariant';
 import { confirmInpaintSceneDelete } from '../models/deleteInpaintWork';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { moveCombinedGalleryImage } from '../models/galleryReorder';
-import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
+import { focusGridSurface, gridKeyboardMove, gridNavigationAction, gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
 import { keyboardShortcutService, KeyboardShortcutService } from '../models/KeyboardShortcutService';
 import { canStartSelectionBox, imagePathsInSelectionBox } from '../models/dragSelection';
 import { groupImagePaths, linkedImageVariants, type SceneImageFilter } from '../models/sceneImageVariants';
@@ -682,7 +682,7 @@ const Cell = memo(
         className={
           'image-cell relative hover:brightness-95 active:brightness-90 bg-[var(--c-surface)] cursor-pointer ' +
           ((isDragging || reorderDrag?.items.includes(path)) ? 'opacity-30 no-touch' : '') +
-          ((isOver || reorderDrag?.target === path) ? ' border-2 border-sky-500' : '')
+          ((path && (isOver || reorderDrag?.target === path)) ? ' border-2 border-sky-500' : '')
         }
         draggable={isMobile && !selectMode}
         onClick={(event) => {
@@ -767,7 +767,7 @@ const Cell = memo(
             </div>
           </>
         )}
-        {isFocused && (
+        {path && isFocused && (
           <div className="absolute inset-0 border-4 border-sky-400 z-20 pointer-events-none rounded-sm" />
         )}
       </div>
@@ -1073,12 +1073,14 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
     return (
       <div
         ref={containerRef}
+        tabIndex={0}
+        aria-label="이미지 그리드"
         style={{ width: '100%', height: '100%' }}
         className={
-          'flex justify-center relative select-none ' +
+          'flex justify-center relative select-none outline-none ' +
           (isHidden ? 'hidden' : '')
         }
-        onMouseDownCapture={event => { reorder.start(event); handleGridMouseDown(event); }}
+        onMouseDownCapture={event => { focusGridSurface(event); reorder.start(event); handleGridMouseDown(event); }}
         onClickCapture={handleGridClick}
       >
         <Grid
@@ -2506,30 +2508,26 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           return;
         }
 
-        // 첫 입력 시 포커스 0으로 초기화 (방향키에 한해)
-        if (
-          focusedImageIndex < 0 &&
-          (action === 'image-left' ||
-            action === 'image-right' ||
-            action === 'image-up' ||
-            action === 'image-down')
-        ) {
-          setFocusedImagePath(activePaths[0]);
+        const navigation = gridNavigationAction(action, 'image');
+        if (navigation) {
+          const next = gridKeyboardMove(activePaths, focusedImagePath,
+            imageSelectionAnchor.current, navigation.direction, cols, navigation.extend);
+          if (!next) return;
+          setFocusedImagePath(next.key);
+          imageSelectionAnchor.current = next.anchor;
+          if (next.keys) {
+            selectedImages.current = next.keys;
+            gallaryRef.current?.refresh();
+            gallaryRef2.current?.refresh();
+            forceUpdate({});
+          }
           return;
         }
 
         if (focusedImageIndex < 0) return;
         const i = focusedImageIndex;
 
-        if (action === 'image-left') {
-          setFocusedImagePath(activePaths[Math.max(0, i - 1)]);
-        } else if (action === 'image-right') {
-          setFocusedImagePath(activePaths[Math.min(count - 1, i + 1)]);
-        } else if (action === 'image-up') {
-          setFocusedImagePath(activePaths[Math.max(0, i - cols)]);
-        } else if (action === 'image-down') {
-          setFocusedImagePath(activePaths[Math.min(count - 1, i + cols)]);
-        } else if (action === 'image-open-detail') {
+        if (action === 'image-open-detail') {
           onClearSelection();
           setSelectedImageIndex(i);
         } else if (action === 'image-toggle-favorite') {
