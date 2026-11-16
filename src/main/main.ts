@@ -1625,6 +1625,8 @@ ipcMain.handle('watch-image', async (event, inputPath) => {
       persistent: true,
       ignoreInitial: true,
       usePolling: false,
+      // Only the watched image directory; descendants must remain movable.
+      depth: 0,
     });
 
     handle.on('change', async (changedPath: string) => {
@@ -2376,27 +2378,31 @@ async function initFolder() {
     } catch (e) {}
   }
   if (config.refreshImage) {
-    const handle = chokidar.watch(APP_DIR, {
-      persistent: true,
-      ignoreInitial: true,
-      usePolling: false,
-    });
-    handle.on('change', async (changedPath: string) => {
-      let curPath = path.relative(APP_DIR, changedPath);
-      const comps = curPath.split(path.sep);
-      if (comps.length === 0) return;
-      if (comps[0] === '.') {
-        comps.shift();
-      }
-      if (
-        comps[0] === 'outs' ||
-        comps[0] === 'inpaints' ||
-        comps[0] === 'workspace'
-      ) {
-        // 저장 경로 전역 감시 — 어느 창이 볼지 알 수 없으니 전 창 브로드캐스트.
+    const publishImageChange = (changedPath: string) => {
+      const comps = path.relative(APP_DIR, changedPath).split(path.sep);
+      if (comps[0] === '.') comps.shift();
+      if (comps[0] === 'outs' || comps[0] === 'inpaints' || comps[0] === 'workspace') {
         broadcast('image-changed', comps.join('/'));
       }
-    });
+    };
+    if (process.platform === 'win32') {
+      // One recursive handle on the root leaves scene and project folders movable.
+      const handle = fsSync.watch(APP_DIR, { recursive: true }, (event: string, filename: string | null) => {
+        if (!filename) return;
+        const changedPath = path.join(APP_DIR, filename);
+        if (event === 'change') publishImageChange(changedPath);
+        // Some editors save by replacing the file. Windows reports a rename in that case.
+        else if (event === 'rename' && /\.(?:png|webp)$/i.test(filename)) {
+          void fs.stat(changedPath).then((stat: { isFile(): boolean }) => {
+            if (stat.isFile()) publishImageChange(changedPath);
+          }).catch(() => {});
+        }
+      });
+      handle.on('error', (error: Error) => log.warn('이미지 폴더 감시 오류:', error));
+    } else {
+      chokidar.watch(APP_DIR, { persistent: true, ignoreInitial: true, usePolling: false })
+        .on('change', publishImageChange);
+    }
   }
 }
 
