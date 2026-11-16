@@ -903,6 +903,15 @@ export const AppContextMenu = observer(() => {
       appState.pushMessage(e.message || '파일 탐색기 열기에 실패했습니다.');
     }
   };
+  const editImage = async (path: string | undefined) => {
+    if (!path) return;
+    try {
+      await backend.openImageEditor(path);
+      await backend.watchImage(path);
+    } catch {
+      appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
+    }
+  };
   const handleImageItemClick = ({ id, props }: any) => {
     const ctx2: GallaryImageContextAlt = {
       ...props.ctx,
@@ -929,6 +938,8 @@ export const AppContextMenu = observer(() => {
       saveImageToArtistLibrary(ctx2);
     } else if (id === 'reveal') {
       revealImageInExplorer(ctx2.path[0]);
+    } else if (id === 'edit-image') {
+      editImage(ctx2.path[0]);
     }
   };
   const handleImageItemClick2 = ({ id, props }: any) => {
@@ -959,6 +970,8 @@ export const AppContextMenu = observer(() => {
       saveImageToArtistLibrary(props.ctx);
     } else if (id === 'reveal') {
       revealImageInExplorer(props.ctx.path?.[0]);
+    } else if (id === 'edit-image' && props.ctx.path?.length === 1) {
+      editImage(props.ctx.path[0]);
     }
   };
   const exportStyle = async (ctx: StyleContextAlt) => {
@@ -1059,6 +1072,8 @@ export const AppContextMenu = observer(() => {
       historyDeleteImage(ctx);
     } else if (id === 'reveal') {
       revealImageInExplorer(ctx.entry.path);
+    } else if (id === 'edit-image') {
+      editImage(ctx.entry.path);
     }
   };
   const handleStyleItemClick = ({ id, props }: any) => {
@@ -1167,6 +1182,15 @@ export const AppContextMenu = observer(() => {
         <Item id="export-images" onClick={handleImageItemClick2}>
           이미지 내보내기
         </Item>
+        {!isMobile && (
+          <Item
+            id="edit-image"
+            onClick={handleImageItemClick2}
+            hidden={({ props }) => props?.ctx?.path?.length !== 1}
+          >
+            이미지 편집
+          </Item>
+        )}
         <Item id="fav" onClick={handleImageItemClick2}>
           즐겨찾기 토글
         </Item>
@@ -1210,6 +1234,11 @@ export const AppContextMenu = observer(() => {
         <Item id="download" onClick={handleImageItemClick}>
           이미지 다운로드
         </Item>
+        {!isMobile && (
+          <Item id="edit-image" onClick={handleImageItemClick}>
+            이미지 편집
+          </Item>
+        )}
         <Item id="fav" onClick={handleImageItemClick}>
           즐겨찾기 토글
         </Item>
@@ -1253,6 +1282,11 @@ export const AppContextMenu = observer(() => {
         <Item id="download" onClick={handleHistoryItemClick}>
           이미지 다운로드
         </Item>
+        {!isMobile && (
+          <Item id="edit-image" onClick={handleHistoryItemClick}>
+            이미지 편집
+          </Item>
+        )}
         {!isMobile && (
           <Item id="reveal" onClick={handleHistoryItemClick}>
             파일 탐색기에서 열기

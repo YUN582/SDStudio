@@ -2029,6 +2029,9 @@ const createWindow = async (opts?: {
 
   contextMenu({
     window: win,
+    shouldShowMenu: (_event, params) =>
+      params.isEditable ||
+      (params.mediaType !== 'image' && !!params.selectionText.trim()),
     // danbooru 태그는 일반 구글 검색이 무의미하므로 기본 "구글 검색" 항목을 끈다.
     showSearchWithGoogle: false,
     // 기본 메뉴 항목 한글화
