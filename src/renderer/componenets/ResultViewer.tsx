@@ -1,3 +1,7 @@
+import { ImageVariantChoices, QuickVariantFlow } from './ImageVariantChoices';
+import InPaintEditor from './InPaintEditor';
+import { openSourceVariant } from '../models/sourceVariant';
+import { confirmInpaintSceneDelete } from '../models/deleteInpaintWork';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { moveCombinedGalleryImage } from '../models/galleryReorder';
 import { gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
@@ -736,18 +740,7 @@ const Cell = memo(
                   변형
                 </span>
               )}
-              {variantCount > 0 && !selectMode && (
-                <button
-                  type="button"
-                  className="absolute bottom-1 right-1 z-10 round-button back-sky text-xs"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenVariants(path);
-                  }}
-                >
-                  변형 {variantCount}개
-                </button>
-              )}
+              {variantCount>0&&<span className="absolute bottom-1 right-1 z-10 round-button back-sky text-xs pointer-events-none" title={'연결된 인페인트·I2I 작업 '+variantCount+'개'}>변형 {variantCount}개</span>}
               {selectedImages.has(path) && (
                 <div
                   className="absolute left-0 top-0 z-10 bg-sky-500 opacity-50 text-md w-full h-full"
@@ -1223,6 +1216,31 @@ export const ResultDetailView = observer(
     const viewedImagePath = paths[selectedIndex];
     const scene = imageOwners?.get(viewedImagePath) ?? sourceScene;
     const variantCount = variantCounts?.get(viewedImagePath) ?? 0;
+    const [variantChoices,setVariantChoices]=useState(false);
+    const [variantBusy,setVariantBusy]=useState(false);
+    const [editingWork,setEditingWork]=useState<InpaintScene|null>(null);
+    const workRequest=useRef(false);
+    useEffect(()=>{setVariantChoices(false);},[viewedImagePath]);
+    const editVariant=async(type:string)=>{
+      if(session!==appState.curSession){appState.pushMessage('이 이미지의 프로젝트를 연 뒤 편집 작업을 열어 주세요.');return;}
+      if(workRequest.current||!viewedImagePath)return;
+      workRequest.current=true;setVariantBusy(true);
+      try{await openSourceVariant(session,scene,type,viewedImagePath,setEditingWork);setVariantChoices(false);}
+      catch(error){appState.pushMessage((error as Error).message,'error');}
+      finally{workRequest.current=false;setVariantBusy(false);}
+    };
+    const quickVariant=async(flow:QuickVariantFlow)=>{
+      if(workRequest.current||!viewedImagePath)return;
+      workRequest.current=true;setVariantBusy(true);
+      try{
+        const data=await imageService.fetchImage(viewedImagePath);if(!data)throw new Error('변형할 이미지를 찾을 수 없습니다.');
+        const base64=dataUriToBase64(data),metadata=await extractPromptDataFromBase64(base64);
+        const input=flow.getInput?await flow.getInput(session):undefined;
+        if(flow.getInput&&input==null)return;
+        await flow.handler(session,scene,base64,undefined,metadata,input);setVariantChoices(false);
+      }catch(error){appState.pushMessage((error as Error).message,'error');}
+      finally{workRequest.current=false;setVariantBusy(false);}
+    };
     useLayoutEffect(() => {
       onViewedImageChange?.(viewedImagePath);
     }, [onViewedImageChange, viewedImagePath]);
@@ -1337,6 +1355,7 @@ export const ResultDetailView = observer(
       };
       const handleKeyDown = async (e: KeyboardEvent) => {
         if (!activeView) return;
+        if (['ArrowLeft','ArrowRight'].includes(e.key) && (e.ctrlKey||e.metaKey||e.altKey)) return;
         // 입력 칸 포커스 중엔 전부, 확인 창이 열려 있으면 Delete/Backspace 무시(2026-11-01 U0-b E7)
         if (
           shouldIgnoreViewerRawKey(e.key, {
@@ -1525,7 +1544,7 @@ export const ResultDetailView = observer(
         setUpscalePreparing(false);
       }
     };
-    const viewButtons = scene === sourceScene ? buttons : [{
+    const inheritedButtons = scene === sourceScene ? buttons : [{
       className: 'back-orange',
       text: (path: string) => scene.mains.includes(path.split('/').pop()!)
         ? '즐겨찾기 해제'
@@ -1533,6 +1552,13 @@ export const ResultDetailView = observer(
       onClick: (_scene: GenericScene, path: string) =>
         toggleImageFavorite(session, scene, path.split('/').pop()!),
     }];
+    const viewButtons = (inheritedButtons||[]).filter((button:any)=>!(/인페인트|인페인팅|이미지 변형/.test(typeof button.text==='function'?button.text(viewedImagePath):button.text)));
+    if(!viewButtons.some((button:any)=>/즐겨찾기/.test(typeof button.text==='function'?button.text(viewedImagePath):button.text)))viewButtons.push({
+      className:'back-orange',text:(path:string)=>scene.mains.includes(path.split('/').pop()!)?'즐겨찾기 해제':'즐겨찾기 지정',
+      onClick:(_scene:GenericScene,path:string)=>toggleImageFavorite(session,scene,path.split('/').pop()!),
+    });
+    viewButtons.push({className:'back-green',text:'인페인트 · I2I',onClick:()=>void editVariant('SDInpaint')},
+      {className:'back-gray',text:'이미지 변형',onClick:()=>setVariantChoices(value=>!value)});
     const pluginLabel = (b: any) =>
       String(typeof b.text === 'function' ? b.text(paths[selectedIndex]) : b.text);
     const runPlugin = (b: any) => b.onClick(scene, paths[selectedIndex], onClose);
@@ -1553,6 +1579,14 @@ export const ResultDetailView = observer(
 
     const infoFields = (
       <>
+            {editingWork&&<FloatView priority={3} onEscape={()=>setEditingWork(null)}>
+              <InPaintEditor editingScene={editingWork} onConfirm={()=>setEditingWork(null)} onDelete={()=>setEditingWork(null)}/>
+            </FloatView>}
+            {variantChoices && (
+              <ImageVariantChoices path={viewedImagePath} busy={variantBusy}
+                onWork={editVariant} onQuick={quickVariant}
+                onClose={() => setVariantChoices(false)} />
+            )}
             <div className="max-w-full mb-2 text-sub">
               <span className="gray-label">파일이름: </span>
               <span className="break-all">{filename}</span>
@@ -1611,6 +1645,7 @@ export const ResultDetailView = observer(
               <span className="gray-label">스텝: </span>
               {steps}
             </div>
+            <LinkedImageWorks session={session} scene={scene} path={viewedImagePath}/>
       </>
     );
 
@@ -3275,3 +3310,28 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
 ));
 
 export default ResultViewer;
+
+const LinkedImageWorks=observer(function LinkedImageWorks({session,scene,path}:{session:Session;scene:GenericScene;path:string}){
+  const [editing,setEditing]=useState<InpaintScene|null>(null);
+  const [result,setResult]=useState<{work:InpaintScene;file:string}|null>(null);
+  const [,refresh]=useState(0);
+  useEffect(()=>{const changed=()=>refresh(n=>n+1);imageService.addEventListener('image-added',changed);return()=>imageService.removeEventListener('image-added',changed);},[]);
+  const works=scene.type==='scene'?linkedImageVariants(scene,session.inpaints.values(),path?.split('/').pop()):[];
+  if(!works.length)return null;
+  return <section className="sds-linked-works" aria-label="연결된 인페인트·I2I 작업">
+    <h3 className="text-default">연결된 인페인트·I2I 작업 <span className="text-sub">{works.length}</span></h3>
+    {works.map(work=>{const paths=gameService.getOutputs(session,work).map(name=>imageService.getOutputDir(session,work)+'/'+name);
+      return <article key={work.name} className="sds-linked-work"><div className="sds-work-heading">
+        <div className="sds-work-name"><strong className="text-default">{work.name}</strong><span className="text-sub">{workFlowService.getDef(work.workflowType)?.title||'변형'} · 결과 {paths.length}장</span></div>
+        <button className="round-button back-sky" onClick={()=>{if(session!==appState.curSession){appState.pushMessage('이 이미지의 프로젝트를 연 뒤 편집 작업을 열어 주세요.');return;}setEditing(work);}}>작업 열기</button>
+        <button className="round-button back-red" onClick={()=>confirmInpaintSceneDelete(session,work)} aria-label={work.name+' 작업 삭제'}>삭제</button>
+      </div>{paths.length?<div className="sds-work-results">{paths.map(file=><button key={file} className="sds-work-result" aria-label={work.name+' 결과 '+file.split('/').pop()+' 보기'} onClick={()=>setResult({work,file})}>
+        <CellPreview path={file} cellSize={96} imageSize={200} style={{width:96,height:96,display:'grid',placeItems:'center'}}/>
+      </button>)}</div>:<p className="text-faint">아직 생성된 결과가 없습니다.</p>}</article>;
+    })}
+    {editing&&<FloatView priority={3} onEscape={()=>setEditing(null)}><InPaintEditor editingScene={editing} onConfirm={()=>setEditing(null)} onDelete={()=>setEditing(null)}/></FloatView>}
+    {result&&<FloatView priority={2} allowUndo onEscape={()=>setResult(null)}><ResultDetailView scene={result.work} session={session} buttons={[]}
+      getPaths={()=>gameService.getOutputs(session,result.work).map(name=>imageService.getOutputDir(session,result.work)+'/'+name)}
+      initialSelectedIndex={gameService.getOutputs(session,result.work).indexOf(result.file.split('/').pop()!)} onClose={()=>setResult(null)}/></FloatView>}
+  </section>;
+});
