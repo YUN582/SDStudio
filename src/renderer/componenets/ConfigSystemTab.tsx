@@ -39,6 +39,7 @@ import {
 } from '../models/exampleVibeCleanupRuntime';
 import { formatBytes } from '../models/googleDrive';
 import ModalOverlay from './ModalOverlay';
+import { migrateUnusedVariantOutputs } from '../models/variantMigrationRuntime';
 
 /* ── 폴더 정리 공통 컴포넌트 ── */
 const FolderCleanupSection = ({ folder, label, description }: { folder: string; label: string; description?: string }) => {
@@ -183,6 +184,7 @@ const FolderCleanupSection = ({ folder, label, description }: { folder: string; 
    사용자 확인 후 정리한다. PC=OS 휴지통 이동(복구 가능), 모바일=영구 삭제.
    미이동 프로젝트 json 잔존 시 스캔이 차단 사유를 반환한다(legacyCleanup.ts). */
 const LegacyCleanupSection = () => {
+  const [migratingVariants, setMigratingVariants] = useState(false);
   const [scan, setScan] = useState<LegacyScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -249,6 +251,31 @@ const LegacyCleanupSection = () => {
         마이그레이션 후 구 저장 폴더에 남은 항목(프로젝트에 속하지 않는 고아
         폴더·파일)을 정리합니다.
       </p>
+      {!isMobile && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="btn text-xs back-gray px-2 py-0.5 rounded"
+            disabled={migratingVariants || scanning || cleaning}
+            onClick={async () => {
+              setMigratingVariants(true);
+              try {
+                const result = await migrateUnusedVariantOutputs();
+                appState.pushMessage(`변형 작업 ${result.migrated}개 이관, ${result.deferred}개 보류. 사용 중인 프로젝트는 다음 시작 때 이관합니다.`);
+                await doScan();
+              } catch (error) {
+                appState.pushMessage((error as Error).message, 'error');
+              } finally {
+                setMigratingVariants(false);
+              }
+            }}
+          >
+            {migratingVariants ? '변형 결과 이관 중…' : '인페인트·I2I 결과 저장 위치 정리'}
+          </button>
+          <span className="text-xs text-faint">
+            원본 씬 아래 작업별로 이관합니다. 사용 중인 프로젝트는 다음 시작 때 처리합니다.
+          </span>
+        </div>
+      )}
       {scan && scan.blocked && (
         <p className="text-xs text-orange-500 dark:text-orange-400">{scan.blocked}</p>
       )}

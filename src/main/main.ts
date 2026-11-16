@@ -374,17 +374,18 @@ ipcMain.handle('workspace-create-project-dir', (_event, relativePath, data, migr
 ipcMain.handle('workspace-task-output', (_event, relativePath) => workspaceAccess.resolveTaskOutput(relativePath));
 let variantMigrationRun: ReturnType<typeof migrateVariantOutputs> | undefined;
 
-ipcMain.handle('migrate-variant-outputs', (event) => {
+ipcMain.handle('migrate-variant-outputs', (event, excludedDirs: string[] = []) => {
   if (event.sender.id !== generationHostWcId) return { migrated: 0, deferred: 0 };
   if (!variantMigrationRun) {
-    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active').map(entry => entry.dir));
+    const excluded = new Set(Array.isArray(excludedDirs) ? excludedDirs.filter(dir => typeof dir === 'string') : []);
+    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active' && !excluded.has(entry.dir)).map(entry => entry.dir));
     variantMigrationRun = migrateVariantOutputs(APP_DIR, async (file, previous, next) => {
       const location = workspaceAccess.workspaceLocation(path.relative(APP_DIR, file));
       if (!location || location.tail.join('/') !== 'project.json' || fsSync.readFileSync(file, 'utf8') !== previous) {
         throw new Error('이관 중 프로젝트가 변경됐습니다.');
       }
       workspaceAccess.writeWorkspaceFile(location, next, 'utf8');
-    }, active);
+    }, active).finally(() => { variantMigrationRun = undefined; });
   }
   return variantMigrationRun;
 });
