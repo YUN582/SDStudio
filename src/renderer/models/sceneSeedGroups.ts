@@ -238,11 +238,13 @@ export function resolveSceneSeed(
  * 적용 지점은 `createSDI2IHandler`(SDWorkFlow.ts) 한 곳.
  */
 export function resolveVariantSceneSeed(
-  scene: { type?: string } | undefined,
+  scene: { type?: string; workflowType?: string } | undefined,
   preset: { seed?: unknown } | undefined,
   mainSeed?: unknown,
 ): number | undefined {
   if (validSeed(preset?.seed)) return preset!.seed as number;
+  // An empty inpaint seed requests a fresh seed, including maskless I2I.
+  if (scene?.workflowType === 'SDInpaint') return undefined;
   if (scene?.type === 'inpaint') {
     const groupSeed = readSceneSeedGroup(scene as InpaintScene)?.seed;
     if (groupSeed !== undefined) return groupSeed;
