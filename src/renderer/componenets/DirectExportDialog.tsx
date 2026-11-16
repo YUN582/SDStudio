@@ -7,6 +7,7 @@ import ModalOverlay from './ModalOverlay';
 import ExportSettingsFields from './ExportSettingsFields';
 
 function DirectExportForm({ request }: { request: DirectExportRequest }) {
+  const selectedImageCount = request.selectedImageCount;
   const [form, setForm] = useState(emptyExportForm);
   const [characters, setCharacters] = useState<string[]>([]);
   const detected = useMemo(() => exportSpecialChars(request.sceneNames), [request]);
@@ -45,9 +46,10 @@ function DirectExportForm({ request }: { request: DirectExportRequest }) {
     : null;
   return <ModalOverlay isOpen onClose={close} title="직접 내보내기 설정" size="m" footer={footer} footerStart={footerStart}>
     <div className="space-y-4">
-      <div className="text-sm text-muted">{request.projectName} · 대상 씬 {request.sceneNames.length}개</div>
-      {/* PC 는 2열 격자(칸마다 최소 300px — m 창 폭이면 2열), 모바일은 종전 세로 쌓기 */}
-      <ExportSettingsFields form={form} setForm={setForm} direct twoColumn={!isMobile} />
+      <div className="text-sm text-muted">
+        {request.projectName} · {selectedImageCount === undefined ? `대상 씬 ${request.sceneNames.length}개` : `선택한 이미지 ${selectedImageCount}장`}
+      </div>
+      <ExportSettingsFields form={form} setForm={setForm} direct twoColumn={!isMobile} fixedImageSelection={selectedImageCount !== undefined} />
       {!form.autoConvertSeparator && detected.length > 0 && <fieldset className="border line-color rounded p-3">
         <legend className="text-sm text-muted">구분자로 변환할 문자</legend>
         <div className="flex flex-wrap gap-3">{detected.map((char) => <label key={char} className="flex items-center gap-1 text-default">
@@ -55,7 +57,10 @@ function DirectExportForm({ request }: { request: DirectExportRequest }) {
           {char === ' ' ? '띄어쓰기' : char}
         </label>)}</div>
       </fieldset>}
-      <div className="text-xs text-muted">즐겨찾기가 없는 씬은 첫 이미지를 사용합니다. 원본 이미지는 변경하지 않습니다.</div>
+      <div className="text-xs text-muted">
+        {selectedImageCount === undefined && '즐겨찾기가 없는 씬은 첫 이미지를 사용합니다. '}
+        원본 이미지는 변경하지 않습니다.
+      </div>
     </div>
   </ModalOverlay>;
 }

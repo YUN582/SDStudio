@@ -96,8 +96,9 @@ const ExportPresetManager = observer(() => {
     const type = appState.lastExportType || 'scene';
     const session = appState.lastExportSession;
     const selected = appState.lastExportSelected;
+    const images = appState.lastExportImages;
     setTimeout(() => {
-      if (session && appState.curSession === session) appState.exportPackage(type, selected);
+      if (session && appState.curSession === session) appState.exportPackage(type, selected, images);
     }, 100);
   };
 

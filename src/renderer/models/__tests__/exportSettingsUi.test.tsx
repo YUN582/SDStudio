@@ -52,6 +52,15 @@ test('format conditions and blank quality expose the AVIF default', async () => 
   act(() => click('내보내기'));
   expect(resolve.mock.calls[0][0].preset.quality).toBeUndefined();
 });
+
+test('direct export displays the fixed image count and hides the scope control', async () => {
+  state.directExportRequest.selectedImageCount = 3;
+  await act(async () => root.render(<DirectExportDialog />));
+  expect(container.textContent).toContain('선택한 이미지 3장');
+  expect(container.querySelector('option[value="fav"]')).toBeNull();
+  act(() => click('내보내기'));
+  expect(resolve).toHaveBeenCalledTimes(1);
+});
 test('mobile hides target directory and unsupported lossless; cancel has no configuration', async () => {
   mobile = true;
   await act(async () => root.render(<DirectExportDialog />));

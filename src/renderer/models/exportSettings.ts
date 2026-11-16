@@ -52,5 +52,6 @@ export interface DirectExportResult { preset: ExportPreset; charsToReplace: stri
 export interface DirectExportRequest {
   projectName: string;
   sceneNames: string[];
+  selectedImageCount?: number;
   resolve: (result?: DirectExportResult) => void;
 }

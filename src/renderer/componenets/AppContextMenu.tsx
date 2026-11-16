@@ -512,6 +512,9 @@ export const AppContextMenu = observer(() => {
       );
     } else if (id === 'duplicate') {
       duplicateScene(ctx);
+    } else if (id === 'export-images') {
+      const scenes = appState.isSceneSelected(ctx.scene) ? selectedScenesLike(ctx.scene) : [ctx.scene];
+      void appState.exportPackage(ctx.scene.type, scenes);
     } else if (id === 'regenerate-scene') {
       regenerateSceneFromImages(ctx);
     } else if (id === 'copy-to-project') {
@@ -945,6 +948,11 @@ export const AppContextMenu = observer(() => {
       upscaleImages(props.ctx).catch(() => appState.pushMessage('업스케일 예약 실패'));
     } else if (id === 'download') {
       downloadImage(props.ctx);
+    } else if (id === 'export-images') {
+      const ctx = props.ctx as GallaryImageContextAlt;
+      if (ctx.scene && ctx.exportImages?.size) {
+        void appState.exportPackage(ctx.scene.type, Array.from(ctx.exportImages.keys()), ctx.exportImages);
+      }
     } else if (id === 'save-global') {
       saveImageAsGlobalPreset(props.ctx);
     } else if (id === 'save-artist') {
@@ -1092,6 +1100,9 @@ export const AppContextMenu = observer(() => {
         <Item id="regenerate-scene" onClick={handleSceneItemClick}>
           씬 재생성 (이미지별 설정)
         </Item>
+        <Item id="export-images" onClick={handleSceneItemClick}>
+          씬 이미지 내보내기
+        </Item>
         <Item id="copy-to-project" onClick={handleSceneItemClick}>
           {selCount > 1
             ? `선택한 씬(${selCount}) 복사`
@@ -1152,6 +1163,9 @@ export const AppContextMenu = observer(() => {
       <Menu id={ContextMenuType.GallaryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.GallaryImage)}>
         <Item id="download" onClick={handleImageItemClick2}>
           이미지 다운로드
+        </Item>
+        <Item id="export-images" onClick={handleImageItemClick2}>
+          이미지 내보내기
         </Item>
         <Item id="fav" onClick={handleImageItemClick2}>
           즐겨찾기 토글

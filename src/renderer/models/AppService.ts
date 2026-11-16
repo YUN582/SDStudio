@@ -395,6 +395,7 @@ export class AppState {
   @observable.ref accessor directExportRequest: import('./exportSettings').DirectExportRequest | undefined = undefined;
   lastExportType: 'scene' | 'inpaint' = 'scene';
   lastExportSelected?: GenericScene[];
+  lastExportImages?: ReadonlyMap<GenericScene, readonly string[]>;
   lastExportSession?: Session;
 
   // 모달 오버레이 카운터 (열린 ModalOverlay 수 추적)
@@ -1452,7 +1453,9 @@ export class AppState {
   saveExportPresets(presets: ExportPreset[]) { return exportPresetService.saveExportPresets(presets); }
   subscribeExportPresets(fn: (presets: ExportPreset[]) => void) { return exportPresetService.subscribeExportPresets(fn); }
   detectSpecialCharsFromNames(sceneNames: string[], separator: string, autoConvert = false) { return exportPresetService.detectSpecialCharsFromNames(sceneNames, separator, autoConvert); }
-  exportPackage(type: 'scene' | 'inpaint', selected?: GenericScene[]) { return exportPresetService.exportPackage(type, selected); }
+  exportPackage(type: 'scene' | 'inpaint', selected?: GenericScene[], images?: ReadonlyMap<GenericScene, readonly string[]>) {
+    return exportPresetService.exportPackage(type, selected, undefined, images);
+  }
   quickExportPackage(type: 'scene' | 'inpaint', selected?: GenericScene[]) { return exportPresetService.quickExportPackage(type, selected); }
   exportPreset(session: Session, preset: any) { return exportPresetService.exportPreset(session, preset); }
 

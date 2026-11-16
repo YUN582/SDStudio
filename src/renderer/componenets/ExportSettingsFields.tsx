@@ -47,10 +47,11 @@ const FieldRow = ({ label, stacked, children }: {
     </div>
   );
 
-export default function ExportSettingsFields({ form, setForm, direct = false, twoColumn = false }: {
+export default function ExportSettingsFields({ form, setForm, direct = false, twoColumn = false, fixedImageSelection = false }: {
   form: ExportFormState;
   setForm: React.Dispatch<React.SetStateAction<ExportFormState>>;
   direct?: boolean;
+  fixedImageSelection?: boolean;
   // 2열 격자(2026-11-11 오버레이 묶음 1, 내보내기 프리셋 관리 L 창): 칸마다 최소 300px — 폭이 모자라면 1열로 접힌다.
   // 목표 폴더 묶음은 늘 한 줄 전체(col-span-full). 끄면 종전 세로 쌓기 그대로.
   twoColumn?: boolean;
@@ -66,7 +67,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
     data-export-fields-columns={twoColumn ? '2' : undefined}
   >
           {/* 이미지 범위 */}
-          <FieldRow label="이미지 범위 *" stacked={twoColumn}>
+          {!fixedImageSelection && <FieldRow label="이미지 범위 *" stacked={twoColumn}>
             <div className="flex-1 min-w-0">
               <DropdownSelect
                 selectedOption={form.menu}
@@ -74,7 +75,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 onSelect={(o: any) => setForm({ ...form, menu: o.value })}
               />
             </div>
-          </FieldRow>
+          </FieldRow>}
 
           {/* 파일명 형식 */}
           <FieldRow label="파일명 형식 *" stacked={twoColumn}>

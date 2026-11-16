@@ -209,15 +209,20 @@ export class ExportPresetService {
     type: 'scene' | 'inpaint',
     selected?: GenericScene[],
     presetOverride?: ExportPreset,
+    selectedImages?: ReadonlyMap<GenericScene, readonly string[]>,
   ) {
     const session = appState.curSession;
     if (!session) return;
     // 설정 중 프로젝트를 바꿔도 시작한 대상과 캐릭터 파일명 설정을 유지한다.
     selected = [...(selected ?? session.getScenes(type))];
+    const selectedImageCount = selectedImages && Array.from(selectedImages.values())
+      .reduce((count, images) => count + images.length, 0);
+    if (selectedImageCount === 0) return;
     const character = appState.getAppliedCharacterPreset();
     const characterAffix = { filenamePrefix: character?.filenamePrefix, filenameSuffix: character?.filenameSuffix };
     appState.lastExportType = type;
     appState.lastExportSelected = selected;
+    appState.lastExportImages = selectedImages;
     appState.lastExportSession = session;
     const exportImpl = async (
       prefix: string,
@@ -253,12 +258,16 @@ export class ExportPresetService {
       );
       for (const scene of scenes) {
         const cands = gameService.getOutputs(session, scene);
+        const dir = imageService.getOutputDir(session, scene);
         const imageMap: any = {};
         cands.forEach((x) => {
           imageMap[x] = true;
         });
-        const images = [];
-        if (fav) {
+        const images: string[] = [];
+        if (selectedImages) {
+          const wanted = new Set(selectedImages.get(scene));
+          images.push(...cands.filter((name) => wanted.has(`${dir}/${name}`)));
+        } else if (fav) {
           if (scene.mains.length) {
             for (const main of scene.mains) {
               if (imageMap[main]) images.push(main);
@@ -296,7 +305,7 @@ export class ExportPresetService {
         }
         const isMirror = scene.type === 'inpaint' && (scene as InpaintScene).workflowType === 'SDMirror';
         for (let i = 0; i < images.length; i++) {
-          let imgPath = imageService.getOutputDir(session, scene) + '/' + images[i];
+          let imgPath = dir + '/' + images[i];
           if (isMirror) {
             const imgData = await imageService.fetchImage(imgPath);
             if (imgData) {
@@ -321,6 +330,10 @@ export class ExportPresetService {
             : baseName + separator + (i + 1).toString() + '.' + outExt;
           paths.push({ path: imgPath, name });
         }
+      }
+      if (selectedImages && paths.length === 0) {
+        appState.pushMessage('내보낼 이미지가 없습니다');
+        return;
       }
       if (opt !== 'original') {
         // 이중 최적화 가드: 이미 최적화(webp/avif)된 소스가 섞여 있으면 묻는다.
@@ -415,6 +428,20 @@ export class ExportPresetService {
           appState.pushMessage('최적화 가능한 이미지가 없습니다');
           appState.exportProgress = undefined;
           return;
+        }
+      }
+
+      if (selectedImages) {
+        const usedNames = new Set<string>();
+        for (const item of paths) {
+          const dot = item.name.lastIndexOf('.');
+          const base = item.name.slice(0, dot);
+          const ext = item.name.slice(dot);
+          let index = 2;
+          while (usedNames.has(item.name.toLowerCase())) {
+            item.name = `${base}${separator || '.'}${index++}${ext}`;
+          }
+          usedNames.add(item.name.toLowerCase());
         }
       }
 
@@ -576,7 +603,9 @@ export class ExportPresetService {
 
     const choice = await appState.pushDialogAsync({
       type: 'select',
-      text: '내보내기 방법을 선택해주세요',
+      text: selectedImageCount === undefined
+        ? '내보내기 방법을 선택해주세요'
+        : `선택한 이미지 ${selectedImageCount}장의 내보내기 방법을 선택해주세요`,
       items: presetItems,
     });
     if (!choice) return;
@@ -602,6 +631,7 @@ export class ExportPresetService {
       appState.directExportRequest = {
         projectName: session.name,
         sceneNames: selected!.map((scene) => scene.name),
+        selectedImageCount,
         resolve: (value) => {
           if (settled) return;
           settled = true;

@@ -3,11 +3,12 @@ const resizeImage = jest.fn(async () => {});
 const zipFiles = jest.fn(async (_paths: any[], _destination: string) => {});
 const publishExport = jest.fn(async () => {});
 const copyFileToAbsolute = jest.fn(async () => {});
+const getOutputs = jest.fn((_session, _scene) => ['image.webp']);
 const platform = { supportsTargetFolder: true, maxImageConcurrency: 2, exportConcurrency: 2 };
 const state: any = { pushDialogAsync: jest.fn(), pushMessage: jest.fn(), showExportComplete: jest.fn(), getAppliedCharacterPreset: () => undefined };
 jest.mock('..', () => ({
   imageService: { refreshBatch, getOutputDir: (session: any, scene: any) => `${session.name}/${scene.name}` },
-  gameService: { refreshList: jest.fn(), getOutputs: () => ['image.webp'] },
+  gameService: { refreshList: jest.fn(), getOutputs },
   sessionService: { getFolderOf: () => null, folderLeafName: () => '' },
   zipService: { zipFiles, isZipping: false },
   backend: { getConfig: async () => ({}), resizeImage, publishExport, copyFileToAbsolute, showFile: jest.fn(), copyFile: jest.fn() },
@@ -30,6 +31,7 @@ let service: ExportPresetService;
 let session: any;
 beforeEach(() => {
   jest.clearAllMocks();
+  getOutputs.mockReset().mockReturnValue(['image.webp']);
   state.directExportRequest = undefined;
   platform.supportsTargetFolder = true;
   session = { name: 'original-project', getScenes: () => [{ name: 'scene', mains: [], type: 'scene' }] };
@@ -58,6 +60,30 @@ test('direct setup cancellation performs no image refresh or output', async () =
   await pending;
   expect(refreshBatch).not.toHaveBeenCalled();
   expect(zipFiles).not.toHaveBeenCalled();
+});
+
+test('explicit image selection stays scoped across owners and ignores the preset favorites filter', async () => {
+  const original = { name: 'scene', type: 'scene', mains: ['favorite.png'] } as const;
+  const variant = { name: 'scene', type: 'inpaint', mains: [] } as const;
+  const scenes = [original, variant] as any[];
+  getOutputs.mockImplementation((_session, scene) => scene === original
+    ? ['favorite.png', 'original.png']
+    : ['unselected.png', 'variant.png']);
+  const images = new Map([
+    [scenes[0], ['original-project/scene/original.png', 'original-project/scene/removed.png']],
+    [scenes[1], ['original-project/scene/variant.png']],
+  ]);
+  state.pushDialogAsync.mockResolvedValue('_manual');
+  const pending = service.exportPackage('scene', scenes, undefined, images);
+  await Promise.resolve();
+  expect(state.directExportRequest.selectedImageCount).toBe(3);
+  expect(state.lastExportImages).toBe(images);
+  state.directExportRequest.resolve({ preset: exportFormToPreset(emptyExportForm()), charsToReplace: [] });
+  await pending;
+  expect(zipFiles.mock.calls[0][0]).toEqual([
+    { path: 'original-project/scene/original.png', name: 'scene.png' },
+    { path: 'original-project/scene/variant.png', name: 'scene.2.png' },
+  ]);
 });
 test('direct export keeps the captured project and never asks follow-up questions', async () => {
   state.pushDialogAsync.mockResolvedValue('_manual');
