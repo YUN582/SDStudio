@@ -13,7 +13,7 @@ import {
 import ProjectDrawer, { ProjectDrawerHandle } from './ProjectDrawer';
 import ProjectSideBar, { ProjectStrip } from './ProjectSideBar';
 import ProjectBrowser from './ProjectBrowser';
-import { ImageHistoryPanel, ImageHistoryDrawer, ImageHistoryHandle } from './ImageHistory';
+import { ImageHistoryPanel, ImageHistoryDrawer, ImageHistoryHandle, HistoryImagePreview, useHistoryImagePreview } from './ImageHistory';
 import QuickModeTab from './QuickModeTab';
 import PreSetEditor from './PreSetEdtior';
 import SceneQueuControl, { SceneCell } from './SceneQueueControl';
@@ -215,6 +215,7 @@ const DnDPreview = () => {
 };
 
 export const App = observer(() => {
+  const { preview: historyPreview, open: openHistoryImage, close: closeHistoryImage } = useHistoryImagePreview();
   useEffect(() => {
     return () => {
       taskQueueService.stop();
@@ -862,6 +863,9 @@ export const App = observer(() => {
               >
               <FloatViewProvider>
                 <AppContextMenu />
+                {historyPreview && (
+                  <HistoryImagePreview key={historyPreview.entry.id} preview={historyPreview} onClose={closeHistoryImage} />
+                )}
                 <ProjectDrawer />
                 {isMobile && <ImageHistoryDrawer />}
                 {isMobile && <ImageHistoryHandle />}
@@ -923,7 +927,7 @@ export const App = observer(() => {
                   order: dockOrder(resolvedLayout.historySide, DOCK_RANK.history),
                 }}
               >
-                <ImageHistoryPanel />
+                <ImageHistoryPanel onOpenImage={openHistoryImage} />
               </div>
             </StackGrow>
             {/* PC 하단바: 도크 행(StackGrow)의 형제 — 좌/우 패널 상태와 무관하게

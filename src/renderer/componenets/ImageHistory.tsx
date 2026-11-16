@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useContextMenu } from 'react-contexify';
 import {
@@ -9,12 +9,15 @@ import {
   FaThLarge,
   FaTimes,
 } from 'react-icons/fa';
-import { imageHistoryService, imageService, isMobile } from '../models';
+import { backend, gameService, imageHistoryService, imageService, isMobile } from '../models';
 import { GenerationHistoryEntry } from '../models/ImageHistoryService';
 import { appState } from '../models/AppService';
 import { resolveLayout } from '../models/layoutTemplates';
 import { backStackService } from '../models/BackStackService';
 import { ContextMenuType, GenericScene } from '../models/types';
+import { toggleImageFavorite } from '../models/imageStateUndo';
+import { FloatView } from './FloatView';
+import { ResultDetailView } from './ResultViewer';
 import Tooltip from './Tooltip';
 import { toolbarDragUi } from './ToolbarDnd';
 import {
@@ -26,6 +29,71 @@ import {
 // 최근 생성 이미지 히스토리 사이드바.
 // PC: 우측 밀어내기(push) 패널 — 펼치면 중앙 영역이 그만큼 줄어듦.
 // 모바일: 우측 오버레이 드로어 (ProjectDrawer의 우측 미러).
+
+type HistoryPreview = {
+  entry: GenerationHistoryEntry;
+  source: NonNullable<Awaited<ReturnType<typeof imageHistoryService.resolve>>>;
+  getPaths: () => string[];
+  path: string;
+};
+
+export function useHistoryImagePreview() {
+  const [preview, setPreview] = useState<HistoryPreview>();
+  const request = useRef(0);
+  const close = () => {
+    request.current += 1;
+    setPreview(undefined);
+  };
+  const open = async (entry: GenerationHistoryEntry) => {
+    const sequence = ++request.current;
+    try {
+      const source = await imageHistoryService.resolve(entry);
+      if (!source || sequence !== request.current) return;
+      const { session, scene } = source;
+      const outputDir = imageService.getOutputDir(session, scene);
+      const target = `${outputDir}/${entry.filename}`;
+      const getPaths = () =>
+        gameService.getOutputs(session, scene).map((name) => `${outputDir}/${name}`);
+      if (!getPaths().includes(target)) await imageService.refresh(session, scene);
+      if (sequence !== request.current) return;
+      if (!getPaths().includes(target) || !(await backend.existFile(target))) {
+        if (sequence === request.current) appState.pushMessage('이미지 파일을 찾을 수 없습니다.');
+        return;
+      }
+      if (sequence === request.current) setPreview({ entry, source, getPaths, path: target });
+    } catch {
+      if (sequence === request.current) appState.pushMessage('히스토리 이미지를 열지 못했습니다.', 'error');
+    }
+  };
+  return { preview, open, close };
+}
+
+export const HistoryImagePreview = observer(
+  ({ preview, onClose }: { preview: HistoryPreview; onClose: () => void }) => {
+    const { entry, source: { session, scene }, getPaths, path } = preview;
+    const index = getPaths().indexOf(path);
+    if (index < 0) return null;
+    return (
+      <FloatView priority={1} allowUndo onEscape={onClose}>
+        <ResultDetailView
+          session={session}
+          scene={scene}
+          getPaths={getPaths}
+          initialSelectedIndex={index}
+          onClose={onClose}
+          historyEntry={entry}
+          buttons={[{
+            className: 'back-orange',
+            text: (path) => scene.mains.includes(path.split('/').pop()!)
+              ? '즐겨찾기 해제'
+              : '즐겨찾기 지정',
+            onClick: (_scene, path) => toggleImageFavorite(session, scene, path.split('/').pop()!),
+          }]}
+        />
+      </FloatView>
+    );
+  },
+);
 
 const HistoryImageCell = observer(
   ({
@@ -133,14 +201,9 @@ const HistoryColumnsToggle = observer(() => {
 });
 
 // PC/모바일 공용 목록 (1열/2열 그리드 토글, 최신순)
-const HistoryList = observer(() => {
+const HistoryList = observer(({ onOpenImage }: { onOpenImage?: (entry: GenerationHistoryEntry) => void }) => {
   const entries = imageHistoryService.entries;
   const cols = appState.historyColumns;
-
-  // 탭/클릭 = 즐겨찾기 토글 (씬 이동·그리드 열기는 우클릭/롱프레스 메뉴 전담)
-  const onClickEntry = (entry: GenerationHistoryEntry) => {
-    imageHistoryService.toggleFavorite(entry);
-  };
 
   if (entries.length === 0) {
     return (
@@ -165,7 +228,10 @@ const HistoryList = observer(() => {
               ? `${entry.sessionName}/${entry.sceneName}`
               : entry.sceneName
           }
-          onClick={() => onClickEntry(entry)}
+          onClick={() => {
+            if (onOpenImage) onOpenImage(entry);
+            else void imageHistoryService.toggleFavorite(entry);
+          }}
         />
       ))}
     </div>
@@ -173,7 +239,7 @@ const HistoryList = observer(() => {
 });
 
 // PC 우측 밀어내기 패널 (+ 항상 보이는 접기/펼치기 스트립)
-export const ImageHistoryPanel = observer(() => {
+export const ImageHistoryPanel = observer(({ onOpenImage }: { onOpenImage: (entry: GenerationHistoryEntry) => void }) => {
   const collapsed = appState.historyPanelCollapsed;
   // 히스토리가 좌/우 어느 쪽에 도킹됐는지(레이아웃 슬롯). 우측(기본)은 기존 렌더 그대로,
   // 좌측이면 접기 스트립·구분선·화살표를 전부 좌우 반전해 자연스럽게 보이도록 미러링한다.
@@ -263,7 +329,7 @@ export const ImageHistoryPanel = observer(() => {
             <span className="text-sm font-semibold gray-label">히스토리</span>
             <HistoryColumnsToggle />
           </div>
-          <HistoryList />
+          <HistoryList onOpenImage={onOpenImage} />
         </div>
       )}
     </div>
