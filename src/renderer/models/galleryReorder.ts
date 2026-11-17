@@ -1,6 +1,6 @@
 import { imageService, gameService, sessionService } from '.';
 import { recordImageOrder } from './imageStateUndo';
-import { GALLERY_ORDER_KEY } from './sceneImageVariants';
+import { GALLERY_ORDER_KEY, galleryImageKey, sortGalleryEntries } from './sceneImageVariants';
 import { undoService, UNDO_TEXT } from './undoService';
 import type { GenericScene, Session } from './types';
 
@@ -42,8 +42,22 @@ export async function moveCombinedGalleryImage(session: Session, scene: GenericS
   }
   const next = reorderGalleryPaths(paths, from, to, visible, group);
   if (next === paths) return;
-  const previous = scene.meta.get(GALLERY_ORDER_KEY);
   const order = next.map(path => imageService.getGalleryImageKey(owners.get(path)!, path.split('/').pop()!, scene));
+  await saveGalleryOrder(session, scene, order);
+}
+
+/** Sort the whole scene, including linked work results, without moving any files. */
+export async function sortSceneGallery(session: Session, scene: GenericScene): Promise<boolean> {
+  const entries = imageService.getSceneGalleryEntries(session, scene);
+  const sorted = sortGalleryEntries(entries);
+  if (sorted.every((entry, index) => entry.path === entries[index].path)) return false;
+  await saveGalleryOrder(session, scene, sorted.map(entry => galleryImageKey(entry.owner, entry.filename, scene)));
+  return true;
+}
+
+async function saveGalleryOrder(session: Session, scene: GenericScene, order: string[]) {
+  const current = scene.meta.get(GALLERY_ORDER_KEY);
+  const previous = Array.isArray(current) ? [...current] : current;
   const save = (value: unknown) => {
     if (value === undefined) scene.meta.delete(GALLERY_ORDER_KEY);
     else scene.meta.set(GALLERY_ORDER_KEY, value);

@@ -49,6 +49,7 @@ import {
   FaShare,
   FaSitemap,
   FaSlidersH,
+  FaSortAmountDown,
   FaStar,
   FaSwatchbook,
   FaTags,
@@ -157,6 +158,7 @@ export const ICON_DICTIONARY = {
   'quick-menu': FaBolt, // 퀵 메뉴(우하단 플로팅 버튼) — quick-export 와 같은 번개(「빠른」)
   more: FaEllipsisH, // 더보기
   favorite: FaStar, // 즐겨찾기 — FaStar 전용
+  'sort-images': FaSortAmountDown, // 즐겨찾기 우선 · 최신 생성순으로 이미지 정렬
   'artist-favorite': FaHeart, // 작가 즐겨찾기 — FaHeart 전용
   'pin-default': FaThumbtack, // 기본 지정·대표 지정(⭐ 아님)
   'global-presets': FaSwatchbook, // 글로벌 프리셋(탭)

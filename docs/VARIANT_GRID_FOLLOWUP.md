@@ -133,3 +133,23 @@ click suppression unchanged.
 Regression: drag a cell away from the grid origin and move the pointer again.
 Assert clone/host alignment and preserve the original cell position. Verified
 single and multiple drags in the isolated packaged app with synthetic images.
+
+
+## Favorite-first gallery sort (2026-11-17)
+
+Add an icon button after the Inpaint tab. One click sorts the whole scene gallery:
+favorites first, newest generated image first within each group. Use the filename's
+millisecond timestamp, the same source used by gallery merging. Imported/renamed
+files without that timestamp follow dated files in their favorite group and retain
+relative order; equal timestamps remain stable.
+
+Persist combined owner/filename keys. Include original and linked variant results;
+never move image files or change favorites, rankings or work dependencies. Reuse
+combined drag ordering and its undo stack. Manual dragging remains available after
+sorting. New outputs retain the existing prepend behavior until the next sort.
+
+Validation: five targeted suites, 26 tests; TypeScript and production renderer
+build passed. Fourteen isolated packaged-app checks passed, including original /
+variant favorite order, undo/redo, restart persistence, drag alignment and an
+actual 850px viewport. Inspected wide, narrow and stacked-drag screenshots.
+No live project data or paid generation was used. Upstream push/PR remains pending.

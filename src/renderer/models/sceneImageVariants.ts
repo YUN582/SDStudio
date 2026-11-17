@@ -26,16 +26,30 @@ export function galleryImageKey(owner: GenericScene, filename: string, scene: Ge
   return JSON.stringify([owner.type === 'scene' || owner === scene ? null : owner.name, filename]);
 }
 
+// Generated filenames begin with their millisecond timestamp, including copied suffixes.
+const galleryTimestamp = (entry?: SceneGalleryEntry) =>
+  Number(/^(\d{13})(?=\D|$)/.exec(entry?.filename ?? '')?.[1] ?? 0);
+
+/** One-shot sort. Unknown dates and equal timestamps keep their relative order. */
+export function sortGalleryEntries(entries: readonly SceneGalleryEntry[]): SceneGalleryEntry[] {
+  const favorites = new Map<GenericScene, Set<string>>();
+  for (const { owner } of entries) {
+    if (!favorites.has(owner)) favorites.set(owner, new Set(owner.mains));
+  }
+  const isFavorite = ({ owner, filename }: SceneGalleryEntry) => Number(favorites.get(owner)!.has(filename));
+  return [...entries].sort((a, b) =>
+    isFavorite(b) - isFavorite(a) || galleryTimestamp(b) - galleryTimestamp(a));
+}
+
 /** Merge newest queue heads without changing each owner's manual order. */
 export function orderGalleryEntries(queues: SceneGalleryEntry[][], scene: GenericScene): SceneGalleryEntry[] {
   const entries: SceneGalleryEntry[] = [];
   const cursors = queues.map(() => 0);
-  const timestamp = (entry?: SceneGalleryEntry) => Number(/^(\d{13})/.exec(entry?.filename ?? '')?.[1] ?? 0);
   while (true) {
     let next = -1;
     for (let i = 0; i < queues.length; i += 1) {
       const head = queues[i][cursors[i]];
-      if (head && (next < 0 || timestamp(head) > timestamp(queues[next][cursors[next]]))) next = i;
+      if (head && (next < 0 || galleryTimestamp(head) > galleryTimestamp(queues[next][cursors[next]]))) next = i;
     }
     if (next < 0) break;
     entries.push(queues[next][cursors[next]++]);

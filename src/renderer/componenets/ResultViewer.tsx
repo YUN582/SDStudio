@@ -3,7 +3,7 @@ import InPaintEditor from './InPaintEditor';
 import { openSourceVariant } from '../models/sourceVariant';
 import { confirmInpaintSceneDelete } from '../models/deleteInpaintWork';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
-import { moveCombinedGalleryImage } from '../models/galleryReorder';
+import { moveCombinedGalleryImage, sortSceneGallery } from '../models/galleryReorder';
 import { focusGridSurface, gridKeyboardMove, gridNavigationAction, gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
 import { keyboardShortcutService, KeyboardShortcutService } from '../models/KeyboardShortcutService';
 import { canStartSelectionBox, imagePathsInSelectionBox } from '../models/dragSelection';
@@ -2137,7 +2137,8 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     const isFavorite = (path: string) => {
       return !!imageOwners.get(path)?.mains.includes(path.split('/').pop()!);
     };
-    const imagePaths = imageService.getSceneGalleryEntries(curSession!, scene)
+    const galleryEntries = imageService.getSceneGalleryEntries(curSession!, scene);
+    const imagePaths = galleryEntries
       .filter(entry => imageFilter === 'all' || (imageFilter === 'original' ? entry.owner === scene : entry.owner !== scene))
       .map(entry => entry.path);
     const favoritePaths = imagePaths.filter(isFavorite);
@@ -2146,6 +2147,17 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       const entries = imageService.getSceneGalleryEntries(curSession!, scene);
       return moveCombinedGalleryImage(curSession!, scene, entries.map(entry => entry.path),
         new Map(entries.map(entry => [entry.path, entry.owner])), from, to, visible, group);
+    };
+    const onSortImages = async () => {
+      try {
+        const changed = await sortSceneGallery(curSession!, scene);
+        appState.pushMessage(changed
+          ? '즐겨찾기 우선 · 최신 생성순으로 정렬했습니다.'
+          : '이미 즐겨찾기 우선 · 최신 생성순입니다.');
+      } catch (error) {
+        console.error(error);
+        appState.pushMessage('이미지 순서를 정렬하지 못했습니다.', 'error');
+      }
     };
     const closeVariants = () => {
       setVariantResult(undefined);
@@ -3084,9 +3096,10 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
               </Tooltip>
             </div>
             )}
-            <span className="flex ml-auto gap-1 md:gap-2 mt-2 md:mt-0">
+            <span className="flex flex-wrap items-center ml-auto gap-1 md:gap-2 mt-2 md:mt-0">
               {tabNames.map((tabName, index) => (
                 <button
+                  key={tabName}
                   className={
                     `round-button ` +
                     (selectedTab === index ? 'back-sky' : 'back-llgray')
@@ -3096,6 +3109,17 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                   {tabName}
                 </button>
               ))}
+              <Tooltip content="씬 이미지 정렬: 즐겨찾기 우선 · 최신 생성순">
+                <button
+                  type="button"
+                  className="round-button icon-only back-gray"
+                  aria-label="씬 이미지 정렬: 즐겨찾기 우선 · 최신 생성순"
+                  disabled={selectedTab >= 2 || galleryEntries.length < 2}
+                  onClick={onSortImages}
+                >
+                  <ActionIcon id="sort-images" />
+                </button>
+              </Tooltip>
             </span>
           </div>
         </div>
