@@ -269,10 +269,10 @@ const LegacyCleanupSection = () => {
               }
             }}
           >
-            {migratingVariants ? '변형 결과 이관 중…' : '인페인트·I2I 결과 저장 위치 정리'}
+            {migratingVariants ? '변형 결과 이관 중…' : '인페인트·I2I 저장 위치·보조 파일 정리'}
           </button>
           <span className="text-xs text-faint">
-            원본 씬 아래 작업별로 이관합니다. 사용 중인 프로젝트는 다음 시작 때 처리합니다.
+            결과·입력본·마스크·그리기 레이어를 작업별로 정리합니다. 미사용 파일은 14일 보관하며, 사용 중인 프로젝트는 다음 시작 때 처리합니다.
           </span>
         </div>
       )}

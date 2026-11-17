@@ -93,7 +93,7 @@ jest.mock('../index', () => ({
     }),
     notifyGlobalStoreChanged: jest.fn(async () => {}),
   },
-  imageService: { invalidateCacheBatch: jest.fn(async () => {}) },
+  imageService: { invalidateCacheBatch: jest.fn(async () => {}), refresh: jest.fn(async () => {}) },
   templateService: { removeProject: jest.fn(async () => {}) },
   sessionService: { guardCrossWindowLock: jest.fn(async () => true) },
 }));
@@ -110,7 +110,7 @@ jest.mock('../types', () => ({
 }));
 
 import { KeyedSerialQueue, TrashService } from '../TrashService';
-import { sessionService } from '../index';
+import { sessionService, imageService } from '../index';
 import { setWorkspaceLayoutActive } from '../storageLayout';
 
 const lockMock = sessionService.guardCrossWindowLock as jest.Mock;
@@ -177,6 +177,7 @@ describe('T1 restoreScene — 이동 확인 뒤에만 씬 추가·기록 삭제'
     expect(restored).toBeDefined();
     expect(restored!.name).toBe('S');
     expect(sess.scenes.get('S')).toBe(restored);
+    expect(imageService.refresh).toHaveBeenLastCalledWith(sess, restored);
     expect(files.get('outs/P/S/a.png')).toBe('1');
     expect(trashJson().scenes['P:S']).toBeUndefined();
     expect(lockMock).toHaveBeenCalledWith('P', '씬 복원');

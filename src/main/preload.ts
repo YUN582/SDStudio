@@ -9,6 +9,7 @@ export type Channels =
   | 'workspace-task-output'
   | 'workspace-changed'
   | 'migrate-variant-outputs'
+  | 'cleanup-unused-work-assets'
   | 'write-file'
   | 'read-file'
   | 'delete-file'

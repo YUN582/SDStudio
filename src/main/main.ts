@@ -50,6 +50,7 @@ import { Config } from './config';
 import { launchCustomImageEditor } from './customImageEditor';
 import { registerEditedImageMetadata, captureGenerationMetadata, applyGenerationMetadata, readStealthGenerationTags } from './editedImageMetadata';
 import { migrateVariantOutputs } from './variantOutputMigration';
+import { maintainWorkAssets } from './workAssetMaintenance';
 import { createWorkspaceAccess } from './workspaceAccess';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
 import { extractStealthBits, embedStealthBits, canEmbed } from './stealth';
@@ -146,7 +147,9 @@ function liveLockOwner(name: string): number | undefined {
   return owner;
 }
 
-ipcMain.handle('project-lock-acquire', (event, name: string) => {
+ipcMain.handle('project-lock-acquire', async (event, name: string) => {
+  // Finish disk maintenance before any window loads a new editable project.
+  await Promise.all([variantMigrationRun, assetCleanupRun]);
   const owner = liveLockOwner(name);
   if (owner === undefined || owner === event.sender.id) {
     projectLocks.set(name, event.sender.id);
@@ -386,22 +389,41 @@ ipcMain.handle('workspace-rename-project', async (_event, oldDir: string, id: st
   return workspaceAccess.renameProjectDirectory(oldDir, id, newName);
 });
 ipcMain.handle('workspace-task-output', (_event, relativePath) => workspaceAccess.resolveTaskOutput(relativePath));
-let variantMigrationRun: ReturnType<typeof migrateVariantOutputs> | undefined;
+let assetCleanupRun: ReturnType<typeof maintainWorkAssets> | undefined;
+let variantMigrationRun: Promise<{ migrated: number; deferred: number; assets?: Awaited<ReturnType<typeof maintainWorkAssets>> }> | undefined;
 
 ipcMain.handle('migrate-variant-outputs', (event, excludedDirs: string[] = []) => {
   if (event.sender.id !== generationHostWcId) return { migrated: 0, deferred: 0 };
+  if (BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).length > 1)
+    return { migrated: 0, deferred: workspaceAccess.snapshot().entries.filter(e => e.state === 'active').length };
   if (!variantMigrationRun) {
     const excluded = new Set(Array.isArray(excludedDirs) ? excludedDirs.filter(dir => typeof dir === 'string') : []);
-    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active' && !excluded.has(entry.dir)).map(entry => entry.dir));
-    variantMigrationRun = migrateVariantOutputs(APP_DIR, async (file, previous, next) => {
+    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active' && !!entry.name && liveLockOwner(entry.name) === undefined && !excluded.has(entry.dir)).map(entry => entry.dir));
+    const writeProject = async (file: string, previous: string, next: string) => {
       const location = workspaceAccess.workspaceLocation(path.relative(APP_DIR, file));
       if (!location || location.tail.join('/') !== 'project.json' || fsSync.readFileSync(file, 'utf8') !== previous) {
         throw new Error('이관 중 프로젝트가 변경됐습니다.');
       }
       workspaceAccess.writeWorkspaceFile(location, next, 'utf8');
-    }, active).finally(() => { variantMigrationRun = undefined; });
+    };
+    variantMigrationRun = (async () => {
+      await assetCleanupRun;
+      const outputs = await migrateVariantOutputs(APP_DIR, writeProject, active);
+      const assets = await maintainWorkAssets(APP_DIR, writeProject, active);
+      return { migrated: outputs.migrated + assets.migrated, deferred: outputs.deferred + assets.deferred, assets };
+    })().finally(() => { variantMigrationRun = undefined; });
   }
   return variantMigrationRun;
+});
+ipcMain.handle('cleanup-unused-work-assets', async (event, protectedDirs: string[]) => {
+  if (event.sender.id !== generationHostWcId || variantMigrationRun || !Array.isArray(protectedDirs)) return;
+  if (BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).length > 1) return;
+  if (assetCleanupRun) return assetCleanupRun;
+  const active = new Set(workspaceAccess.snapshot().entries
+    .filter(entry => entry.state === 'active' && !!entry.name && liveLockOwner(entry.name) === undefined && !protectedDirs.includes(entry.dir)).map(entry => entry.dir));
+  assetCleanupRun = maintainWorkAssets(APP_DIR, async () => { throw new Error('삭제 정리에서는 프로젝트를 이관하지 않습니다.'); }, active, { migrate: false })
+    .finally(() => { assetCleanupRun = undefined; });
+  return assetCleanupRun;
 });
 // 프로그램 설치 폴더(패키징된 실행 파일이 있는 폴더). 개발 실행은 null.
 const INSTALL_DIR = resolveInstallDir(app.isPackaged, process.execPath);
@@ -844,6 +866,8 @@ ipcMain.handle('list-files-with-stats', async (event, arg) => {
 });
 
 ipcMain.handle('read-file', async (event, filename) => {
+  if (filename === 'trash.json' || /[\\/]project\.json(?:\.bak)?$/.test(filename))
+    await Promise.all([variantMigrationRun, assetCleanupRun]);
   const data = await fs.readFile(APP_DIR + '/' + filename, 'utf-8');
   return data;
 });

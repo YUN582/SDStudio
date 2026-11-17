@@ -297,6 +297,14 @@ export class TrashService extends EventTarget {
     this.dispatchEvent(new CustomEvent('trash-updated'));
     // 전역 저장소 동기화(W6 P2): 다른 창들이 휴지통을 재로드하도록 알림
     backend.notifyGlobalStoreChanged('trash').catch(() => {});
+    // Loaded projects retain files used by undo/redo or pending generation until restart.
+    if (window.electron && taskQueueService.isGenerationHost) {
+      const protectedNames = new Set(sessionService.loadedNames());
+      for (const task of taskQueueService.queue) if (task) protectedNames.add(task.params.session.name);
+      const protectedDirs = [...protectedNames].map(physicalDirOf).filter((dir): dir is string => !!dir);
+      window.electron.ipcRenderer.invoke('cleanup-unused-work-assets', protectedDirs)
+        .catch(error => console.warn('미사용 작업 이미지 정리 보류:', error));
+    }
   }
 
   // 다른 창의 휴지통 변경 반영(W6 P2) — 디스크 재로드 + UI 갱신 이벤트.
@@ -1014,6 +1022,9 @@ export class TrashService extends EventTarget {
     session.addScene(restoredScene);
     delete this.data.scenes[key];
     await this.saveTrash();
+    // Rebuild the gallery after the files return; cached empty lists otherwise hide restored results.
+    try { await imageService.refresh(session, restoredScene); }
+    catch (error) { console.warn('복원된 씬 이미지 목록 새로고침 실패:', error); }
     return restoredScene;
   }
 
