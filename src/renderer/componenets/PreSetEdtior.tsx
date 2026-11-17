@@ -239,8 +239,8 @@ const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
             try {
               const work=input.fieldType==='preset'&&input.field==='image'?variantSceneOfPreset(curSession,preset):undefined;
               const path=(work&&linkedInpaintInputPath(imageService,curSession!,work))||imageService.getVibeImagePath(curSession!,getField());
-              await backend.openImageEditor(path);
               await backend.watchImage(path);
+              await backend.openImageEditor(path);
             } catch {
               appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
             }

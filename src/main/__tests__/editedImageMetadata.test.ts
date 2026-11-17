@@ -61,3 +61,54 @@ it('copies metadata to a different filename and preserves the edited pixels and 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+import { captureGenerationMetadata, applyGenerationMetadata } from '../editedImageMetadata';
+import { embedSDStudioMetadataInPngBase64, embedSDStudioMetadataInWebpBytes, extractSDStudioMetadataFromBase64 } from '../../shared/sdstudioImageMetadata';
+
+const studio = {
+  schemaVersion: 1 as const,
+  promptSource: { schemaVersion: 1 as const, workflowType: 'SDImageGen', frontPrompt: 'style', extraPrompt: '', middlePrompt: 'one chosen combination', backPrompt: 'background' },
+};
+
+test('automatic restoration keeps the exact combination through repeated edits, preserving the edited pixels', async () => {
+  const original = Buffer.from(embedSDStudioMetadataInPngBase64(Buffer.from(png('{"prompt":"style, one chosen combination, background"}', 1)).toString('base64'), studio), 'base64');
+  const snapshot = await captureGenerationMetadata(original, async () => ({}));
+  for (const pixels of [2, 3]) {
+    const restored = applyGenerationMetadata(Buffer.from(png('editor metadata', pixels)), snapshot);
+    expect(extractSDStudioMetadataFromBase64(restored.toString('base64'))).toEqual(studio);
+    const chunks = parsePngChunks(new Uint8Array(restored));
+    expect(chunks.find(chunk => chunk.type === 'IDAT')?.data).toEqual(Uint8Array.of(pixels));
+    expect(extractTextChunks(new Uint8Array(restored)).map(readTextChunk)).toContainEqual({ keyword: 'Comment', text: '{"prompt":"style, one chosen combination, background"}' });
+    expect(applyGenerationMetadata(restored, snapshot)).toEqual(restored);
+  }
+});
+
+test('stealth-only generation text becomes readable PNG metadata after pixel edits', async () => {
+  const source = Buffer.from(encodePngChunks(parsePngChunks(png('', 1)).filter(chunk => chunk.type !== 'tEXt')));
+  const snapshot = await captureGenerationMetadata(source, async () => ({ Comment: '{"prompt":"stealth original"}' }));
+  const restored = applyGenerationMetadata(Buffer.from(png('', 2)), snapshot);
+  expect(extractTextChunks(new Uint8Array(restored)).map(readTextChunk)).toContainEqual({ keyword: 'Comment', text: '{"prompt":"stealth original"}' });
+});
+
+test('WebP custom metadata also survives editing without altering the edited image payload', async () => {
+  const webp = (pixel: number) => {
+    const b = Buffer.alloc(22); b.write('RIFF'); b.writeUInt32LE(14, 4); b.write('WEBP', 8); b.write('VP8 ', 12); b.writeUInt32LE(2, 16); b[20] = pixel;
+    return b;
+  };
+  const source = Buffer.from(embedSDStudioMetadataInWebpBytes(new Uint8Array(webp(1)), studio));
+  const snapshot = await captureGenerationMetadata(source, async () => ({}));
+  const restored = applyGenerationMetadata(webp(2), snapshot);
+  expect(extractSDStudioMetadataFromBase64(restored.toString('base64'))).toEqual(studio);
+  expect(restored[20]).toBe(2);
+});
+
+test('different-name PNG export preserves SDStudio sections as well as NAI metadata', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sdstudio-combination-'));
+  try {
+    const source = path.join(dir, 'source.png'), edited = path.join(dir, 'edited.png'), output = path.join(dir, 'restored.png');
+    const bytes = Buffer.from(embedSDStudioMetadataInPngBase64(Buffer.from(png('{"prompt":"original"}', 1)).toString('base64'), studio), 'base64');
+    await writeFile(source, new Uint8Array(bytes)); await writeFile(edited, png('', 2));
+    await restoreEditedPng(source, edited, output, { readGenerationTags: async () => ({}), writeExif: async () => false });
+    expect(extractSDStudioMetadataFromBase64((await readFile(output)).toString('base64'))).toEqual(studio);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

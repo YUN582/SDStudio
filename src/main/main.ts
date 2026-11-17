@@ -48,7 +48,7 @@ const chokidar = require('chokidar');
 import webpackPaths from '../../.erb/configs/webpack.paths';
 import { Config } from './config';
 import { launchCustomImageEditor } from './customImageEditor';
-import { registerEditedImageMetadata } from './editedImageMetadata';
+import { registerEditedImageMetadata, captureGenerationMetadata, applyGenerationMetadata, readStealthGenerationTags } from './editedImageMetadata';
 import { migrateVariantOutputs } from './variantOutputMigration';
 import { createWorkspaceAccess } from './workspaceAccess';
 import { backupFailedConfig, loadJsonConfig } from './configLoad';
@@ -1641,15 +1641,19 @@ ipcMain.handle('watch-image', async (event, inputPath) => {
   console.log(orgDir);
   const curPath = path.join(dir, path.basename(inputPath));
 
-  let tags = null;
-  if (watchHandles.has(curPath) && watchHandles.get(curPath) !== 'null') {
-    tags = watchHandles.get(curPath);
-  } else {
+  let watched = watchHandles.get(curPath);
+  if (!watched || watched === 'null') {
+    let tags = null;
     try {
       tags = await exiftool.read(curPath);
     } catch (e) {
       console.error('Could not read exif:', curPath, e);
     }
+    const source = await fs.readFile(curPath);
+    const generation = await captureGenerationMetadata(source, data =>
+      readStealthGenerationTags(data, sharp).catch(() => ({})),
+    );
+    watched = { tags, generation };
   }
   if (!dirWatchHandles.has(dir)) {
     const handle = chokidar.watch(dir, {
@@ -1666,7 +1670,7 @@ ipcMain.handle('watch-image', async (event, inputPath) => {
       if (watchHandles.has(candPath)) {
         console.log('Image changed:', changedPath);
         if (!isWritingExifData) {
-          if (watchHandles.get(candPath) !== 'null') {
+          if (watchHandles.get(candPath)) {
             const trigger = (dur: number, retry: boolean) => {
               const myCounter = (exclusiveCounter.get(changedPath) ?? 0) + 1;
               exclusiveCounter.set(changedPath, myCounter);
@@ -1676,7 +1680,16 @@ ipcMain.handle('watch-image', async (event, inputPath) => {
                 }
                 try {
                   isWritingExifData = true;
-                  await exiftool.write(changedPath, watchHandles.get(candPath));
+                  const current = watchHandles.get(candPath);
+                  if (!current) return;
+                  if (current.tags) {
+                    await exiftool.write(changedPath, current.tags).catch((error: unknown) => {
+                      console.warn('Could not restore EXIF; restoring generation chunks:', error);
+                    });
+                  }
+                  const edited = await fs.readFile(changedPath);
+                  const restored = applyGenerationMetadata(edited, current.generation);
+                  if (!edited.equals(restored)) await fs.writeFile(changedPath, restored);
                   console.log(
                     'Exif data written:',
                     orgDir + '/' + path.basename(changedPath),
@@ -1711,10 +1724,11 @@ ipcMain.handle('watch-image', async (event, inputPath) => {
 
     dirWatchHandles.set(dir, handle);
   }
-  watchHandles.set(curPath, tags ?? 'null');
+  watchHandles.set(curPath, watched);
 });
 
 ipcMain.handle('unwatch-image', async (event, inputPath) => {
+  inputPath = path.join(APP_DIR, inputPath);
   const dir = path.dirname(inputPath);
   const curPath = path.join(dir, path.basename(inputPath));
   watchHandles.delete(curPath);

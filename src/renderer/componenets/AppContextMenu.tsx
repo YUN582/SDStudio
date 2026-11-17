@@ -910,8 +910,8 @@ export const AppContextMenu = observer(() => {
   const editImage = async (path: string | undefined) => {
     if (!path) return;
     try {
-      await backend.openImageEditor(path);
       await backend.watchImage(path);
+      await backend.openImageEditor(path);
     } catch {
       appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
     }

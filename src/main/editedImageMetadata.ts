@@ -5,6 +5,7 @@ import ExifReader from 'exifreader';
 import { gunzipSync } from 'zlib';
 import {
   embedSDStudioMetadataInPngBase64,
+  embedSDStudioMetadataInWebpBytes,
   extractSDStudioMetadataFromBase64,
 } from '../shared/sdstudioImageMetadata';
 import {
@@ -42,6 +43,58 @@ interface MetadataTools {
   readGenerationTags: (source: Buffer) => Promise<Record<string, string>>;
 }
 
+export interface GenerationMetadataSnapshot {
+  text: ReturnType<typeof parsePngChunks>;
+  studio: ReturnType<typeof extractSDStudioMetadataFromBase64>;
+}
+
+/** Capture before launching the editor; EXIF tools do not round-trip custom PNG/WebP chunks. */
+export async function captureGenerationMetadata(
+  source: Buffer,
+  readGenerationTags: MetadataTools['readGenerationTags'],
+): Promise<GenerationMetadataSnapshot> {
+  const sourceBytes = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  const sourceText: ReturnType<typeof parsePngChunks> = isPng(sourceBytes)
+    ? parsePngChunks(sourceBytes).filter(
+        (chunk) =>
+          isTextChunk(chunk) && GENERATION_KEYS.has(textChunkKeyword(chunk)),
+      ).map(chunk => ({ ...chunk, data: Uint8Array.from(chunk.data) }))
+    : [];
+  const copiedKeys = new Set(sourceText.map(textChunkKeyword));
+  if (!copiedKeys.has('Comment') && !copiedKeys.has('parameters')) {
+    const tags = await readGenerationTags(source);
+    for (const [key, value] of Object.entries(tags)) {
+      if (!copiedKeys.has(key)) {
+        sourceText.push(makeTextChunk(key, value));
+        copiedKeys.add(key);
+      }
+    }
+  }
+
+  return { text: sourceText, studio: extractSDStudioMetadataFromBase64(source.toString('base64')) };
+}
+
+/** Restore generation information only. Edited pixels, color profile and dimensions stay intact. */
+export function applyGenerationMetadata(edited: Buffer, snapshot: GenerationMetadataSnapshot): Buffer {
+  const bytes = new Uint8Array(edited.buffer, edited.byteOffset, edited.byteLength);
+  if (isPng(bytes)) {
+    const copiedKeys = new Set(snapshot.text.map(textChunkKeyword));
+    const chunks = parsePngChunks(bytes).filter(
+      chunk => !(isTextChunk(chunk) && copiedKeys.has(textChunkKeyword(chunk))),
+    );
+    chunks.splice(chunks.length - 1, 0, ...snapshot.text);
+    let output = Buffer.from(encodePngChunks(chunks));
+    if (snapshot.studio && !copiedKeys.has('SDStudio')) {
+      output = Buffer.from(embedSDStudioMetadataInPngBase64(output.toString('base64'), snapshot.studio), 'base64');
+    }
+    return output;
+  }
+  if (snapshot.studio && edited.toString('ascii', 0, 4) === 'RIFF' && edited.toString('ascii', 8, 12) === 'WEBP') {
+    return Buffer.from(embedSDStudioMetadataInWebpBytes(bytes, snapshot.studio));
+  }
+  return edited;
+}
+
 export async function restoreEditedPng(
   sourcePath: string,
   editedPath: string,
@@ -60,58 +113,18 @@ export async function restoreEditedPng(
     edited.byteOffset,
     edited.byteLength,
   );
-  const sourceBytes = new Uint8Array(
-    source.buffer,
-    source.byteOffset,
-    source.byteLength,
-  );
   if (!isPng(editedBytes))
     throw new Error('클립 스튜디오에서 내보낸 PNG를 선택해주세요.');
 
-  const sourceText = isPng(sourceBytes)
-    ? parsePngChunks(sourceBytes).filter(
-        (chunk) =>
-          isTextChunk(chunk) && GENERATION_KEYS.has(textChunkKeyword(chunk)),
-      )
-    : [];
-  const copiedKeys = new Set(sourceText.map(textChunkKeyword));
-  if (!copiedKeys.has('Comment') && !copiedKeys.has('parameters')) {
-    const tags = await tools.readGenerationTags(source);
-    for (const [key, value] of Object.entries(tags)) {
-      if (!copiedKeys.has(key)) {
-        sourceText.push(makeTextChunk(key, value));
-        copiedKeys.add(key);
-      }
-    }
-  }
-
-  const chunks = parsePngChunks(editedBytes).filter(
-    (chunk) => !(isTextChunk(chunk) && copiedKeys.has(textChunkKeyword(chunk))),
-  );
-  chunks.splice(chunks.length - 1, 0, ...sourceText);
-  let output = encodePngChunks(chunks);
-  const studio = extractSDStudioMetadataFromBase64(source.toString('base64'));
-  if (studio && !copiedKeys.has('SDStudio')) {
-    const withStudio = Buffer.from(
-      embedSDStudioMetadataInPngBase64(
-        Buffer.from(output).toString('base64'),
-        studio,
-      ),
-      'base64',
-    );
-    output = new Uint8Array(
-      withStudio.buffer,
-      withStudio.byteOffset,
-      withStudio.byteLength,
-    );
-  }
+  const snapshot = await captureGenerationMetadata(source, tools.readGenerationTags);
+  const output = applyGenerationMetadata(edited, snapshot);
 
   // ExifTool needs a file, so edit a temporary copy before publishing the result.
   const temporary = partPathFor(outputPath) + '.png';
   try {
-    await fs.writeFile(temporary, output, { flag: 'wx' });
+    await fs.writeFile(temporary, new Uint8Array(output.buffer, output.byteOffset, output.byteLength), { flag: 'wx' });
     const exifCopied = await tools.writeExif(sourcePath, temporary);
-    if (!sourceText.length && !studio && !exifCopied) {
+    if (!snapshot.text.length && !snapshot.studio && !exifCopied) {
       throw new Error('원본에서 복원할 생성 정보나 EXIF를 찾지 못했습니다.');
     }
     await fs

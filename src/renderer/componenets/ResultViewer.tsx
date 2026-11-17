@@ -1761,9 +1761,9 @@ export const ResultDetailView = observer(
                 onClick={async () => {
                   const imagePath = paths[selectedIndex];
                   try {
-                    await backend.openImageEditor(imagePath);
-                    watchedImages.current.add(imagePath);
                     await backend.watchImage(imagePath);
+                    watchedImages.current.add(imagePath);
+                    await backend.openImageEditor(imagePath);
                   } catch {
                     appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
                   }
