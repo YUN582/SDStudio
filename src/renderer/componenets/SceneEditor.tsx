@@ -18,6 +18,7 @@ import {
 import {
   FaImages,
   FaPlay,
+  FaPowerOff,
   FaPlus,
   FaPuzzlePiece,
   FaSearch,
@@ -527,9 +528,10 @@ interface SlotPieceProps {
   scene: { slots: PromptPieceSlot[] };
   piece: PromptPiece;
   removePiece?: (piece: PromptPiece) => void;
+  duplicatePiece?: (piece: PromptPiece) => void;
   moveSlotPiece?: (from: string, to: string) => void;
   style?: React.CSSProperties;
-  /** 모바일 열 단위 보기: 카드가 열 폭을 채우고 편집기 h-16, 이름·활성화·캐릭터·삭제는 한 줄(2026-09-26) */
+  /** 모바일 열 단위 보기: 카드가 현재 열의 폭을 채운다. */
   wide?: boolean;
   /** 조각 캐릭터란 ↔ 기준 캐릭터 대응(없으면 대응 판정 없이 개수만 — 드래그 미리보기 등) */
   characterContext?: PieceCharacterContext;
@@ -690,23 +692,22 @@ const CharacterPromptsEditor = observer(
 );
 
 export const SlotPiece = observer(
-  ({ scene, piece, removePiece, moveSlotPiece, style, wide, characterContext }: SlotPieceProps) => {
+  ({ scene, piece, removePiece, duplicatePiece, moveSlotPiece, style, wide, characterContext }: SlotPieceProps) => {
     const [showCharacterPrompts, setShowCharacterPrompts] = useState(false);
-    // FaUser 배지 — 내용 있는 칸 수, 미반영 칸(넘침·기준 0명·꺼진 캐릭터)이 있으면 「!」(단일 출처 판정)
+    const editable = !!moveSlotPiece;
+    const enabled = piece.enabled !== false;
     const characterBadge = analyzePieceCharacterPrompts(
       piece.characterPrompts,
       characterContext?.targets,
     ).badge;
-    // 셀 이름 인라인 편집 상태. 편집 확정 시 빈 값은 undefined 로 정규화(직렬화 오염 방지).
     const [editingName, setEditingName] = useState(false);
     const [nameDraft, setNameDraft] = useState('');
-    // 표시용 열/행 인덱스(기본명 "열-행" 계산).
     const colIndex = scene.slots.findIndex((slot) => slot.includes(piece));
     const rowIndex = colIndex >= 0 ? scene.slots[colIndex].indexOf(piece) : 0;
+    const label = pieceLabel(piece, colIndex, rowIndex);
     const commitName = () => {
       const trimmed = nameDraft.trim();
       const next = trimmed === '' ? undefined : trimmed;
-      // Enter 뒤 blur 로 두 번 불려도 값이 같으면 기록 없음(U2b)
       if (piece.name !== next) {
         editSlots(scene, UNDO_TEXT.comboRenamePiece(slotsSceneName(scene)), () => {
           piece.name = next;
@@ -717,115 +718,44 @@ export const SlotPiece = observer(
     const [{ isDragging }, drag, preview] = useDrag(
       () => ({
         type: 'slot',
-        item: { scene, piece, characterContext },
-        collect: (monitor) => {
-          return {
-            isDragging: monitor.isDragging(),
-          };
-        },
+        canDrag: () => editable,
+        item: { scene, piece, characterContext, wide },
+        collect: (monitor) => ({ isDragging: monitor.isDragging() }),
       }),
-      [scene, piece, characterContext],
+      [scene, piece, characterContext, wide, editable],
     );
-
     const [{ isOver }, drop] = useDrop(
       () => ({
         accept: 'slot',
-        canDrop: () => true,
-        collect: (monitor) => {
-          if (monitor.isOver()) {
-            return {
-              isOver: true,
-            };
-          }
-          return { isOver: false };
-        },
-        drop: async (item: any, monitor) => {
-          if (!moveSlotPiece) return;
-          moveSlotPiece(item.piece.id, piece.id!);
+        canDrop: () => editable,
+        collect: (monitor) => ({ isOver: monitor.isOver() }),
+        drop: (item: { piece: PromptPiece }) => {
+          moveSlotPiece?.(item.piece.id, piece.id);
         },
       }),
-      [scene, piece],
+      [piece.id, moveSlotPiece, editable],
     );
 
     useEffect(() => {
       preview(getEmptyImage(), { captureDraggingState: true });
     }, [preview]);
 
-    const pieceControls = (
-      <div className={wide ? 'ml-auto flex items-center gap-3 select-none' : 'flex gap-2 select-none'}>
-        <label className="gray-label">활성화</label>
-        <input
-          type="checkbox"
-          className={wide ? 'relative touch-hit' : undefined}
-          checked={piece.enabled == undefined || piece.enabled}
-          onChange={(e) => {
-            if (!moveSlotPiece) return;
-            const checked = e.currentTarget.checked;
-            editSlots(scene, UNDO_TEXT.comboTogglePiece(slotsSceneName(scene)), () => {
-              piece.enabled = checked;
-            });
-          }}
-        />
-        <Tooltip
-          content={
-            characterBadge?.warn
-              ? `${PIECE_CHARACTER_TEXT.editTooltip}\n${characterBadge.label}`
-              : PIECE_CHARACTER_TEXT.editTooltip
-          }
-        >
-        {/* 배지(absolute)의 기준이 되도록 항상 relative — 전에는 모바일 열 보기(wide)에서만 붙어
-            PC 에서 배지가 상위 컨테이너 우상단으로 튀었다(호버 때는 filter 가 포함 블록을 만들어 정상처럼 보임, 2026-10-07). */}
-        <button
-          className={'relative active:brightness-90 hover:brightness-95 text-blue-600 dark:text-blue-400' + (wide ? ' touch-hit' : '')}
-          onClick={() => {
-            if (!moveSlotPiece) return;
-            setShowCharacterPrompts(true);
-          }}
-        >
-          <FaUser size={20} />
-          {/* 배지 색 bg-red-600(다크 red-500) 은 SPEC §1 의도적 예외(상태 강조 원색 text-white, 2026-11-16 묶음 4 로 라이트 600) — back-red 는 다크에서 반투명이라 아이콘 위 배지가 흐려진다 */}
-          {characterBadge && (
-            <span
-              className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/3 bg-red-600 text-white dark:bg-red-500 rounded-full w-4 h-4 flex items-center justify-center text-xs font-bold"
-              data-piece-char-badge={characterBadge.warn ? 'warn' : 'count'}
-              aria-hidden
-            >
-              {characterBadge.text}
-            </span>
-          )}
-        </button>
-        </Tooltip>
-        <button
-          className={'active:brightness-90 hover:brightness-95 ml-auto text-red-500 dark:text-red-400' + (wide ? ' relative touch-hit' : '')}
-          aria-label="셀 삭제"
-          onClick={() => {
-            if (!moveSlotPiece) return;
-            removePiece && removePiece(piece);
-          }}
-        >
-          <FaTrash size={20} />
-        </button>
-      </div>
-    );
-
     return (
       <div
-        key={piece.id!}
-        ref={(node) => drag(drop(node))}
+        key={piece.id}
+        ref={(node) => { drop(node); }}
         style={style}
         className={
-          (wide ? 'px-2.5 py-2 mx-2 mb-2 ' : 'p-3 m-2 ') +
-          'bg-gray-200 dark:bg-slate-600 rounded-xl ' +
-          (isDragging ? 'opacity-0' : '') +
-          (isOver ? ' outline outline-sky-500' : '')
+          'slot-piece-card bg-gray-200 dark:bg-slate-600 ' +
+          (wide ? 'slot-piece-wide ' : '') +
+          (isDragging ? 'opacity-0 ' : '') +
+          (isOver ? 'outline outline-sky-500' : '')
         }
-        data-slot-piece={wide ? 'wide' : undefined}
+        data-slot-piece={wide ? 'wide' : 'card'}
+        data-slot-piece-id={piece.id}
       >
         {showCharacterPrompts && (
-          <FloatView
-            priority={0}
-            onEscape={() => setShowCharacterPrompts(false)}
-          >
+          <FloatView priority={0} onEscape={() => setShowCharacterPrompts(false)}>
             <CharacterPromptsEditor
               scene={scene}
               piece={piece}
@@ -834,56 +764,117 @@ export const SlotPiece = observer(
             />
           </FloatView>
         )}
-
-        {/* 셀 이름(표시/편집) — 조합 미리보기 라벨과 연동. 클릭 시 인라인 입력. */}
-        <div className={wide ? 'mb-1.5 flex items-center gap-2 select-none' : 'mb-1 flex items-center gap-1 select-none'}>
-          {editingName ? (
-            <input
-              autoFocus
-              data-esc-cancel
-              className="gray-input text-xs px-1 py-0.5 w-full min-w-0"
-              value={nameDraft}
-              placeholder={pieceLabel(piece, colIndex, rowIndex)}
-              onChange={(e) => setNameDraft(e.currentTarget.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitName();
-                if (e.key === 'Escape') setEditingName(false);
-              }}
-            />
-          ) : (
+        <div className="slot-piece-header select-none">
+          <button
+            type="button"
+            ref={(node) => { drag(node); }}
+            className="slot-piece-drag text-faint"
+            aria-label="조각 순서 이동"
+            title="드래그하여 조각 순서 이동"
+            disabled={!editable}
+          >
+            <FaGripVertical size={12} />
+          </button>
+          <div className="slot-piece-name">
+            {editingName ? (
+              <input
+                autoFocus
+                data-esc-cancel
+                className="gray-input text-xs px-1 py-0.5 w-full min-w-0"
+                value={nameDraft}
+                placeholder={label}
+                onChange={(e) => setNameDraft(e.currentTarget.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitName();
+                  if (e.key === 'Escape') setEditingName(false);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="btn-ghost flex items-center gap-1 px-1 py-0.5 rounded text-xs text-muted max-w-full"
+                title="셀 이름 편집"
+                disabled={!editable}
+                onClick={() => {
+                  setNameDraft(piece.name ?? '');
+                  setEditingName(true);
+                }}
+              >
+                <span className="truncate">{label}</span>
+                <ActionIcon id="rename" size={11} className="flex-none text-faint" />
+              </button>
+            )}
+          </div>
+          <Tooltip content={enabled ? '활성화됨 · 누르면 비활성화' : '비활성화됨 · 누르면 활성화'}>
             <button
-              className="btn-ghost flex items-center gap-1 px-1 py-0.5 rounded text-xs text-muted max-w-full"
-              title="셀 이름 편집"
+              type="button"
+              className={'round-button slot-piece-power relative touch-hit ' + (enabled ? 'back-green' : 'back-red')}
+              aria-label={`${label} 조합 활성화`}
+              aria-pressed={enabled}
+              disabled={!editable}
               onClick={() => {
-                if (!moveSlotPiece) return;
-                setNameDraft(piece.name ?? '');
-                setEditingName(true);
+                editSlots(scene, UNDO_TEXT.comboTogglePiece(slotsSceneName(scene)), () => {
+                  piece.enabled = !enabled;
+                });
               }}
             >
-              <span className="truncate">
-                {pieceLabel(piece, colIndex, rowIndex)}
-              </span>
-              <ActionIcon id="rename" size={11} className="flex-none text-faint" />
+              <FaPowerOff size={16} />
             </button>
-          )}
-          {wide && pieceControls}
+          </Tooltip>
         </div>
-        <div className={wide ? 'h-16 w-full' : 'mb-3 h-12 w-28 md:h-24 md:w-48'}>
+        <div className="slot-piece-prompt">
           <PromptEditTextArea
             whiteBg
-            disabled={!moveSlotPiece}
+            disabled={!editable}
             value={piece.prompt}
             onChange={(s) => {
-              if (!moveSlotPiece) return;
-              if (piece.prompt === s) return;
-              // 편집기를 떠날 때 1항목(D13) — 조합 slots 통째
+              if (!editable || piece.prompt === s) return;
               touchSlots(scene, UNDO_TEXT.comboPiecePrompt(slotsSceneName(scene)));
               piece.prompt = s;
             }}
           />
         </div>
-        {!wide && pieceControls}
+        <div className="slot-piece-footer select-none">
+          <Tooltip
+            content={characterBadge?.warn
+              ? `${PIECE_CHARACTER_TEXT.editTooltip}\n${characterBadge.label}`
+              : PIECE_CHARACTER_TEXT.editTooltip}
+          >
+            <button
+              type="button"
+              className="round-button back-sky"
+              aria-label="조각별 캐릭터 프롬프트"
+              disabled={!editable}
+              onClick={() => setShowCharacterPrompts(true)}
+            >
+              캐릭터
+              {characterBadge && (
+                <span
+                  className="ml-1 inline-flex flex-none items-center justify-center bg-red-600 text-white dark:bg-red-500 rounded-full w-4 h-4 text-xs font-bold"
+                  data-piece-char-badge={characterBadge.warn ? 'warn' : 'count'}
+                  aria-hidden
+                >
+                  {characterBadge.text}
+                </span>
+              )}
+            </button>
+          </Tooltip>
+          <button
+            type="button"
+            className="round-button back-gray"
+            aria-label="조각 복제"
+            disabled={!duplicatePiece}
+            onClick={() => duplicatePiece?.(piece)}
+          >복제</button>
+          <button
+            type="button"
+            className="round-button back-red"
+            aria-label="셀 삭제"
+            disabled={!removePiece}
+            onClick={() => removePiece?.(piece)}
+          >삭제</button>
+        </div>
       </div>
     );
   },
@@ -1435,6 +1426,19 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
     });
   };
 
+  const duplicatePiece = (piece: PromptPiece) => {
+    const slot = scene.slots.find((column) => column.includes(piece));
+    if (!slot) return;
+    editSlots(scene, UNDO_TEXT.comboDuplicatePiece(slotsSceneName(scene)), () => {
+      const copy = PromptPiece.fromJSON({
+        ...piece.toJSON(),
+        id: uuidv4(),
+        ...(piece.name ? { name: `${piece.name} 복제` } : {}),
+      });
+      slot.splice(slot.indexOf(piece) + 1, 0, copy);
+    });
+  };
+
   const moveSlotPiece = (from: string, to: string) => {
     if (from === to) return;
     editSlots(scene, UNDO_TEXT.comboMovePiece(slotsSceneName(scene)), () => movePieceById(from, to));
@@ -1530,7 +1534,7 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
       </div>
       <div className="flex">
         {scene.slots.map((slot, slotIndex) => (
-          <div key={slotIndex}>
+          <div key={slotIndex} className="flex-none">
             {slot.map((piece, pieceIndex) => (
               <SlotPiece
                 key={piece.id!}
@@ -1540,6 +1544,7 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
                 removePiece={(piece: PromptPiece) =>
                   removePiece(slot, slot.indexOf(piece)!)
                 }
+                duplicatePiece={duplicatePiece}
                 moveSlotPiece={moveSlotPiece}
               />
             ))}
@@ -1672,6 +1677,7 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
                       characterContext={characterContext}
                       wide
                       removePiece={(p: PromptPiece) => removePiece(slot, slot.indexOf(p)!)}
+                      duplicatePiece={duplicatePiece}
                       moveSlotPiece={moveSlotPiece}
                     />
                   ))}

@@ -187,6 +187,7 @@ export const UNDO_TEXT = {
   sceneNegative: (name: string) => `씬 전용 네거티브 편집: ${name}`,
   comboAddColumn: (name: string) => `조합 열 추가: ${name}`,
   comboAddRow: (name: string) => `조합 행 추가: ${name}`,
+  comboDuplicatePiece: (name: string) => `조합 조각 복제: ${name}`,
   comboRemovePiece: (name: string) => `조합 셀 삭제: ${name}`,
   comboMovePiece: (name: string) => `조합 셀 이동: ${name}`,
   comboTogglePiece: (name: string) => `조합 셀 활성화 변경: ${name}`,
