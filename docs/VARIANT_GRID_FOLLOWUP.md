@@ -54,6 +54,18 @@ New chained work records its immediate source. Older work that never saved this
 information cannot be reliably reconstructed from scene names; this change does
 not guess or rewrite those links. Existing direct links remain supported.
 
-Installation replacement is pending the local release configuration decision.
+Installed locally on 2026-11-17 after explicit approval to reuse the existing
+desktop OAuth application configuration. Values were passed in process memory
+only and retained in the local main bundle, not in source commits or reports.
+Verified the previous archive backup before replacement; verified the installed
+archive against the candidate SHA-256 afterward. Final configured package
+bootstrap passed with isolated data and blocked network requests. Personal
+projects and account files were not modified; the normal application was left
+closed.
+
+For upstream review, `99f11c7` is the smallest bug-fix candidate in this follow-up.
+Review chained-work changes separately from keyboard selection. No PR or push
+was performed.
+
 The earlier port report describes the state before this follow-up; its statement
 that no packaged app had been tested is superseded by the checks above.
