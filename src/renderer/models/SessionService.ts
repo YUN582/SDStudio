@@ -2078,6 +2078,7 @@ export class SessionService extends ResourceSyncService<Session> {
       this.entries.delete(oldName);
       this.entries.set(newName, e);
       e.instance!.name = newName;
+      imageService.onRenameProject(oldName, e.instance!);
       e.dispose?.();
       e.dispose = this.watch(newName, e.instance!);
       if (oldName in this.folderMap) {
@@ -2095,6 +2096,11 @@ export class SessionService extends ResourceSyncService<Session> {
     // 실제 이름변경(파일 rename)을 먼저 수행 — 여기서 실패하면 이름이 그대로이므로
     // 즐겨찾기/북마크/썸네일 등 메타데이터도 건드리지 않고 그대로 보존한다.
     await super.rename(oldName, newName);
+    const session = this.getLoaded(newName);
+    if (session) {
+      session.name = newName;
+      imageService.onRenameProject(oldName, session);
+    }
     await this.migrateRenameSidecars(oldName, newName);
   }
 

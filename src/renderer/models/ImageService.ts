@@ -612,6 +612,26 @@ export class ImageService extends EventTarget {
     return moved;
   }
 
+  /** Rekey loaded lists without moving files; workspace paths stay unchanged. */
+  onRenameProject(oldName: string, session: Session) {
+    const newName = session.name;
+    if (oldName === newName) return;
+    for (const lists of [this.images, this.inpaints]) {
+      if (oldName in lists) lists[newName] = lists[oldName];
+      else delete lists[newName];
+      delete lists[oldName];
+    }
+    const pending = this.refreshBatchInFlight.get(oldName);
+    if (pending) {
+      this.refreshBatchInFlight.set(newName, pending);
+      this.refreshBatchInFlight.delete(oldName);
+    }
+    // GameService rebuilds its ordered lists before notifying gallery listeners.
+    this.dispatchEvent(new CustomEvent('updated', {
+      detail: { batch: true, session, previousSessionName: oldName },
+    }));
+  }
+
   async onRenameSession(oldName: string, newName: string) {
     const cache = this.cache.cache;
     const toDelete = [];

@@ -36,6 +36,9 @@ export class GameService extends EventTarget {
   onImageUpdated(e: any) {
     if (e.detail.batch) {
       for (const type of ['scene', 'inpaint']) {
+        if (e.detail.previousSessionName) {
+          delete this.outputList[type][e.detail.previousSessionName];
+        }
         const session = e.detail.session;
         for (const scene of session.getScenes(type)) {
           this.refreshList(session, scene as GenericScene);
