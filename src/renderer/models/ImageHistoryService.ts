@@ -55,6 +55,17 @@ export class ImageHistoryService {
     // 이미지 목록 갱신(삭제/새로고침) 시 사라진 파일의 히스토리 항목 정리
     imageService.addEventListener('updated', ((e: Event) => {
       const d = (e as CustomEvent).detail;
+      if (d?.session && d.previousSessionName) {
+        runInAction(() => {
+          for (const entry of this.entries) {
+            if (entry.sessionName !== d.previousSessionName) continue;
+            entry.sessionName = d.session.name;
+            const scene = d.session.getScene(entry.sceneType, entry.sceneName);
+            if (scene) entry.id = entry.path = sceneOutputDir(d.session.name, scene) + '/' + entry.filename;
+          }
+        });
+        this.scheduleSave();
+      }
       if (d?.session) this.prune(d.session, d.scene);
     }) as EventListener);
   }

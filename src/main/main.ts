@@ -371,6 +371,20 @@ const workspaceAccess = createWorkspaceAccess(() => APP_DIR, () => broadcast('wo
 ipcMain.handle('workspace-snapshot', () => workspaceAccess.snapshot());
 ipcMain.handle('workspace-create-project-dir', (_event, relativePath, data, migrating = false) =>
   workspaceAccess.createProjectDirectory(relativePath, data, migrating));
+ipcMain.handle('workspace-rename-project', async (_event, oldDir: string, id: string, newName: string) => {
+  const location = workspaceAccess.workspaceLocation('workspace/' + oldDir + '/project.json');
+  if (!location || location.tail.join('/') !== 'project.json') throw new Error('프로젝트 경로를 확인해 주세요.');
+  const prefix = location.root + path.sep;
+  if ([...watchHandles.keys()].some(filename => filename.startsWith(prefix)))
+    throw new Error('외부 이미지 편집을 마치고 이미지 보기 창을 닫은 뒤 이름을 변경해 주세요.');
+  for (const [directory, handle] of dirWatchHandles) {
+    if (directory === location.root || directory.startsWith(prefix)) {
+      await handle.close();
+      dirWatchHandles.delete(directory);
+    }
+  }
+  return workspaceAccess.renameProjectDirectory(oldDir, id, newName);
+});
 ipcMain.handle('workspace-task-output', (_event, relativePath) => workspaceAccess.resolveTaskOutput(relativePath));
 let variantMigrationRun: ReturnType<typeof migrateVariantOutputs> | undefined;
 

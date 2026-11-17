@@ -88,3 +88,28 @@ test('an in-flight refresh follows the renamed project and releases its deduplic
   expect(image.images.before).toBeUndefined();
   expect(image.inpaints.before).toBeUndefined();
 });
+
+
+test('desktop rename flushes and follows the returned physical directory without losing variant favorites', async () => {
+  const { image, svc, session, root, variant } = fixture();
+  session.id = '12345678-1234';
+  session.toJSON = () => ({ id: session.id, name: session.name, scenes: {}, inpaints: {} });
+  svc.flushProjectNow = jest.fn(async () => {});
+  svc.guardCrossWindowLock = jest.fn(async () => true);
+  services.taskQueueService.isRunning = () => false;
+  services.trashService = { rememberWorkspaceSceneIds: jest.fn(async () => {}) };
+  const invoke = jest.fn(async () => ({ dir: 'after__12345678', snapshot: {
+    dirs: ['after__12345678'], entries: [{ dir: 'after__12345678', id: session.id, name: 'after', state: 'active' }],
+  } }));
+  (window as any).electron = { ipcRenderer: { invoke } };
+  try {
+    await svc.renameProject('before', 'after');
+    expect(svc.flushProjectNow).toHaveBeenCalledWith('before');
+    expect(invoke).toHaveBeenCalledWith('workspace-rename-project', 'fixed__12345678', session.id, 'after');
+    expect(physicalDirOf('before')).toBeUndefined();
+    expect(physicalDirOf('after')).toBe('after__12345678');
+    expect(svc.workspaceDirForId(session.id)).toBe('after__12345678');
+    expect(galleryPreviewEntry(image.getSceneGalleryEntries(session, root))?.owner).toBe(variant);
+    expect(image.getOutputDir(session, variant)).toContain('workspace/after__12345678/');
+  } finally { delete (window as any).electron; }
+});

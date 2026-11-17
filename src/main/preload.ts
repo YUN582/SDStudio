@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 export type Channels =
   | 'workspace-snapshot'
   | 'workspace-create-project-dir'
+  | 'workspace-rename-project'
   | 'workspace-task-output'
   | 'workspace-changed'
   | 'migrate-variant-outputs'

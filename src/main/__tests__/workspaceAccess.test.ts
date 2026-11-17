@@ -82,3 +82,56 @@ test('creating a same-name project after external deletion gets a new identity',
   access.writeWorkspaceFile(access.workspaceLocation('workspace/second/project.json')!, body(), 'utf8');
   expect(access.snapshot().entries).toEqual([expect.objectContaining({ dir: 'second', id: 'new-id', state: 'active' })]);
 });
+
+
+test('app rename moves every asset, updates both names and preserves queued output identity', () => {
+  const old = put('old', 'Project', '12345678-1234');
+  fs.mkdirSync(path.join(old, 'vibes'), { recursive: true });
+  fs.writeFileSync(path.join(old, 'vibes', 'mask.png'), 'mask');
+  access.snapshot();
+  const result = access.renameProjectDirectory('old', '12345678-1234', '새 이름');
+  expect(result.dir).toBe('새 이름__12345678');
+  const renamed = path.join(root, 'workspace', result.dir);
+  expect(fs.existsSync(old)).toBe(false);
+  expect(JSON.parse(fs.readFileSync(path.join(renamed, 'meta.json'), 'utf8'))).toMatchObject({ id: '12345678-1234', name: '새 이름' });
+  expect(JSON.parse(fs.readFileSync(path.join(renamed, 'project.json'), 'utf8')).name).toBe('새 이름');
+  expect(fs.readFileSync(path.join(renamed, 'vibes/mask.png'), 'utf8')).toBe('mask');
+  expect(access.resolveTaskOutput('workspace/old/outs/scene')).toBe('workspace/새 이름__12345678/outs/scene');
+  expect(() => access.writeWorkspaceFile(access.workspaceLocation('workspace/old/project.json')!, body(), 'utf8')).toThrow('WORKSPACE_CHANGED');
+});
+
+test('app rename rejects destination collisions without merging folders', () => {
+  const old = put('old', 'Project', '12345678-1234');
+  const other = put('Next__12345678', 'Other', 'another-id');
+  access.snapshot();
+  expect(() => access.renameProjectDirectory('old', '12345678-1234', 'Next')).toThrow('이미 있습니다');
+  expect(fs.readFileSync(path.join(old, 'project.json'), 'utf8')).toBe(body());
+  expect(fs.readFileSync(path.join(other, 'project.json'), 'utf8')).toBe(body('Other'));
+});
+
+test('app rename restores names, assets and folder after a metadata commit failure', () => {
+  const old = put('old', 'Project', '12345678-1234');
+  access.snapshot();
+  const rename = fs.renameSync;
+  let failed = false;
+  const spy = jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    if (!failed && String(to).endsWith('project.json')) { failed = true; throw new Error('simulated locked file'); }
+    rename(from, to);
+  });
+  try { expect(() => access.renameProjectDirectory('old', '12345678-1234', 'Next')).toThrow('simulated locked file'); }
+  finally { spy.mockRestore(); }
+  expect(fs.existsSync(path.join(root, 'workspace/Next__12345678'))).toBe(false);
+  expect(fs.readFileSync(path.join(old, 'project.json'), 'utf8')).toBe(body());
+  expect(JSON.parse(fs.readFileSync(path.join(old, 'meta.json'), 'utf8')).name).toBe('Project');
+  expect(access.resolveTaskOutput('workspace/old/outs/scene')).toBe('workspace/old/outs/scene');
+});
+
+test('app rename rejects external edits, replaced IDs and unsafe paths', () => {
+  const old = put('old', 'Project', '12345678-1234');
+  access.snapshot();
+  expect(() => access.renameProjectDirectory('../old', '12345678-1234', 'Next')).toThrow('WORKSPACE_CHANGED');
+  expect(() => access.renameProjectDirectory('old', 'other-id', 'Next')).toThrow('ID');
+  fs.appendFileSync(path.join(old, 'project.json'), ' ');
+  expect(() => access.renameProjectDirectory('old', '12345678-1234', 'Next')).toThrow('WORKSPACE_CHANGED');
+  expect(fs.existsSync(old)).toBe(true);
+});

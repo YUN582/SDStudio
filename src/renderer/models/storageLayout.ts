@@ -4,8 +4,7 @@
 // 마이그레이터·부트스트랩·스캔이 공유한다. 스펙: track1-b-migration-spec.md §2·§5.
 //
 // 핵심 계약:
-// - 물리 폴더명은 생성/마이그레이션 시 1회 고정(makeWorkspaceDirName)되고
-//   이름변경에도 불변 — rename 은 meta.json/레지스트리 키 갱신뿐.
+// - Desktop renames update the readable folder prefix; the stable project ID stays unchanged.
 // - 활성(active) 여부의 진실 = 데이터 루트의 storage_version.json 마커.
 //   이 모듈은 부트스트랩이 마커를 읽어 반영한 캐시일 뿐이다.
 // - 레지스트리는 스캔(신 배치 목록)·생성·이름변경·삭제 시점에만 갱신한다.
@@ -74,7 +73,7 @@ export function nameOfPhysicalDir(dir: string): string | undefined {
 // 파일에 박히는 도구 사고 전례가 있어 회피.
 const FORBIDDEN_DIR_CHARS = '<>:"/\\|?*';
 
-// 물리 폴더명 생성: '정제이름__짧은id' (스펙 §2-2). 생성/마이그레이션 시 1회만.
+// Physical directory name for creation, migration and desktop rename.
 // - NFC 정규화, Windows 금지문자·제어문자 제거, 앞뒤 점/공백 제거, 40자 절단
 // - 빈 결과는 'project' 폴백, 유일성은 id(uuid) 접미가 보장
 export function makeWorkspaceDirName(name: string, id: string): string {

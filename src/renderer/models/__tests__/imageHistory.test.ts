@@ -13,11 +13,12 @@ const backend = {
   }),
 };
 const mockProjects: string[] = [];
+const mockListeners = new Map<string, (event: Event) => void>();
 
 jest.mock('..', () => ({
   backend,
   imageService: {
-    addEventListener: () => {},
+    addEventListener: (name: string, listener: (event: Event) => void) => mockListeners.set(name, listener),
     images: {},
     inpaints: {},
   },
@@ -157,4 +158,19 @@ describe('이미지 히스토리 — 세션당 상한 + 영속화', () => {
     await flushSave();
     expect(JSON.parse(files['history.json']).entries.length).toBe(1);
   });
+});
+
+
+test('history entries follow project rename without losing their timestamps', async () => {
+  const svc = new ImageHistoryService();
+  await svc.ensureLoaded();
+  svc.push(entry('before', 1));
+  const createdAt = svc.entries[0].createdAt;
+  const scene = { type: 'scene', name: 'scene1' };
+  mockListeners.get('updated')!(new CustomEvent('updated', { detail: {
+    previousSessionName: 'before', session: { name: 'after', getScene: () => scene },
+  } }));
+  expect(svc.entries[0]).toMatchObject({ sessionName: 'after', path: 'outs/after/scene1/1.png', createdAt });
+  await flushSave();
+  expect(JSON.parse(files['history.json']).entries[0].sessionName).toBe('after');
 });

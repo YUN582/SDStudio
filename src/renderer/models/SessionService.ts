@@ -2026,9 +2026,7 @@ export class SessionService extends ResourceSyncService<Session> {
   // 호출해야 했고, 빼먹으면 이미지 루트가 통째로 고아가 됐다(트랙1 조사 §1-2).
   // 이제 이름변경은 반드시 이 메서드만 사용할 것.
   async renameProject(oldName: string, newName: string): Promise<void> {
-    // 신 배치: 물리 폴더는 불변(정제이름__id) — 이미지 6루트 이동도 json rename 도
-    // 없다. meta.json name 갱신 + 레지스트리 키 이관 + 사이드카 키 이관 + 메모리
-    // 갱신뿐. onRenameSession(이미지 이동)은 호출하지 않는다. 스펙 §A-4.
+    // Desktop workspace: move the whole project with a stable ID, then rekey runtime state.
     if (isWorkspaceLayout()) {
       await this.renameProjectWorkspace(oldName, newName);
       return;
@@ -2051,10 +2049,7 @@ export class SessionService extends ResourceSyncService<Session> {
     }
   }
 
-  // 신 배치 이름변경: 물리 이동 없음. meta.json name 갱신 + 레지스트리 키 이관 +
-  // 메모리(entries/folderMap/reaction/세션 name) 갱신 + 사이드카 키 이관.
-  // json 파일은 workspace/<dir>/project.json 그대로(물리 폴더 불변) — 경로가
-  // 바뀌지 않으므로 flushPath/파일 rename 이 불필요하다.
+  // Flush pending writes before moving the desktop project; keep the Session instance.
   private async renameProjectWorkspace(
     oldName: string,
     newName: string,
@@ -2068,12 +2063,32 @@ export class SessionService extends ResourceSyncService<Session> {
         `신 배치 이름변경 대상 미등록: ${JSON.stringify(oldName)}`,
       );
     }
+    if (window.electron) {
+      if (!(await this.guardCrossWindowLock(oldName, '이름 변경'))) return;
+      if (!e.instance.id) throw new Error('프로젝트 ID를 확인할 수 없습니다.');
+      if (taskQueueService.isRunning())
+        throw new Error('생성을 멈춘 뒤 프로젝트 이름을 변경해 주세요. 예약은 유지됩니다.');
+      await this.flushProjectNow(oldName);
+    }
     await this.withLock([oldName, newName], async () => {
-      // meta.json name 갱신(폴더는 유지). 실패 시 여기서 throw → 아래 메모리 갱신
-      // 미실행으로 원 상태 보존.
-      await this.updateWorkspaceMeta(oldName, { name: newName });
-      renameProjectDirKey(oldName, newName);
-      this.renameDesktopWorkspaceEntry(oldName, newName);
+      if (window.electron) {
+        await persistService.flushPath(this.getPath(oldName));
+        await trashService.rememberWorkspaceSceneIds(
+          new Map([[physicalDirOf(oldName)!, e.instance!.id!]]), this.workspaceSnapshot);
+        const result = await window.electron.ipcRenderer.invoke('workspace-rename-project',
+          physicalDirOf(oldName), e.instance!.id, newName);
+        unregisterProjectDir(oldName);
+        registerProjectDir(newName, result.dir);
+        this.workspaceSnapshot = result.snapshot;
+        this.workspaceProjects.delete(oldName);
+        const entry = result.snapshot.entries.find((item: WorkspaceEntry) => item.id === e.instance!.id);
+        if (entry) this.workspaceProjects.set(newName, entry);
+        this.workspaceWrites.set(e.instance!, JSON.stringify({ ...e.instance!.toJSON(), name: newName }));
+      } else {
+        await this.updateWorkspaceMeta(oldName, { name: newName });
+        renameProjectDirKey(oldName, newName);
+        this.renameDesktopWorkspaceEntry(oldName, newName);
+      }
       // 메모리 이동 (base rename 의 파일 rename 제외판)
       this.entries.delete(oldName);
       this.entries.set(newName, e);

@@ -2,6 +2,8 @@ import * as workspaceFs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import chokidar from 'chokidar';
+import { invalidProjectName } from '../renderer/models/projectPaths';
+import { makeWorkspaceDirName } from '../renderer/models/storageLayout';
 
 export interface WorkspaceLocation {
   resolved: string;
@@ -336,6 +338,63 @@ export function createWorkspaceAccess(
       throw error;
     }
   }
+  /** Rename the complete project, preserving its ID and every child file. */
+  function renameProjectDirectory(oldDir: string, expectedId: string, newName: string) {
+    if (!oldDir || /[\\/]/.test(oldDir) || oldDir.startsWith('.') ||
+        invalidProjectName(newName) || !/^[a-zA-Z0-9-]+$/.test(expectedId))
+      throw workspaceError('프로젝트 이름 또는 폴더를 확인해 주세요.');
+    const location = workspaceLocation('workspace/' + oldDir + '/project.json')!;
+    collectWorkspace();
+    if (verifyWorkspaceTarget(location) !== expectedId)
+      throw workspaceError('프로젝트 ID가 바뀌어 이름변경을 취소했습니다.');
+    if (workspaceEntries.some(entry => entry.dir !== oldDir && entry.state !== 'deleted' && entry.name === newName))
+      throw workspaceError('같은 이름의 프로젝트가 이미 있습니다.');
+    const dir = makeWorkspaceDirName(newName, expectedId);
+    const destination = path.join(path.dirname(location.root), dir);
+    const samePath = process.platform === 'win32'
+      ? destination.toLowerCase() === location.root.toLowerCase()
+      : destination === location.root;
+    if (!samePath && workspaceStat(destination))
+      throw workspaceError('변경할 프로젝트 폴더가 이미 있습니다.');
+    const metaFile = path.join(location.root, 'meta.json');
+    const originalMeta = workspaceFs.readFileSync(metaFile, 'utf8');
+    const originalBody = workspaceFs.readFileSync(location.resolved, 'utf8');
+    const meta = JSON.parse(originalMeta), body = JSON.parse(originalBody);
+    if (body.id && body.id !== expectedId) throw workspaceError('프로젝트 본문의 ID가 다릅니다.');
+    let currentRoot = location.root;
+    const replace = (name: string, data: string) => {
+      const temporary = path.join(currentRoot, '.rename-' + randomUUID());
+      try {
+        workspaceFs.writeFileSync(temporary, data, { flag: 'wx' });
+        workspaceFs.renameSync(temporary, path.join(currentRoot, name));
+      } finally { workspaceFs.rmSync(temporary, { force: true }); }
+    };
+    try {
+      if (destination !== location.root) {
+        workspaceFs.renameSync(location.root, destination);
+        currentRoot = destination;
+      }
+      replace('meta.json', JSON.stringify({ ...meta, name: newName }));
+      replace('project.json', JSON.stringify({ ...body, name: newName }));
+    } catch (error) {
+      try {
+        replace('meta.json', originalMeta);
+        replace('project.json', originalBody);
+        if (currentRoot !== location.root) workspaceFs.renameSync(currentRoot, location.root);
+        workspaceRevisions.set(expectedId, workspaceRevision(workspaceStat(location.resolved)));
+        collectWorkspace();
+      } catch (rollback) {
+        throw workspaceError('이름변경을 되돌리지 못했습니다. ' + currentRoot + ' 폴더의 데이터를 보존했습니다. ' + String(rollback));
+      }
+      throw error;
+    }
+    workspacePathIds.set(dir.toLowerCase(), expectedId);
+    workspaceRevisions.set(expectedId, workspaceRevision(workspaceStat(path.join(destination, 'project.json'))));
+    const result = collectWorkspace();
+    notifyWorkspaceChanged();
+    return { dir, snapshot: result };
+  }
+
   function resolveTaskOutput(relativePath: string) {
     const location = workspaceLocation(relativePath);
     if (!location) return relativePath;
@@ -592,6 +651,7 @@ export function createWorkspaceAccess(
     commitWorkspaceFile,
     snapshot,
     createProjectDirectory,
+    renameProjectDirectory,
     resolveTaskOutput,
     saveWorkspaceData,
     outputToWorkspace,
