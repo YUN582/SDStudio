@@ -830,7 +830,7 @@ const InPaintEditor = observer(
         const preset={...editingScene.preset};
         if(def?.hasMask&&!isMirror){
           preset.image=await brushTool.current!.getInputImage();
-          preset.mask=await imageService.storeWorkImage(curSession!,editingScene,'mask',brushTool.current!.getMaskBase64());
+          preset.mask='data:image/png;base64,'+brushTool.current!.getMaskBase64();
         }
         const count=Math.max(1,Math.min(99,Math.floor(Number(appState.samples)||1)));
         appState.samples=count;

@@ -469,7 +469,9 @@ const createSDI2IHandler = (type: string) => {
         )
       : preset.image;
     const maskData = type === 'SDInpaint' && preset.mask
-      ? dataUriToBase64((await imageService.fetchVibeImage(session, preset.mask))!) : '';
+      ? dataUriToBase64(preset.mask.startsWith('data:image/png;base64,')
+        ? preset.mask
+        : (await imageService.fetchVibeImage(session, preset.mask))!) : '';
     const autoI2I = type === 'SDInpaint' && !(scene?.type === 'inpaint' && scene.workflowType === 'SDMirror') &&
       !(await imageService.maskHasPaint(maskData));
     const isInpaint = type === 'SDInpaint' && !autoI2I;
