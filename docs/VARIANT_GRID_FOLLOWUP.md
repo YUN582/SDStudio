@@ -69,3 +69,24 @@ was performed.
 
 The earlier port report describes the state before this follow-up; its statement
 that no packaged app had been tested is superseded by the checks above.
+
+## Image-specific combination follow-up, 2026-11-17
+
+Restoring the layout chooser also restored copying every source combination.
+Choosing shared/snapshot layout incorrectly marked image-derived work as an
+intentional batch, bypassing the earlier single-image recovery.
+
+- Shared/snapshot still controls prompt settings; image entry imports only the
+  image's recorded middle prompt. Resolved character prompts are imported once.
+- Older images without section metadata require an exact, unambiguous match.
+  Failure creates neither work nor an input snapshot; no first-combination guess.
+- Existing affected work asks once at reservation, backs up its old combinations,
+  and preserves layout, masks, drawings, outputs, and generation settings.
+  Explicitly retaining a batch is distinct from the old automatic keep flag.
+- Queue entry points share the recovery guard. Generated Inpaint/I2I combination
+  results retain section metadata for subsequent edits.
+- Validation: source creation/recovery, non-first combinations, shared versus
+  snapshot updates, character prompts, input snapshots, save/reload, and normal
+  batch behavior. Typecheck and production renderer build passed. Isolated
+  packaged-app check selected the second source combination and queued ten
+  images once. No personal data writes or generation API calls.

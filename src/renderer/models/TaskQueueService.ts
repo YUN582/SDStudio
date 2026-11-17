@@ -43,6 +43,7 @@ import { expandPieces, lowerPromptNode, toPARR } from './PromptService';
 import { dataUriToBase64 } from './ImageService';
 import { prepareMirrorCanvas } from './workflows/SDWorkFlow';
 import { variantComboMode } from './comboMode';
+import { ensureSingleImagePrompt, needsSingleImageDecision } from './singleImageEdit';
 import {
   comboHandlerPreset,
   expandVariantCombos,
@@ -2541,6 +2542,15 @@ export const queueI2IWorkflow = async (
     (scene as InpaintScene).workflowType === type &&
     variantComboMode(scene as InpaintScene)
   ) {
+    const work = scene as InpaintScene;
+    if (needsSingleImageDecision(work)) {
+      if (!await ensureSingleImagePrompt(session, work, () => true)) return 0;
+      // Keep captured canvas pixels/mask; recovery changes only prompt fields.
+      preset = { ...preset, prompt: work.preset.prompt,
+        characterPrompts: work.preset.characterPrompts,
+        useCoords: work.preset.useCoords,
+        legacyPromptConditioning: work.preset.legacyPromptConditioning };
+    }
     return queueComboVariant(
       session,
       type,

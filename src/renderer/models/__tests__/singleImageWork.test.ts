@@ -1,15 +1,19 @@
 const handler = jest.fn(async (..._args: any[]) => {});
 const fetchImage = jest.fn(async () => 'data:image/png;base64,PIXELS');
 const fetchInput = jest.fn(async () => 'data:image/png;base64,PIXELS');
-const metadata = jest.fn(async () => ({
+const metadata = jest.fn(async (): Promise<any> => ({
   prompt: 'exact image prompt',
   uc: 'negative',
   characterPrompts: [],
 }));
 const answer = jest.fn(async () => 'single');
 jest.mock('..', () => ({
-  backend: {},
+  backend: { lookupTag: jest.fn(async () => null) },
   isMobile: false,
+  globalPieceService: { library: new Map() },
+  get promptService() {
+    return new (jest.requireActual('../PromptService').PromptService)();
+  },
   sessionService: { markDirty: jest.fn() },
   imageService: {
     fetchImage,
@@ -18,8 +22,20 @@ jest.mock('..', () => ({
     storeVibeImage: jest.fn(async () => 'snapshot.png'),
   },
   workFlowService: {
-    createPreset: (type: string, meta: any) => ({ type, ...meta }),
-    buildPreset: (type: string) => ({ type }),
+    createPreset: (type: string, meta: any) => {
+      const { WFWorkFlow } = jest.requireActual('../workflows/WorkFlow');
+      const sd = jest.requireActual('../workflows/SDWorkFlow');
+      const preset = new WFWorkFlow([sd.SDInpaintDef, sd.SDI2IDef].find(d => d.type === type)).buildPreset();
+      for (const key of ['prompt', 'uc', 'characterPrompts', 'useCoords', 'legacyPromptConditioning']) {
+        if (key in meta) preset[key] = meta[key];
+      }
+      return preset;
+    },
+    buildPreset: (type: string) => {
+      const { WFWorkFlow } = jest.requireActual('../workflows/WorkFlow');
+      const sd = jest.requireActual('../workflows/SDWorkFlow');
+      return new WFWorkFlow([sd.SDInpaintDef, sd.SDI2IDef, sd.SDImageGenDef].find(d => d.type === type)).buildPreset();
+    },
     presetFromJSON: (value: any) => ({ ...value, toJSON(this: any) { const {toJSON,...data}=this; return data; } }),
     getDef: () => ({ handler }),
   },
@@ -51,7 +67,10 @@ import { createSourceVariant, openSourceVariant } from '../sourceVariant';
 import {
   ensureSingleImagePrompt,
   SINGLE_IMAGE_BACKUP,
+  KEEP_COMBINATIONS,
 } from '../singleImageEdit';
+import { SOURCE_IMAGE_COMBINATION } from '../sourceImageCombination';
+import { lowerPromptNode } from '../PromptService';
 import { InpaintScene, PromptPiece, Scene, Session } from '../types';
 import { queueI2IWorkflow } from '../TaskQueueService';
 
@@ -79,8 +98,46 @@ function setup() {
     ),
   ];
   session.scenes.set(scene.name, scene);
+  session.selectedWorkflow = { workflowType: 'SDImageGen', presetName: 'main' };
+  const preset = jest.requireMock('..').workFlowService.buildPreset('SDImageGen');
+  Object.assign(preset, { frontPrompt: 'front', backPrompt: 'back', uc: 'global-negative' });
+  (session as any).getCommonSetup = () => ['SDImageGen', preset, { type: 'SDImageGen' }];
   return { session, scene };
 }
+
+const sourceMetadata = () => ({
+  prompt: 'front, combo4, back', uc: 'negative',
+  characterPrompts: [{ id: 'c', prompt: 'character, fourth-expression', uc: 'character-negative', position: { x: 0.2, y: 0.7 } }],
+  useCoords: true,
+  sdstudioMetadata: { schemaVersion: 1, promptSource: {
+    schemaVersion: 1, workflowType: 'SDImageGen', frontPrompt: 'front',
+    extraPrompt: '', middlePrompt: 'combo4', backPrompt: 'back',
+  } },
+});
+
+test.each(['shared', 'snapshot'])('%s image layout queues only the actual image combination, with ten samples', async (mode) => {
+  const { session, scene } = setup();
+  answer.mockResolvedValue(mode);
+  metadata.mockResolvedValue(sourceMetadata());
+  const open = jest.fn();
+  await createSourceVariant(session, scene, 'SDInpaint', 'outputs/original.png', open);
+  const work = open.mock.calls[0][0] as InpaintScene;
+  expect(work.comboMode).toBe(mode);
+  expect(work.slots.map(s => s.map(p => p.prompt))).toEqual([['combo4']]);
+  expect(work.meta.get(SOURCE_IMAGE_COMBINATION)).toBe(true);
+  expect(work.meta.get(KEEP_COMBINATIONS)).toBeUndefined();
+  expect(await queueI2IWorkflow(session, 'SDInpaint', work.preset, work, 10)).toBe(1);
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(handler.mock.calls[0][6]).toBe(10);
+  expect(lowerPromptNode(handler.mock.calls[0][2])).toBe('front, combo4, back');
+  expect(lowerPromptNode(handler.mock.calls[0][3][0])).toBe('character, fourth-expression');
+  handler.mockClear();
+  session.getCommonSetup(session.selectedWorkflow!)[1].frontPrompt = 'changed-front';
+  await queueI2IWorkflow(session, 'SDInpaint', work.preset, work, 10);
+  expect(lowerPromptNode(handler.mock.calls[0][2])).toBe(
+    mode === 'shared' ? 'changed-front, combo4, back' : 'front, combo4, back',
+  );
+});
 test('one image from a six-combination scene creates one work and queues exactly ten samples once', async () => {
   const { session, scene } = setup();
   let work: InpaintScene | undefined;
@@ -159,6 +216,7 @@ test('editing a generated result records its immediate work and filename without
   expect(InpaintScene.fromJSON(child.toJSON())!.sourceInpaint).toBe(parent.name);
 });
 test('legacy recovery asks first, preserves combinations in backup, and cancellation leaves all data intact', async () => {
+  metadata.mockResolvedValue(sourceMetadata());
   const { session, scene } = setup();
   let work: InpaintScene | undefined;
   await createSourceVariant(
@@ -182,7 +240,50 @@ test('legacy recovery asks first, preserves combinations in backup, and cancella
     'manually changed',
   );
   expect(work!.slots).toHaveLength(1);
-  expect(work!.comboMode).toBeUndefined();
+  expect(work!.comboMode).toBe('snapshot');
+  expect(work!.slots[0]).toHaveLength(1);
+  expect(work!.preset.prompt).toBe('combo4');
+});
+
+test('legacy keep flag from layout choice does not bypass recovery; captured painting and settings survive', async () => {
+  const { session, scene } = setup();
+  metadata.mockResolvedValue(sourceMetadata());
+  const open = jest.fn();
+  await createSourceVariant(session, scene, 'SDI2I', 'outputs/original.png', open);
+  const work = open.mock.calls[0][0] as InpaintScene;
+  work.comboMode = 'snapshot';
+  work.slots = scene.slots;
+  work.meta.set(KEEP_COMBINATIONS, true);
+  Object.assign(work.preset, { frontPrompt: 'saved-front', backPrompt: 'saved-back', mask: 'mask.png', strength: 0.4 });
+  const captured = { ...work.preset, image: 'DRAWN_PIXELS', mask: 'CAPTURED_MASK' };
+  expect(await queueI2IWorkflow(session, 'SDI2I', captured, work, 10)).toBe(1);
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(handler.mock.calls[0][6]).toBe(10);
+  expect(handler.mock.calls[0][4]).toMatchObject({ image: 'DRAWN_PIXELS', mask: 'CAPTURED_MASK', strength: 0.4 });
+  expect(work.preset).toMatchObject({ mask: 'mask.png', strength: 0.4 });
+  expect(lowerPromptNode(handler.mock.calls[0][2])).toBe('saved-front, combo4, saved-back');
+  expect(work.meta.get(SINGLE_IMAGE_BACKUP).slots[0]).toHaveLength(6);
+  const reloaded = InpaintScene.fromJSON(work.toJSON())!;
+  answer.mockClear();
+  await ensureSingleImagePrompt(session, reloaded, () => true);
+  expect(answer).not.toHaveBeenCalled();
+});
+
+test('missing section metadata matches the actual prompt instead of choosing the first combination', async () => {
+  const { session, scene } = setup();
+  answer.mockResolvedValue('snapshot');
+  metadata.mockResolvedValue({ ...sourceMetadata(), sdstudioMetadata: undefined });
+  const open = jest.fn();
+  await createSourceVariant(session, scene, 'SDI2I', 'outputs/original.png', open);
+  expect(open.mock.calls[0][0].preset.prompt).toBe('combo4');
+});
+
+test('unidentifiable source combination creates no work or orphan image', async () => {
+  const { session, scene } = setup();
+  answer.mockResolvedValue('snapshot');
+  await expect(createSourceVariant(session, scene, 'SDI2I', 'outputs/original.png', jest.fn())).rejects.toThrow('정확히 확인');
+  expect(session.inpaints.size).toBe(0);
+  expect(jest.requireMock('..').imageService.storeVibeImage).not.toHaveBeenCalled();
 });
 test('choosing to retain manually edited combinations never replaces their prompts', async () => {
   const { session, scene } = setup();

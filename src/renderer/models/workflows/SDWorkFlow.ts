@@ -488,6 +488,8 @@ const createSDI2IHandler = (type: string) => {
         : scene?.type === 'inpaint'
           ? resolvePresetPromptNode(preset.prompt, session, scene)
           : { type: 'text', text: preset.prompt },
+      sdstudioPromptSource: expanded?.prompt.type === 'group'
+        ? expanded.prompt.sdstudioPromptSource : undefined,
       sampling: preset.sampling,
       uc: preset.uc,
       characterPrompts: expanded

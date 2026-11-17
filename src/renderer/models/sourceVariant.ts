@@ -12,8 +12,9 @@ import {
 } from './inpaintResolution';
 import { recordScenesCreated, mirrorImageHooks } from './sceneStructureUndo';
 import { UNDO_TEXT } from './undoService';
-import { chooseNewVariantCombo, COMBO_SOURCE_TEXT } from './comboSource';
-import { KEEP_COMBINATIONS, SINGLE_IMAGE_EDIT } from './singleImageEdit';
+import { chooseNewVariantCombo } from './comboSource';
+import { SINGLE_IMAGE_EDIT } from './singleImageEdit';
+import { applySourceImageCombination, sourceImageCombination } from './sourceImageCombination';
 
 const pendingRequests = new WeakMap<Session, Set<string>>();
 
@@ -108,15 +109,12 @@ export async function createSourceVariant(
     const fromImage = workflowUsesImageResolution(workflowType)
       ? await resolutionFromImage(image)
       : undefined;
-    preset.image = await imageService.storeVibeImage(session, image);
     const newScene = InpaintScene.fromJSON({
       type: 'inpaint',
       name,
       workflowType,
       preset,
-      meta: choice.kind === 'single'
-        ? { [SINGLE_IMAGE_EDIT]: true }
-        : { [KEEP_COMBINATIONS]: true },
+      meta: { [SINGLE_IMAGE_EDIT]: true },
       ...inpaintSceneResolutionFields(workflowType, scene, fromImage),
       sceneRef: scene.type === 'scene' ? scene.name : scene.sceneRef,
       sourceImage,
@@ -137,8 +135,10 @@ export async function createSourceVariant(
     if (newScene) {
       if (choice.kind === 'combo') {
         choice.apply(newScene);
-        if (choice.fromCurrent) appState.pushMessage(COMBO_SOURCE_TEXT.currentNotice, 'info');
+        const middle = await sourceImageCombination(session, newScene, job);
+        applySourceImageCombination(newScene, middle, job!);
       }
+      newScene.preset.image = await imageService.storeVibeImage(session, image);
       session.addScene(newScene);
 
       // 되돌리기(U2a): 씬은 휴지통행(저장한 첨부 이미지 파일은 남김)

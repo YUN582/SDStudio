@@ -400,6 +400,18 @@ describe('핸들러 — 전개 결과 사용·단일 프롬프트 조각 해석'
     expect(job.strength).toBe(0.6);
     expect(job.focus).toMatchObject({ x: 64, y: 64, w: 256, h: 256 });
   });
+
+  test.each([SDInpaintDef, SDI2IDef])('$type keeps combination provenance for editing its generated results', async (def) => {
+    const scene = inpaintScene({ workflowType: def.type, comboMode: 'snapshot' });
+    const preset = new WFWorkFlow(def).buildPreset();
+    Object.assign(preset, { image: 'RAWBASE64', mask: 'mask.png' });
+    const [combo] = await expandVariantCombos(session, scene, comboSourceFromSnapshot(preset), preset);
+    await def.handler(session, scene, combo.prompt, [], comboHandlerPreset(preset, combo, ''), undefined, 10);
+    const job = addTask.mock.calls[0][0].job;
+    expect(job.sdstudioPromptSource).toBeDefined();
+    expect(job.sdstudioPromptSource.middlePrompt).toBe((combo.prompt as any).sdstudioPromptSource.middlePrompt);
+    expect(addTask.mock.calls[0][1]).toBe(10);
+  });
 });
 
 describe('B1 「I2I로 이미지생성 씬 복사」 조합 모드 규칙', () => {
