@@ -70,6 +70,8 @@ import {
 } from '../workflows/SDWorkFlow';
 import { queueI2IWorkflow, queueMirrorWorkflow } from '../TaskQueueService';
 import { InpaintScene, PromptPiece, Scene } from '../types';
+import { lowerPromptNode } from '../PromptService';
+import { SOURCE_IMAGE_COMBINATION } from '../sourceImageCombination';
 import { SCENE_SEED_GROUP_META_KEY } from '../sceneSeedGroups';
 
 // 메인 사전 세팅 — 기본값(28/5/0/k_euler_ancestral/karras)과 모두 다른 값
@@ -126,6 +128,45 @@ const mainSession = (workflowType = 'SDImageGen', extra: any = {}) =>
 const samplingOf = (job: any) =>
   Object.fromEntries(VARIANT_SAMPLING_KEYS.map((k) => [k, job[k]]));
 const jobs = () => addTask.mock.calls.map((c: any[]) => c[0].job);
+
+describe('edited prompts and empty-mask routing', () => {
+  test.each(
+    ([undefined, 'shared', 'snapshot'] as const).flatMap((mode) =>
+      [false, true].map((painted) => [mode, painted] as const),
+    ),
+  )('layout=%s painted-mask=%s preserves edits and excludes disabled characters', async (mode, painted) => {
+    const { imageService } = jest.requireMock('..');
+    imageService.maskHasPaint.mockResolvedValueOnce(painted).mockResolvedValueOnce(painted);
+    const work = new InpaintScene();
+    work.name = 'edit';
+    work.workflowType = 'SDInpaint';
+    work.comboMode = mode;
+    work.sourceImage = 'source.png';
+    work.meta.set(SOURCE_IMAGE_COMBINATION, true);
+    work.preset = new WFWorkFlow(SDInpaintDef).buildPreset();
+    Object.assign(work.preset, {
+      image: 'DRAWN_PIXELS', mask: painted ? 'mask.png' : '', strength: 0.7,
+      prompt: 'plain background', frontPrompt: 'saved front', backPrompt: 'saved back',
+      characterPrompts: [{ id: 'c', prompt: 'person, 2.5::blunt bangs::', uc: 'old hairstyle', enabled: true, position: { x: 0.2, y: 0.4 } }],
+    });
+    if (mode) work.slots = [[PromptPiece.fromJSON({ id: 'one', prompt: work.preset.prompt, characterPrompts: [] })]];
+    await queueI2IWorkflow(mainSession(), 'SDInpaint', work.preset, work, 1);
+    const first = jobs()[0];
+    expect(first.type).toBe(painted ? 'sd_inpaint' : 'sd_i2i');
+    expect(first.image).toBe('DRAWN_PIXELS');
+    expect(first.strength).toBe(0.7);
+    expect(lowerPromptNode(first.characterPrompts[0].prompt)).toBe('person, 2.5::blunt bangs::');
+    work.preset.characterPrompts[0].enabled = false;
+    work.preset.prompt = 'plain background, 2.5::blunt bangs::';
+    if (mode) work.slots[0][0].prompt = work.preset.prompt;
+    await queueI2IWorkflow(mainSession(), 'SDInpaint', work.preset, work, 1);
+    const second = jobs()[1];
+    expect(lowerPromptNode(second.prompt)).toContain('2.5::blunt bangs::');
+    expect(second.characterPrompts).toHaveLength(0);
+    expect(lowerPromptNode(first.prompt)).not.toContain('blunt bangs');
+    expect(first.characterPrompts).toHaveLength(1);
+  });
+});
 
 let warnSpy: jest.SpyInstance;
 beforeEach(() => {

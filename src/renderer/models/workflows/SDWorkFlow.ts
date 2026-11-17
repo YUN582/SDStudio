@@ -494,10 +494,12 @@ const createSDI2IHandler = (type: string) => {
       uc: preset.uc,
       characterPrompts: expanded
         ? expanded.characterPrompts.map((p) => ({ ...p }))
-        : (preset.characterPrompts || []).map((p: CharacterPrompt) => ({
-            ...p,
-            prompt: { type: 'text', text: p.prompt || '' },
-          })),
+        : (preset.characterPrompts || [])
+            .filter((p: CharacterPrompt) => p.enabled !== false)
+            .map((p: CharacterPrompt) => ({
+              ...p,
+              prompt: { type: 'text', text: p.prompt || '' },
+            })),
       useCoords: preset.useCoords,
       legacyPromptConditioning: preset.legacyPromptConditioning,
       normalizeStrength: preset.normalizeStrength,

@@ -63,6 +63,31 @@ beforeEach(() => {
   getConfig.mockReset();
 });
 
+describe('edited image request payload', () => {
+  test.each([ModelVersion.V4_5, ModelVersion.V5, ModelVersion.V5Medium].flatMap((version) =>
+    [Model.I2I, Model.Inpaint].map((model) => [version, model] as const),
+  ))('%s %s retains edited prompts, pixels and strength', async (version, model) => {
+    getConfig.mockResolvedValue({ modelVersion: version, disableQuality: true, ucPreset: 'none' });
+    const { service, fetchArrayBuffer } = makeService();
+    await service.generateImage('test-token', {
+      ...makeInput(), model,
+      prompt: 'portrait, 2.5::blunt bangs::',
+      characterPrompts: ['person, 1.75::black hair::'],
+      characterUCs: ['old hairstyle'], characterPositions: [{ x: 0.2, y: 0.4 }], useCoords: true,
+      image: 'DRAWN_PIXELS', imageStrength: 0.7, noise: 0,
+      ...(model === Model.Inpaint ? { mask: 'PAINTED_MASK' } : {}),
+    });
+    const body = fetchArrayBuffer.mock.calls[0][1];
+    expect(body.action).toBe(model === Model.Inpaint ? 'infill' : 'img2img');
+    expect(body.input.replace(/\s/g, '')).toContain('2.5::bluntbangs::');
+    expect(body.parameters.v4_prompt.caption.base_caption).toBe(body.input);
+    expect(body.parameters.v4_prompt.caption.char_captions[0].char_caption.replace(/\s/g, '')).toContain('1.75::blackhair::');
+    expect(body.parameters.image).toBe('DRAWN_PIXELS');
+    expect(body.parameters.img2img.strength).toBe(0.7);
+    expect(body.parameters.mask).toBe(model === Model.Inpaint ? 'PAINTED_MASK' : undefined);
+  });
+});
+
 describe('NovelAI V5 도입 전 V4.5 요청 기준선', () => {
   test('V4.5 Full 기본 요청의 모델·필드·값을 유지한다', async () => {
     getConfig.mockResolvedValue({

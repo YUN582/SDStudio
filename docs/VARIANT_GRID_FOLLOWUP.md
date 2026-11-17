@@ -105,3 +105,18 @@ explicit reservation, concurrent clicks, and paid cancellation. Full-suite run:
 optional-metadata guard, corrected and verified in a focused four-suite rerun
 (67 tests passed). Typecheck and production build passed. Isolated packaged-app
 check confirmed ten pending images remained ten after Play; network was blocked.
+
+## Prompt/input verification and character toggle, 2026-11-17
+
+A reported ineffective edit could not be reproduced from its original work,
+which had already been deleted. Investigation found a separate concrete defect:
+single-prompt Inpaint/I2I included characters with `enabled: false`. Combination
+layouts already filtered them. The single-prompt handler now respects the toggle.
+
+Validation: 130 targeted tests passed, including edited weighted character/base
+prompts, shared/snapshot/single layouts, empty versus painted masks, immutable
+earlier reservations, and intercepted V4.5/V5/V5 Medium API payloads. Empty masks
+produce `img2img`; painted masks produce `infill`. An isolated Chromium canvas
+check passed 14 interactions and checked the composited drawing's actual pixels.
+No paid generation or personal data writes. These checks establish request
+contents, not a guarantee that the image model follows a requested visual edit.
