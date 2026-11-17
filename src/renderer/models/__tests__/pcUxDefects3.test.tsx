@@ -74,7 +74,7 @@ describe('D8 프롬프트 문법 색', () => {
   ];
   test.each(pairs)('%s 라이트 %s + :is(.dark) %s', (sel, light, dark) => {
     expect(block(sel)).toMatch(new RegExp(`color:\\s*${light}`));
-    expect(css).toContain(`:is(.dark) ${sel} { color: ${dark}; }`);
+    expect(block(`:is(.dark) ${sel}`)).toContain(`color: ${dark};`);
   });
   test('종전 흐린 값·@apply dark: 변형이 남지 않음', () => {
     for (const [sel] of pairs) {

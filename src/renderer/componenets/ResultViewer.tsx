@@ -740,7 +740,7 @@ const Cell = memo(
                   변형
                 </span>
               )}
-              {variantCount>0&&<span className="absolute bottom-1 right-1 z-10 round-button back-sky text-xs pointer-events-none" title={'연결된 인페인트·I2I 작업 '+variantCount+'개'}>변형 {variantCount}개</span>}
+              {variantCount>0&&<span className="absolute bottom-1 right-1 image-variant-count round-button text-xs pointer-events-none" title={'연결된 인페인트·I2I 작업 '+variantCount+'개'}>변형 {variantCount}개</span>}
               {selectedImages.has(path) && (
                 <div
                   className="absolute left-0 top-0 z-10 bg-sky-500 opacity-50 text-md w-full h-full"
