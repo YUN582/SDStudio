@@ -1,4 +1,4 @@
-/** Work-owned auxiliary images, inside the existing portable vibes root. */
+/** A work ID in each auxiliary filename lets references survive a rename or a trip to trash. */
 export const WORK_ASSET_META = 'sdstudio.workAssets.v1';
 export const WORK_ASSET_PREFIX = 'works/';
 export type WorkAssetRole = 'input' | 'mask' | 'drawing' | 'extra';
@@ -13,6 +13,13 @@ export function workAssetId(value: unknown): value is string {
   return (
     typeof value === 'string' && new RegExp('^' + UUID + '$', 'i').test(value)
   );
+}
+const localFilename = new RegExp('^(input|mask|drawing|extra)-(' + UUID + ')_([a-z0-9-]+)\\.(png|webp)$', 'i');
+export function sceneAssetOwner(filename: string): string | undefined {
+  return localFilename.exec(filename)?.[2];
+}
+export function sceneAssetName(owner: string, role: WorkAssetRole, revision: string, ext: string) {
+  return role + '-' + owner + '_' + revision + '.' + ext;
 }
 export function managedWorkAsset(value: string): boolean {
   return managed.test(value);

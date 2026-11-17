@@ -5,8 +5,7 @@
 // - 씬 추가·프리셋 변경은 세션 관문(session.addScene·프리셋 필드 대입 → toJSON reaction → 저장 큐)만 쓴다.
 //   직접 파일 쓰기는 첨부 이미지 저장(imageService.storeWorkImage) 하나 — 씬마다 고유 파일
 //   (편집기가 씬 파일을 제자리에서 덮어쓰므로 파일 공유 금지, SPEC §11 일괄 예약 성능 규칙과 같은 이유).
-// - 비동기 준비(프롬프트 조립·이미지 저장)를 먼저 끝내고 씬 등록·프리셋 대입은 runInAction 한 번으로 묶는다
-//   (저장 reaction 이 씬 수만큼 돌지 않게 — 예약이 아니라 withProgressBatch 대상은 아님).
+// - 작업을 일괄 등록해 이름을 확보한 후 각 작업 폴더에 입력 이미지를 저장한다.
 // - 해상도 = 첨부 이미지 크기(R-res, inpaintResolution.ts). 1MP 초과 안내는 한 번만(같은 이미지).
 import { runInAction } from 'mobx';
 import { imageService, workFlowService } from '.';
@@ -244,8 +243,6 @@ async function createVariantCopyScenes(
       const preset = combo.preset;
       if (image) {
         applyStrengthNoise(preset, values, workflowHasNoise(workflow));
-        // 씬마다 고유 파일(공유 금지) — 쓴 내용을 읽기 캐시에 선적재
-
       }
       const name = numberedName(src.name, taken);
       planned.add(name);
@@ -268,7 +265,6 @@ async function createVariantCopyScenes(
         game: undefined,
       });
       if (!scene) throw new Error('변형 씬을 만들지 못했습니다.');
-      if (image) scene.preset.image = await imageService.storeWorkImage(session, scene, 'input', image.base64, true);
       prepared.push(scene);
     } catch (e: any) {
       console.error('변형 씬 복사 실패:', src.name, e);
@@ -281,27 +277,31 @@ async function createVariantCopyScenes(
     appState.pushMessage(I2I_BATCH_TEXT.sessionChanged);
     return;
   }
-  // 등록은 한 번에 — 준비하는 사이 같은 이름 씬이 생겼으면 다시 번호를 붙인다.
+  // Reserve the final names before an asynchronous write uses them as directory names.
   runInAction(() => {
-    const added = new Set<string>();
-    for (const scene of prepared) {
-      if (session.hasScene('inpaint', scene.name)) {
-        scene.name = numberedName(
-          scene.name,
-          (n) => session.hasScene('inpaint', n) || added.has(n),
-        );
-      }
-      added.add(scene.name);
-      session.addScene(scene);
-    }
+    for (const scene of prepared) session.addScene(scene);
   });
+  const created: InpaintScene[] = [];
+  for (const scene of prepared) {
+    try {
+      if (image) {
+        const token = await imageService.storeWorkImage(session, scene, 'input', image.base64, true);
+        runInAction(() => { scene.preset.image = token; });
+      }
+      created.push(scene);
+    } catch (error) {
+      if (session.getScene('inpaint', scene.name) === scene) session.removeScene('inpaint', scene.name);
+      failed.push(scene.name);
+      firstError ??= String(error);
+    }
+  }
   // 되돌리기(U2a): 이번에 만든 변형 씬 전부 = 1항목(되돌림 = 휴지통행 — 씬마다 저장한 첨부 이미지 파일은 남김)
-  recordScenesCreated(session, prepared, UNDO_TEXT.variantCopy(variantCopyLabel(workflow), prepared.length));
+  recordScenesCreated(session, created, UNDO_TEXT.variantCopy(variantCopyLabel(workflow), created.length));
 
-  const withImage = image ? prepared.length : 0;
+  const withImage = image ? created.length : 0;
   appState.pushMessage(
-    i2iCopyResultText({ created: prepared.length, withImage, failed, firstError, workflow }),
-    batchResultKind(prepared.length, failed.length),
+    i2iCopyResultText({ created: created.length, withImage, failed, firstError, workflow }),
+    batchResultKind(created.length, failed.length),
   );
   const notice = image && withImage > 0 ? paidResolutionNotice(image.resolution) : undefined;
   if (notice) appState.pushMessage(notice, 'info');

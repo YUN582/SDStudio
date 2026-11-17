@@ -1,3 +1,4 @@
+import { DETACHED_INPUT_META } from '../models/inpaintInput';
 import { observer } from 'mobx-react-lite';
 import { getSnapshot } from 'mobx-state-tree';
 import { Item, Menu, Separator } from 'react-contexify';
@@ -220,6 +221,7 @@ export const AppContextMenu = observer(() => {
     regenerated.name = name;
     regenerated.imageMap = [];
     regenerated.mains = [];
+    if (regenerated.type === 'inpaint') await imageService.cloneWorkAssets(session, regenerated);
     session.addScene(regenerated);
     const sourceIndex = session
       .getScenes(sourceScene.type)
@@ -463,6 +465,18 @@ export const AppContextMenu = observer(() => {
         cnt++;
       }
       newScene.name = newNameFn();
+      if (newScene.type === 'inpaint') {
+        if (!newScene.sceneRef || !targetSession.scenes.has(newScene.sceneRef))
+          newScene.outputInSourceScene = undefined;
+        try {
+          await imageService.cloneWorkAssets(targetSession, newScene, session);
+          if (newScene.preset.image && newScene.sourceImage)
+            newScene.meta.set(DETACHED_INPUT_META, true);
+        } catch (error) {
+          appState.pushMessage(`"${srcScene.name}" 복사 실패: ${String(error)}`, 'error');
+          continue;
+        }
+      }
 
       if (mode === 'config') {
         newScene.imageMap = [];

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { maintainWorkAssets } from '../workAssetMaintenance';
 import {
   collectAssetReferences,
-  managedWorkAsset,
+  sceneAssetOwner,
 } from '../../renderer/models/workAssets';
 let root: string, projectRoot: string;
 const dir = 'P__12345678';
@@ -65,26 +65,27 @@ test('active and deleted work are grouped independently with masks, drawings and
   const deleted = (await json(trashFile())).scenes['P:deleted'].sceneData;
   expect(active.preset.image).not.toBe(deleted.preset.image);
   for (const w of [active, deleted]) {
+    const local = path.join(projectRoot, w.name === 'deleted' ? 'inpaints/.trash/deleted/vibes' : 'inpaints/paint/vibes');
     const refs = [...collectAssetReferences(w)];
     expect(refs).toHaveLength(3);
-    expect(refs.every(managedWorkAsset)).toBe(true);
+    expect(refs.every(sceneAssetOwner)).toBe(true);
     expect(w.meta['codex.inpaintDrawing.v1'].source).toBe(w.preset.image);
-    expect(await fs.readFile(path.join(vibes(), w.preset.image), 'utf8')).toBe(
+    expect(await fs.readFile(path.join(local, w.preset.image), 'utf8')).toBe(
       'input-pixels',
     );
-    expect(await fs.readFile(path.join(vibes(), w.preset.mask), 'utf8')).toBe(
+    expect(await fs.readFile(path.join(local, w.preset.mask), 'utf8')).toBe(
       'mask-pixels',
     );
     expect(
       await fs.readFile(
-        path.join(vibes(), w.meta['codex.inpaintDrawing.v1'].layer),
+        path.join(local, w.meta['codex.inpaintDrawing.v1'].layer),
         'utf8',
       ),
     ).toBe('drawing-pixels');
   }
   expect(
     await fs.readFile(
-      path.join(projectRoot, 'work-assets-backup-v1/vibes/input.png'),
+      path.join(projectRoot, 'work-assets-backup-v2/vibes/input.png'),
       'utf8',
     ),
   ).toBe('input-pixels');
@@ -228,4 +229,27 @@ test('missing trash history defers cleanup instead of assuming no deleted work',
     'input.png',
     'mask.png',
   ]);
+});
+
+test('moves previous works/ID files into the linked result folder and cleans unused revisions there', async () => {
+  const old = 'works/' + id + '/input-prev.png';
+  const p = await json(projectFile());
+  p.inpaints.paint = {...p.inpaints.paint, sceneRef: 'alpha', outputInSourceScene: true,
+    preset: {image:old}, meta:{'sdstudio.workAssets.v1':id}};
+  await put(projectFile(), p);
+  await fs.mkdir(path.dirname(path.join(vibes(), old)), {recursive:true});
+  await fs.writeFile(path.join(vibes(), old),'previous version');
+  const result = await maintainWorkAssets(root, write, allowed);
+  expect(result).toMatchObject({migrated:1,deferred:0});
+  const token = (await json(projectFile())).inpaints.paint.preset.image;
+  const local = path.join(projectRoot,'outs/alpha/variants/paint/vibes');
+  expect(await fs.readFile(path.join(local,token),'utf8')).toBe('previous version');
+  expect(await fs.stat(path.join(vibes(),old)).catch(()=>null)).toBeNull();
+  const before = await json(projectFile()); before.inpaints.paint.preset.image = '';
+  await put(projectFile(), before);
+  await maintainWorkAssets(root,write,allowed,{migrate:false,now:1000});
+  expect((await json(path.join(local,'.unused/manifest.json'))).entries[token]).toBeDefined();
+  before.inpaints.paint.preset.image=token; await put(projectFile(),before);
+  await maintainWorkAssets(root,write,allowed,{migrate:false,now:2000});
+  expect(await fs.readFile(path.join(local,token),'utf8')).toBe('previous version');
 });

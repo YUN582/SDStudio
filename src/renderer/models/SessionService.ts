@@ -1,4 +1,4 @@
-import { collectAssetReferences, managedWorkAsset } from './workAssets';
+import { collectAssetReferences, managedWorkAsset, sceneAssetOwner, WORK_ASSET_META } from './workAssets';
 import type { WorkspaceEntry, WorkspaceSnapshot, WorkspaceScan } from './workspaceSnapshot';
 import extractChunks from 'png-chunks-extract';
 import { Buffer } from 'buffer';
@@ -2975,10 +2975,13 @@ export class SessionService extends ResourceSyncService<Session> {
       });
     }
     for (const token of collectAssetReferences(session.toJSON())) {
-      if (!managedWorkAsset(token)) continue;
+      const owner = sceneAssetOwner(token);
+      if (!owner && !managedWorkAsset(token)) continue;
       const path = imageService.getVibeImagePath(session, token);
       if (!(await backend.existFile(path))) throw new Error('내보낼 작업 이미지를 찾을 수 없습니다: ' + token);
-      entries.push({ path, name: prefix + 'vibes/' + token });
+      const work = owner && inpaintScenes.find(s => s.meta.get(WORK_ASSET_META) === owner);
+      const name = work ? [...sceneOutputSegments(work), 'vibes', token].join('/') : 'vibes/' + token;
+      entries.push({ path, name: prefix + name });
     }
     for (const ref of references) {
       if (!ref.endsWith('.png')) continue;
