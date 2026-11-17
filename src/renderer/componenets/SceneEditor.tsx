@@ -152,6 +152,8 @@ export const PromptHighlighter = observer(
     const { curSession } = appState;
     return (
       <div
+        data-selectable-text
+        tabIndex={0}
         className={
           'max-w-full break-words bg-[var(--c-input-bg)] ' +
           (className ?? '')

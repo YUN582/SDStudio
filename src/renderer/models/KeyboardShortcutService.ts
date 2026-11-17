@@ -292,6 +292,7 @@ export class KeyboardShortcutService {
 
     // 공통 억제: input/textarea 포커스
     if (this.isInputFocused()) return;
+    if (normalized === 'Ctrl+A' && document.activeElement?.closest('[data-selectable-text]')) return;
     if (['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z'].includes(normalized) && document.querySelector('[data-canvas-history-active="true"]')) return;
 
     // 같은 키에 여러 카테고리 액션이 매핑될 수 있음 (예: ArrowLeft = viewer:prev-image + scene:scene-left)
