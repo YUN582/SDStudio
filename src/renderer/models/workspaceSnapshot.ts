@@ -12,6 +12,7 @@ export interface WorkspaceEntry {
     | 'changed'
     | 'active'
     | 'unreadable';
+  legacyAuxiliary?: boolean;
   hasBackup?: boolean;
   revision?: string;
 }

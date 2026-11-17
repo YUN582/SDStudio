@@ -1,3 +1,4 @@
+import { moveProjectDirectory } from './projectAuxiliaryStorage';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
@@ -182,6 +183,8 @@ export async function migrateVariantOutputs(
             if (!sameFiles(before, await snapshot(destination)) || !sameFiles(before, await snapshot(source))) {
               throw new Error('원본과 새 경로의 파일이 일치하지 않습니다.');
             }
+            moveProjectDirectory(projectDir, 'inpaints/' + name,
+              ['outs', job.sceneRef!, 'variants', name].join('/'), false);
             backups.push({ source, destination, name });
           }
           if (!job.outputInSourceScene) {

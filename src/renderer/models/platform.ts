@@ -46,7 +46,7 @@ export const platform = {
   // 모바일 생성 직후 사전 생성할 썸네일 크기. 500은 모바일에서 원본 로드로
   // 우회되므로(위와 동일) 사전 생성 대상에서 제외 — 원본을 LRU 에 불필요하게
   // 올려 다른 캐시를 밀어내는 낭비를 막는다.
-  pregenThumbSizes: [200, 400],
+  pregenThumbSizes: isMobile ? [200, 400] : [],
 
   // --- 능력 플래그 (데스크톱 전용 기능) ---
   supportsLosslessWebp: !isMobile, // sharp 무손실 webp 최적화

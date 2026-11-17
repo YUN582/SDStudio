@@ -23,7 +23,7 @@ type WriteProject = (
 type Json = Record<string, any>;
 const DAY = 86400000;
 const BACKUP = 'work-assets-backup-v2';
-const QUARANTINE = '.unused';
+
 export interface WorkAssetMaintenanceResult {
   migrated: number;
   deferred: number;
@@ -151,12 +151,16 @@ function replaceRefs(value: any, replacements: Map<string, string>): any {
   }
   return value;
 }
-async function cleanScope(vibes: string, candidates: string[], referenced: (token: string) => boolean,
+async function cleanScope(root: string, vibes: string, candidates: string[], referenced: (token: string) => boolean,
   unchanged: () => Promise<void>, now: number, result: WorkAssetMaintenanceResult,
   migratedSources?: Set<string>, backupFiles?: string) {
-  if (!candidates.some(token => !referenced(token)) && !(await stat(path.join(vibes, QUARANTINE)))) return;
-  const quarantine = path.join(vibes, QUARANTINE);
-  await directory(quarantine, true);
+  const quarantine = path.join(root, '.unused', path.relative(root, vibes));
+  let parent = root;
+  for (const part of path.relative(root, quarantine).split(path.sep)) {
+    parent = path.join(parent, part);
+    if (!(await directory(parent)) && !candidates.some(token => !referenced(token))) return;
+    await directory(parent, true);
+  }
   const manifestFile = path.join(quarantine, 'manifest.json');
   const manifest = (await jsonFile(manifestFile, true))?.json ?? {
     version: 1,
@@ -219,7 +223,7 @@ async function cleanScope(vibes: string, candidates: string[], referenced: (toke
 async function workVibesDir(root: string, work: Json, slot: string | undefined, create: boolean) {
   const segments = slot === undefined
     ? sceneOutputSegments({type: 'inpaint', name: work.name, sceneRef: work.sceneRef, outputInSourceScene: work.outputInSourceScene})
-    : ['inpaints', '.trash', slot];
+    : ['.trash', 'scenes', 'inpaints', slot];
   const validName = (v: unknown) => typeof v === 'string' && !!v.trim() &&
     !/^[.]|[. ]$|[<>:"/\\\\|?*\x00-\x1f]/.test(v) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(v);
   if (!validName(slot ?? work.name) || (slot === undefined && work.outputInSourceScene && !validName(work.sceneRef)))
@@ -397,14 +401,14 @@ export async function maintainWorkAssets(
         for (const token of collectAssetReferences(bak.json)) refs.add(token);
       const referenced = (token: string) =>
         refs.has(token) || refs.has(path.posix.basename(token));
-      if (hasSharedVibes) await cleanScope(vibes, await listAssets(vibes), referenced, unchanged, now, result, migratedSources, backupFiles);
+      if (hasSharedVibes) await cleanScope(root, vibes, await listAssets(vibes), referenced, unchanged, now, result, migratedSources, backupFiles);
       for (const {work, slot} of workRecords) {
         if (work?.type !== 'inpaint') continue;
         const dir = await workVibesDir(root, work, slot, false);
         if (!dir) continue;
         const files = (await fs.readdir(dir, { withFileTypes: true }))
           .filter(entry => entry.isFile() && sceneAssetOwner(entry.name)).map(entry => entry.name);
-        await cleanScope(dir, files, referenced, unchanged, now, result);
+        await cleanScope(root, dir, files, referenced, unchanged, now, result);
       }
       // Only remove empty managed work directories, never a recursively computed target.
       const works = path.join(vibes, 'works');

@@ -117,7 +117,7 @@ const HistoryImageCell = observer(
       let canceled = false;
       (async () => {
         try {
-          // 400px 썸네일: fastcache 사전 생성 크기라 추가 비용 없음 (200은 1열/고DPI에서 열화)
+          // 400px 썸네일로 1열/고DPI에서의 열화를 줄인다.
           const base64 = await imageService.fetchImageSmall(entry.path, 400);
           if (canceled) return;
           if (!base64) {

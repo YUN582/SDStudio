@@ -1,3 +1,4 @@
+import { projectAuxiliaryDir, isThumbnailPath } from './projectAuxiliaryPaths';
 import { WORK_ASSET_META, WorkAssetRole, managedWorkAsset, sceneAssetName, sceneAssetOwner, workAssetId, vibeAssetToken, collectAssetReferences, replaceAssetReferences } from './workAssets';
 import { cast } from 'mobx-state-tree';
 import {
@@ -145,11 +146,7 @@ export class ImageService extends EventTarget {
   }
 
   async onRenameFile(oldPath: string, newPath: string) {
-    const oldPathParts = oldPath.split('/');
-    const newPathParts = newPath.split('/');
-    const oldDir = oldPathParts[oldPathParts.length - 2];
-    const newDir = newPathParts[newPathParts.length - 2];
-    assert(oldDir !== 'fastcache' && newDir !== 'fastcache');
+    assert(!isThumbnailPath(oldPath) && !isThumbnailPath(newPath));
     const oldPaths = [];
     const newPaths = [];
     for (const imageSize of supportedImageSizes) {
@@ -196,7 +193,7 @@ export class ImageService extends EventTarget {
   }
 
   async invalidateCache(path: string) {
-    if (path.includes('fastcache')) {
+    if (isThumbnailPath(path)) {
       return;
     }
     await this.acquireMutex(path);
@@ -210,7 +207,7 @@ export class ImageService extends EventTarget {
         const smallPath = this.getSmallImagePath(path, imageSize);
         this.cache.delete(smallPath);
         try {
-          await backend.deleteFile(smallPath);
+          if (await backend.existFile(smallPath)) await backend.deleteFile(smallPath);
         } catch (e) {}
       }
     } finally {
@@ -234,7 +231,7 @@ export class ImageService extends EventTarget {
    */
   async invalidateCacheBatch(paths: string[]): Promise<void> {
     const originals = Array.from(
-      new Set(paths.filter((path) => path && !path.includes('/fastcache/'))),
+      new Set(paths.filter((path) => path && !isThumbnailPath(path))),
     );
     if (originals.length === 0) return;
 
@@ -257,11 +254,7 @@ export class ImageService extends EventTarget {
         for (const imageSize of supportedImageSizes) {
           const smallPath = this.getSmallImagePath(path, imageSize);
           this.cache.delete(smallPath);
-          const marker = '/fastcache/';
-          const markerIndex = smallPath.lastIndexOf(marker);
-          if (markerIndex >= 0) {
-            cacheDirs.add(smallPath.slice(0, markerIndex + marker.length - 1));
-          }
+          cacheDirs.add(smallPath.slice(0, smallPath.lastIndexOf('/')));
         }
       }
 
@@ -385,9 +378,7 @@ export class ImageService extends EventTarget {
   getSmallImagePath(originalPath: string, size: number) {
     const pathParts = originalPath.split('/');
     const fileName = size.toString() + '_' + pathParts.pop();
-    pathParts.push('fastcache');
-    pathParts.push(fileName!);
-    return pathParts.join('/');
+    return projectAuxiliaryDir(pathParts.join('/'), 'fastcache') + '/' + fileName;
   }
 
   async resizeImage(

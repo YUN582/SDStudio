@@ -1,3 +1,4 @@
+import { projectAuxiliaryDir } from '../models/projectAuxiliaryPaths';
 import { MobileV2Parts, normalizeV2Parts } from '../models/mobileV2';
 import { isWeightSpacingFixEnabled } from '../models/promptWeightSpacingFlow';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -1026,7 +1027,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     appState.pushMessage('이미지 캐시 초기화 시작');
     for (const scene of Object.values(curSession.scenes)) {
       try {
-        await backend.deleteDir(imageService.getImageDir(curSession, scene) + '/fastcache');
+        await backend.deleteDir(projectAuxiliaryDir(imageService.getImageDir(curSession, scene), 'fastcache'));
       } catch (e) {}
     }
     imageService.cache.cache.clear();

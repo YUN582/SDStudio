@@ -65,7 +65,7 @@ test('active and deleted work are grouped independently with masks, drawings and
   const deleted = (await json(trashFile())).scenes['P:deleted'].sceneData;
   expect(active.preset.image).not.toBe(deleted.preset.image);
   for (const w of [active, deleted]) {
-    const local = path.join(projectRoot, w.name === 'deleted' ? 'inpaints/.trash/deleted/vibes' : 'inpaints/paint/vibes');
+    const local = path.join(projectRoot, w.name === 'deleted' ? '.trash/scenes/inpaints/deleted/vibes' : 'inpaints/paint/vibes');
     const refs = [...collectAssetReferences(w)];
     expect(refs).toHaveLength(3);
     expect(refs.every(sceneAssetOwner)).toBe(true);
@@ -120,11 +120,11 @@ test('unused files are retained for 14 days and automatically recovered if refer
     now: 1000,
   });
   expect(first.quarantined).toBe(1);
-  const manifestPath = path.join(vibes(), '.unused/manifest.json');
+  const manifestPath = path.join(projectRoot, '.unused/vibes/manifest.json');
   const firstManifest = await json(manifestPath);
   const stored = path.join(
-    vibes(),
-    '.unused',
+    projectRoot,
+    '.unused/vibes',
     firstManifest.entries['unused.png'].fileId + '.png',
   );
   expect(await fs.readFile(stored, 'utf8')).toBe('recoverable');
@@ -248,7 +248,7 @@ test('moves previous works/ID files into the linked result folder and cleans unu
   const before = await json(projectFile()); before.inpaints.paint.preset.image = '';
   await put(projectFile(), before);
   await maintainWorkAssets(root,write,allowed,{migrate:false,now:1000});
-  expect((await json(path.join(local,'.unused/manifest.json'))).entries[token]).toBeDefined();
+  expect((await json(path.join(projectRoot, '.unused', path.relative(projectRoot, local), 'manifest.json'))).entries[token]).toBeDefined();
   before.inpaints.paint.preset.image=token; await put(projectFile(),before);
   await maintainWorkAssets(root,write,allowed,{migrate:false,now:2000});
   expect(await fs.readFile(path.join(local,token),'utf8')).toBe('previous version');

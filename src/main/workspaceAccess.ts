@@ -1,3 +1,4 @@
+import { migrateProjectAuxiliary, moveProjectDirectory, pruneProjectThumbnails } from './projectAuxiliaryStorage';
 import * as workspaceFs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -28,6 +29,7 @@ export interface WorkspaceEntry {
     | 'changed'
     | 'active'
     | 'unreadable';
+  legacyAuxiliary?: boolean;
   hasBackup?: boolean;
   revision?: string;
 }
@@ -40,6 +42,40 @@ export function createWorkspaceAccess(
   const workspacePathIds = new Map<string, string>();
   const workspaceRevisions = new Map<string, string | undefined>();
   const workspaceInitialized = new Set<string>();
+  const auxiliary = new Map<string, { id: string; legacy: boolean; pruned: number }>();
+  let pendingPruning = Promise.resolve();
+  function prepareAuxiliary(entry: WorkspaceEntry, workspace: string) {
+    const root = path.join(workspace, entry.dir);
+    let state = auxiliary.get(root);
+    if (!state || state.id !== entry.id) {
+      state = { id: entry.id!, legacy: false, pruned: 0 };
+      try {
+        const meta = readWorkspaceMeta(root);
+        if (meta.auxiliaryLayout !== 1) {
+          migrateProjectAuxiliary(root);
+          // Shared name/folder metadata is published only after every relocation succeeds.
+          const temp = path.join(root, '.auxiliary-' + randomUUID());
+          try {
+            workspaceFs.writeFileSync(temp, JSON.stringify({ ...meta, auxiliaryLayout: 1 }), { flag: 'wx' });
+            workspaceFs.renameSync(temp, path.join(root, 'meta.json'));
+          } catch (error) { console.warn('보조 폴더 이관 표시 저장 보류:', entry.dir, error); }
+          finally { workspaceFs.rmSync(temp, { force: true }); }
+        }
+      }
+      catch (error) {
+        state.legacy = true;
+        console.warn('보조 폴더 이관을 보류합니다:', entry.dir, error);
+      }
+      auxiliary.set(root, state);
+    }
+    if (state.legacy) entry.legacyAuxiliary = true;
+    else if (Date.now() - state.pruned > 10 * 60_000) {
+      state.pruned = Date.now();
+      pendingPruning = pendingPruning.then(async () => {
+        if (readWorkspaceMeta(root)?.id === entry.id) await pruneProjectThumbnails(root);
+      }).catch(error => console.warn('미리보기 정리 보류:', entry.dir, error));
+    }
+  }
   let workspaceConflicts = new Set<string>();
   let workspaceDirSignature: string | undefined;
   let workspaceLastScan = 0;
@@ -211,6 +247,7 @@ export function createWorkspaceAccess(
         conflicts.add(entry.dir.toLowerCase());
       if (!previousId && entry.state !== 'unreadable')
         workspacePathIds.set(entry.dir.toLowerCase(), entry.id);
+      if ((entry.state === 'active' || entry.state === 'deleted') && byId.get(entry.id)?.length === 1) prepareAuxiliary(entry, workspace);
       if (entry.state === 'active') {
         workspaceInitialized.add(entry.id);
         if (entry.revision) workspaceRevisions.set(entry.id, entry.revision);
@@ -625,10 +662,12 @@ export function createWorkspaceAccess(
       if (source) verifyWorkspaceTarget(source, { allowInactive: true });
       verifyWorkspaceTarget(destination, { allowInactive: true });
       try {
-        await workspaceFs.promises.rename(
-          path.resolve(getDataRoot(), oldPath),
-          destination.resolved,
-        );
+        if (source && source.root === destination.root && source.tail.length && destination.tail.length &&
+            !auxiliary.get(source.root)?.legacy) {
+          moveProjectDirectory(source.root, source.tail.join('/'), destination.tail.join('/'));
+        } else {
+          await workspaceFs.promises.rename(path.resolve(getDataRoot(), oldPath), destination.resolved);
+        }
         return true;
       } catch (error) {
         if (

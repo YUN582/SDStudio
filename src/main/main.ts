@@ -1,3 +1,4 @@
+import { removeProjectCompanions } from './projectAuxiliaryStorage';
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 /**
@@ -398,7 +399,7 @@ ipcMain.handle('migrate-variant-outputs', (event, excludedDirs: string[] = []) =
     return { migrated: 0, deferred: workspaceAccess.snapshot().entries.filter(e => e.state === 'active').length };
   if (!variantMigrationRun) {
     const excluded = new Set(Array.isArray(excludedDirs) ? excludedDirs.filter(dir => typeof dir === 'string') : []);
-    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active' && !!entry.name && liveLockOwner(entry.name) === undefined && !excluded.has(entry.dir)).map(entry => entry.dir));
+    const active = new Set(workspaceAccess.snapshot().entries.filter(entry => entry.state === 'active' && !entry.legacyAuxiliary && !!entry.name && liveLockOwner(entry.name) === undefined && !excluded.has(entry.dir)).map(entry => entry.dir));
     const writeProject = async (file: string, previous: string, next: string) => {
       const location = workspaceAccess.workspaceLocation(path.relative(APP_DIR, file));
       if (!location || location.tail.join('/') !== 'project.json' || fsSync.readFileSync(file, 'utf8') !== previous) {
@@ -420,7 +421,7 @@ ipcMain.handle('cleanup-unused-work-assets', async (event, protectedDirs: string
   if (BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).length > 1) return;
   if (assetCleanupRun) return assetCleanupRun;
   const active = new Set(workspaceAccess.snapshot().entries
-    .filter(entry => entry.state === 'active' && !!entry.name && liveLockOwner(entry.name) === undefined && !protectedDirs.includes(entry.dir)).map(entry => entry.dir));
+    .filter(entry => entry.state === 'active' && !entry.legacyAuxiliary && !!entry.name && liveLockOwner(entry.name) === undefined && !protectedDirs.includes(entry.dir)).map(entry => entry.dir));
   assetCleanupRun = maintainWorkAssets(APP_DIR, async () => { throw new Error('삭제 정리에서는 프로젝트를 이관하지 않습니다.'); }, active, { migrate: false })
     .finally(() => { assetCleanupRun = undefined; });
   return assetCleanupRun;
@@ -1199,16 +1200,19 @@ ipcMain.handle('delete-dir', async (event, filename) => {
   }
 
   if (os.platform() === 'win32') {
-    return await safeRemove(dirPath);
+    await safeRemove(dirPath);
   } else {
     try {
-      return await fs.rmdir(dirPath, { recursive: true });
+      await fs.rmdir(dirPath, { recursive: true });
     } catch (e: any) {
       if (e.code !== 'ENOENT') {
         throw e;
       }
     }
   }
+  const owner = workspaceAccess.workspaceLocation(filename);
+  if (owner && owner.tail.length) removeProjectCompanions(owner.root, owner.tail.join('/'));
+
 });
 
 ipcMain.handle('trash-file', async (event, filename) => {
@@ -2479,28 +2483,23 @@ async function initFolder() {
   if (config.refreshImage) {
     const publishImageChange = (changedPath: string) => {
       const comps = path.relative(APP_DIR, changedPath).split(path.sep);
-      if (comps[0] === '.') comps.shift();
-      if (comps[0] === 'outs' || comps[0] === 'inpaints' || comps[0] === 'workspace') {
-        broadcast('image-changed', comps.join('/'));
-      }
+      if (!/\.(png|webp|jpe?g)$/i.test(comps[comps.length - 1])) return;
+      if (comps[0] === 'workspace') {
+        if (!['outs', 'inpaints', 'vibes', 'references', 'inpaint_orgs', 'inpaint_masks'].includes(comps[2])) return;
+      } else if (comps[0] !== 'outs' && comps[0] !== 'inpaints') return;
+      broadcast('image-changed', comps.join('/'));
     };
     if (process.platform === 'win32') {
       // One recursive handle on the root leaves scene and project folders movable.
       const handle = fsSync.watch(APP_DIR, { recursive: true }, (event: string, filename: string | null) => {
         if (!filename) return;
         const changedPath = path.join(APP_DIR, filename);
-        if (event === 'change') publishImageChange(changedPath);
-        // Some editors save by replacing the file. Windows reports a rename in that case.
-        else if (event === 'rename' && /\.(?:png|webp)$/i.test(filename)) {
-          void fs.stat(changedPath).then((stat: { isFile(): boolean }) => {
-            if (stat.isFile()) publishImageChange(changedPath);
-          }).catch(() => {});
-        }
+        if (event === 'change' || event === 'rename') publishImageChange(changedPath);
       });
       handle.on('error', (error: Error) => log.warn('이미지 폴더 감시 오류:', error));
     } else {
       chokidar.watch(APP_DIR, { persistent: true, ignoreInitial: true, usePolling: false })
-        .on('change', publishImageChange);
+        .on('change', publishImageChange).on('unlink', publishImageChange);
     }
   }
 }

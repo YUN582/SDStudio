@@ -1,3 +1,4 @@
+import { projectAuxiliaryDir } from './projectAuxiliaryPaths';
 import { runInAction } from 'mobx';
 import { v4 } from 'uuid';
 import { backend, imageHistoryService, imageService, sessionService, taskQueueService, trashService } from '.';
@@ -140,6 +141,14 @@ export async function mergeSelectedScenes(
         if (await backend.existFile(to)) throw new Error(`변형 결과 폴더가 이미 존재합니다. (${variant.name})`);
         copiedVariantDirs.push(to);
         await copyVariant(from, to);
+        for (const kind of ['images', '.unused'] as const) {
+          const previous = projectAuxiliaryDir(from, kind);
+          if (previous.startsWith(from + '/') || !(await backend.existFile(previous))) continue;
+          const next = projectAuxiliaryDir(to, kind);
+          if (await backend.existFile(next)) throw new Error('변형 작업 보관 폴더가 이미 있습니다.');
+          copiedVariantDirs.push(next);
+          await copyVariant(previous, next);
+        }
         for (const { name } of await backend.listFilesWithStats(from)) {
           if (isOutputImageFile(name)) movedPaths.set(from + '/' + name, to + '/' + name);
         }

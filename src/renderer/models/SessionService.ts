@@ -1,3 +1,4 @@
+import { setAuxiliaryLayout } from './projectAuxiliaryPaths';
 import { collectAssetReferences, managedWorkAsset, sceneAssetOwner, WORK_ASSET_META } from './workAssets';
 import type { WorkspaceEntry, WorkspaceSnapshot, WorkspaceScan } from './workspaceSnapshot';
 import extractChunks from 'png-chunks-extract';
@@ -531,6 +532,7 @@ export class SessionService extends ResourceSyncService<Session> {
                   current.set(name, entry);
               }
 
+              setAuxiliaryLayout(snapshot.entries);
               this.workspaceSnapshot = snapshot;
               this.workspaceProjects = current;
               const aliases = new Map<string, string>();
@@ -2034,6 +2036,7 @@ export class SessionService extends ResourceSyncService<Session> {
           physicalDirOf(oldName), e.instance!.id, newName);
         unregisterProjectDir(oldName);
         registerProjectDir(newName, result.dir);
+        setAuxiliaryLayout(result.snapshot.entries);
         this.workspaceSnapshot = result.snapshot;
         this.workspaceProjects.delete(oldName);
         const entry = result.snapshot.entries.find((item: WorkspaceEntry) => item.id === e.instance!.id);

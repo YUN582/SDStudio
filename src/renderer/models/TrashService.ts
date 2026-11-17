@@ -1,3 +1,4 @@
+import { projectAuxiliaryDir } from './projectAuxiliaryPaths';
 import { backend, templateService, sessionService, taskQueueService } from '.';
 import { persistService } from './PersistenceService';
 import type { WorkspaceEntry, WorkspaceSnapshot } from './workspaceSnapshot';
@@ -142,7 +143,6 @@ export interface DeletedProjectInfo {
 // --- Constants ---
 
 const TRASH_FILE = 'trash.json';
-const IMAGE_TRASH_DIR = '.trash';
 const TRASH_META_FILE = '.trash_meta.json';
 
 // 보존 기간(일) — 휴지통 안내 문구(TrashViews·만료 확인 창)가 이 값을 그대로 쓴다(단일 출처, S3).
@@ -321,7 +321,7 @@ export class TrashService extends EventTarget {
   // ===== Image trash =====
 
   private getImageTrashDir(session: Session, scene: GenericScene): string {
-    return sceneOutputDir(session.name, scene) + '/' + IMAGE_TRASH_DIR;
+    return projectAuxiliaryDir(sceneOutputDir(session.name, scene), 'images');
   }
 
   private getImageTrashMetaPath(session: Session, scene: GenericScene): string {
@@ -651,9 +651,9 @@ export class TrashService extends EventTarget {
       for (const dir of PROJECT_SCENE_MASK_ROOTS) {
         const maskSrc = projectPath(dir, session.name, sceneMaskFileName(scene.name));
         if (!(await backend.existFile(maskSrc))) continue;
-        const maskDst = projectPath(dir, session.name, IMAGE_TRASH_DIR, sceneMaskFileName(slot));
+        const maskDst = projectAuxiliaryDir(projectPath(dir, session.name), 'scenes', sceneMaskFileName(slot));
         try {
-          await backend.writeFile(projectPath(dir, session.name, IMAGE_TRASH_DIR, '.gitkeep'), '');
+          await backend.writeFile(projectAuxiliaryDir(projectPath(dir, session.name), 'scenes', '.gitkeep'), '');
         } catch (e) {}
         try {
           await backend.renameFile(maskSrc, maskDst);
@@ -671,10 +671,10 @@ export class TrashService extends EventTarget {
 
     // 3) 씬 이미지 폴더 → .trash/<슬롯> (원본 폴더가 있을 때만 — 이미지 없는 씬은 폴더가 없어 정상).
     const srcDir = sceneOutputDir(session.name, scene);
-    const dstDir = projectPath(imgDir, session.name, IMAGE_TRASH_DIR, slot);
+    const dstDir = projectAuxiliaryDir(projectPath(imgDir, session.name), 'scenes', slot);
     if (await backend.existFile(srcDir)) {
       try {
-        await backend.writeFile(projectPath(imgDir, session.name, IMAGE_TRASH_DIR, '.gitkeep'), '');
+        await backend.writeFile(projectAuxiliaryDir(projectPath(imgDir, session.name), 'scenes', '.gitkeep'), '');
       } catch (e) {}
       let moveError: unknown = undefined;
       try {
@@ -740,7 +740,7 @@ export class TrashService extends EventTarget {
     for (const root of roots) {
       let names: string[];
       try {
-        names = await backend.listFiles(projectPath(root, session.name, IMAGE_TRASH_DIR));
+        names = await backend.listFiles(projectAuxiliaryDir(projectPath(root, session.name), 'scenes'));
       } catch (e) {
         console.error('휴지통 폴더 목록 읽기 실패:', root, e);
         throw fail('휴지통 폴더를 확인하지 못했습니다.');
@@ -768,16 +768,16 @@ export class TrashService extends EventTarget {
     if (isWorkspaceLayout() && entry?.projectId) {
       const dir = sessionService.workspaceDirForId(entry.projectId);
       if (!dir) throw new Error('휴지통 프로젝트 폴더를 확인할 수 없습니다.');
-      return workspacePath(dir, root, IMAGE_TRASH_DIR, leaf);
+      return projectAuxiliaryDir(workspacePath(dir, root), 'scenes', leaf);
     }
     if (
       isWorkspaceLayout() &&
       entry?.projectDir &&
       physicalDirOf(projectName) !== entry.projectDir
     ) {
-      return workspacePath(entry.projectDir, root, IMAGE_TRASH_DIR, leaf);
+      return projectAuxiliaryDir(workspacePath(entry.projectDir, root), 'scenes', leaf);
     }
-    return projectPath(root, projectName, IMAGE_TRASH_DIR, leaf);
+    return projectAuxiliaryDir(projectPath(root, projectName), 'scenes', leaf);
   }
 
   // 이 프로젝트(지금 그 이름으로 열려 있는 것) 소속 기록인지. 구 배치는 이름만으로 판정.
@@ -950,7 +950,7 @@ export class TrashService extends EventTarget {
     // 1) 변형 씬(구형) 마스크·원본 파일 → 원래 위치 (휴지통 쪽에 있을 때만)
     if (sceneType === 'inpaint') {
       for (const dir of PROJECT_SCENE_MASK_ROOTS) {
-        const maskSrc = projectPath(dir, session.name, IMAGE_TRASH_DIR, sceneMaskFileName(sceneName));
+        const maskSrc = projectAuxiliaryDir(projectPath(dir, session.name), 'scenes', sceneMaskFileName(sceneName));
         if (!(await backend.existFile(maskSrc))) continue;
         const maskDst = projectPath(dir, session.name, sceneMaskFileName(sceneName));
         if (await backend.existFile(maskDst)) {
@@ -981,7 +981,7 @@ export class TrashService extends EventTarget {
       if (entry.projectId && !sessionService.workspaceDirForId(entry.projectId)) return;
       if (!entry.projectId && entry.projectDir && !(await backend.existFile(workspacePath(entry.projectDir)))) return;
     }
-    const srcDir = projectPath(imgDir, session.name, IMAGE_TRASH_DIR, sceneName);
+    const srcDir = projectAuxiliaryDir(projectPath(imgDir, session.name), 'scenes', sceneName);
     const dstDir = sceneOutputDir(session.name, restoredScene);
     if (await backend.existFile(srcDir)) {
       // 원래 자리에 같은 이름 폴더가 있으면 병합하지 않는다(PC Windows renameDir 은 실패 시
@@ -1443,7 +1443,7 @@ export class TrashService extends EventTarget {
       }
       const roots: ProjectImageRoot[] = isInpaint ? [imgDir, ...PROJECT_SCENE_MASK_ROOTS] : [imgDir];
       for (const root of roots) {
-        const names = await backend.listFiles(projectPath(root, projectName, IMAGE_TRASH_DIR));
+        const names = await backend.listFiles(projectAuxiliaryDir(projectPath(root, projectName), 'scenes'));
         for (const n of names) {
           taken.push(n);
           if (root !== imgDir && isSceneMaskFileName(n)) {
@@ -1452,17 +1452,17 @@ export class TrashService extends EventTarget {
         }
       }
       const next = pickTrashSlotName(slot, taken);
-      const src = projectPath(imgDir, projectName, IMAGE_TRASH_DIR, slot);
+      const src = projectAuxiliaryDir(projectPath(imgDir, projectName), 'scenes', slot);
       if (await backend.existFile(src)) {
-        await backend.renameDir(src, projectPath(imgDir, projectName, IMAGE_TRASH_DIR, next));
+        await backend.renameDir(src, projectAuxiliaryDir(projectPath(imgDir, projectName), 'scenes', next));
         if (await backend.existFile(src)) return undefined;
       }
       if (isInpaint) {
         for (const root of PROJECT_SCENE_MASK_ROOTS) {
-          const m = projectPath(root, projectName, IMAGE_TRASH_DIR, sceneMaskFileName(slot));
+          const m = projectAuxiliaryDir(projectPath(root, projectName), 'scenes', sceneMaskFileName(slot));
           if (await backend.existFile(m)) {
             try {
-              await backend.renameFile(m, projectPath(root, projectName, IMAGE_TRASH_DIR, sceneMaskFileName(next)));
+              await backend.renameFile(m, projectAuxiliaryDir(projectPath(root, projectName), 'scenes', sceneMaskFileName(next)));
             } catch (e) {}
           }
         }
@@ -1960,25 +1960,25 @@ export class TrashService extends EventTarget {
 
     for (const projectName of activeProjects) {
       for (const imgDir of ['outs', 'inpaints'] as const) {
+        const outputs = projectPath(imgDir, projectName);
+        const trashRoot = projectAuxiliaryDir(outputs, 'images');
+        const central = !trashRoot.startsWith(outputs + '/');
+        const ownerRoot = central ? trashRoot : outputs;
         let sceneDirs: string[];
         try {
-          sceneDirs = await backend.listFiles(projectPath(imgDir, projectName));
-        } catch (e) {
-          continue;
-        }
-        const outputDirs = sceneDirs
-          .filter((name) => !name.startsWith('.'))
-          .map((name) => projectPath(imgDir, projectName, name));
+          sceneDirs = await backend.listFiles(ownerRoot);
+        } catch { continue; }
+        const owners = sceneDirs.filter(name => !invalidProjectName(name)).map(name => ownerRoot + '/' + name);
         if (imgDir === 'outs') {
-          for (const parent of [...outputDirs]) {
+          for (const parent of [...owners]) {
             const jobs = await backend.listFiles(parent + '/variants').catch(() => []);
             for (const job of jobs) {
-              if (!invalidProjectName(job)) outputDirs.push(parent + '/variants/' + job);
+              if (!invalidProjectName(job)) owners.push(parent + '/variants/' + job);
             }
           }
         }
-        for (const outputDir of outputDirs) {
-          const trashDir = outputDir + '/' + IMAGE_TRASH_DIR;
+        for (const owner of owners) {
+          const trashDir = central ? owner : projectAuxiliaryDir(owner, 'images');
           const trashMetaPath = trashDir + '/' + TRASH_META_FILE;
           if (!(await backend.existFile(trashMetaPath))) continue;
           // meta 읽고-쓰기 직렬화(U0-a T3) — 키는 getImageTrashMetaPath 와 같은 경로 문자열.
