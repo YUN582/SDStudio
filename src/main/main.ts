@@ -845,6 +845,20 @@ ipcMain.handle('list-files', async (event, arg) => {
   return await listFilesInDirectory(APP_DIR + '/' + arg);
 });
 
+ipcMain.handle('list-project-copy-entries', async (_event, name: string) => {
+  const location = workspaceAccess.workspaceLocation(name);
+  if (!location || !location.tail.length) throw Error('프로젝트 파일 경로를 확인해 주세요.');
+  workspaceAccess.verifyWorkspaceTarget(location);
+  let current = location.root;
+  for (const part of location.tail) {
+    current = path.join(current, part);
+    if (!(await fs.lstat(current)).isDirectory()) throw Error('복제할 수 없는 폴더: ' + name);
+  }
+  return (await fs.readdir(current, {withFileTypes: true})).map((entry: import('fs').Dirent) => ({
+    name: entry.name, file: entry.isFile(), directory: entry.isDirectory(),
+  }));
+});
+
 ipcMain.handle('list-files-with-stats', async (event, arg) => {
   const dir = APP_DIR + '/' + arg;
   try {

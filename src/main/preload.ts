@@ -87,6 +87,7 @@ export type Channels =
   | 'copy-image-to-clipboard'
   | 'lookup-tag'
   | 'write-data-file-absolute'
+  | 'list-project-copy-entries'
   | 'list-files-with-stats'
   | 'exist-file-absolute'
   | 'artist-analyze'

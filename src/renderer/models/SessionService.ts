@@ -1439,7 +1439,7 @@ export class SessionService extends ResourceSyncService<Session> {
     }
 
     let cloned = 0;
-    let totalImages = 0;
+    const failed: string[] = [];
     for (const origName of projectNames) {
       const session = await this.get(origName);
       if (!session) continue;
@@ -1461,62 +1461,16 @@ export class SessionService extends ResourceSyncService<Session> {
         : targetFolder;
 
       try {
-        const proj = await this.exportSessionShallow(session);
-        await this.importSessionShallow(proj, newName);
-        await this.moveToFolder(newName, destFolder);
-
-        // 이미지 포함 복사 (휴지통 제외). projectPath 경유 — 신 배치 활성 시
-        // 원본/대상 모두 각자의 물리 폴더로 분기(대상은 importSessionShallow 가
-        // 이미 등록 완료).
         if (withImages) {
-          const imgCopyDirs: { src: string; dst: string }[] = [];
-          // outs/<project>/<scene>/  +  inpaints/<project>/<scene>/
-          for (const dirPrefix of ['outs', 'inpaints'] as const) {
-            let sceneDirs: string[];
-            try { sceneDirs = await backend.listFiles(projectPath(dirPrefix, origName)); } catch (e) { continue; }
-            for (const sd of sceneDirs) {
-              if (sd === '.trash' || sd.startsWith('.')) continue;
-              imgCopyDirs.push({
-                src: projectPath(dirPrefix, origName, sd),
-                dst: projectPath(dirPrefix, newName, sd),
-              });
-            }
-          }
-          for (const variant of session.inpaints.values()) {
-            if (!variant.outputInSourceScene) continue;
-            imgCopyDirs.push({
-              src: sceneOutputDir(origName, variant),
-              dst: sceneOutputDir(newName, variant),
-            });
-          }
-          // inpaint_orgs, inpaint_masks, vibes, references
-          for (const flatDir of ['inpaint_orgs', 'inpaint_masks', 'vibes', 'references'] as const) {
-            let files: string[];
-            try { files = await backend.listFiles(projectPath(flatDir, origName)); } catch (e) { continue; }
-            for (const f of files) {
-              if (f.startsWith('.')) continue;
-              try {
-                await backend.copyFile(projectPath(flatDir, origName, f), projectPath(flatDir, newName, f));
-                totalImages++;
-              } catch (e) {}
-            }
-          }
-          // scene/inpaint directories
-          for (const { src, dst } of imgCopyDirs) {
-            let files: { name: string }[];
-            try { files = await backend.listFilesWithStats(src); } catch (e) { continue; }
-            for (const { name: f } of files) {
-              if (f.startsWith('.')) continue;
-              try {
-                await backend.copyFile(src + '/' + f, dst + '/' + f);
-                totalImages++;
-              } catch (e) {}
-            }
-          }
+          await this.duplicateSessionDeep(session, newName, destFolder);
+        } else {
+          const proj = await this.exportSessionShallow(session);
+          await this.importSessionShallow(proj, newName);
+          await this.moveToFolder(newName, destFolder);
         }
-
         cloned++;
       } catch (e) {
+        failed.push(origName);
         console.error('폴더 복제 중 프로젝트 실패:', origName, e);
       }
     }
@@ -1526,7 +1480,7 @@ export class SessionService extends ResourceSyncService<Session> {
       throw new Error('복제할 수 있는 프로젝트가 없습니다.');
     }
 
-    const imgMsg = withImages ? ` (이미지 ${totalImages}장 포함)` : '';
+    if (failed.length) throw new Error(`복제 완료 ${cloned}개. 복제 실패: ${failed.join(', ')}`);
     return; // 결과 메시지는 호출부에서 pushMessage
   }
 
@@ -3139,26 +3093,33 @@ export class SessionService extends ResourceSyncService<Session> {
     srcDir: string,
     destDir: string,
     strict = false,
+    liveAssetPath?: string[],
+    references?: Set<string>,
   ) {
-    let entries: string[] = [];
+    let children: { name: string; file: boolean; directory: boolean }[];
     try {
-      entries = await backend.listFiles(srcDir);
-    } catch (e) {
-      if (strict) throw e;
+      if (liveAssetPath && isWorkspaceLayout() && window.electron) {
+        children = await window.electron.ipcRenderer.invoke('list-project-copy-entries', srcDir);
+      } else {
+        const files = new Set((await backend.listFilesWithStats(srcDir)).map(item => item.name));
+        children = (await backend.listFiles(srcDir)).map(name => ({name, file: files.has(name), directory: !files.has(name)}));
+      }
+    } catch (error) {
+      if (strict) throw error;
       return;
     }
-    if (!entries || entries.length === 0) return;
-    // listFiles(파일+디렉토리) vs listFilesWithStats(파일만) → 디렉터리 구분
-    let fileStats: any[] = [];
-    try {
-      fileStats = await backend.listFilesWithStats(srcDir);
-    } catch (e) {
-      if (strict) throw e;
-      fileStats = [];
-    }
-    const fileSet = new Set(fileStats.map((s: any) => s.name));
-    for (const entry of entries) {
-      if (fileSet.has(entry)) {
+    for (const { name: entry, file, directory } of children) {
+      if (liveAssetPath) {
+        if (entry.startsWith('.')) continue;
+        const isSceneName = liveAssetPath.length === 1 && ['outs', 'inpaints'].includes(liveAssetPath[0]);
+        const isWorkName = liveAssetPath.length === 3 && liveAssetPath[0] === 'outs' && liveAssetPath[2] === 'variants';
+        if (entry === 'fastcache' && !isSceneName && !isWorkName && !file) continue;
+        const token = [...liveAssetPath.slice(1), entry].join('/');
+        if (file && references && ((liveAssetPath.at(-1) === 'vibes' && sceneAssetOwner(entry) && !references.has(entry)) ||
+            (liveAssetPath[0] === 'vibes' && managedWorkAsset(token) && !references.has(token)))) continue;
+        if (!file && !directory) throw new Error('링크된 항목을 복제할 수 없습니다: ' + srcDir + '/' + entry);
+      }
+      if (file) {
         try {
           await backend.copyFile(srcDir + '/' + entry, destDir + '/' + entry);
         } catch (e) {
@@ -3170,6 +3131,8 @@ export class SessionService extends ResourceSyncService<Session> {
           srcDir + '/' + entry,
           destDir + '/' + entry,
           strict,
+          liveAssetPath && [...liveAssetPath, entry],
+          references,
         );
       }
     }
@@ -3177,8 +3140,8 @@ export class SessionService extends ResourceSyncService<Session> {
 
   // 프로젝트를 이미지 포함하여 앱 내에서 복제한다.
   // (프로젝트 백업 내보내기 → 재임포트와 동일한 결과: JSON + 모든 이미지 디렉터리)
-  async duplicateSessionDeep(session: Session, newName: string) {
-    if (this.isLoaded(newName)) {
+  async duplicateSessionDeep(session: Session, newName: string, dupFolder = this.getFolderOf(session.name) || '') {
+    if (this.isLoaded(newName) || this.list().includes(newName)) {
       throw new Error('Resource already exists');
     }
     // 이미지 디렉터리는 이름 기준(outs/<이름> 등)이므로 이름만 바꿔 통째 복사
@@ -3187,7 +3150,6 @@ export class SessionService extends ResourceSyncService<Session> {
     // 정리한다 — 과거에는 롤백이 없어 반쪽 복사본(고아 이미지)이 남았다(트랙1 B4).
     // 신 배치: 복사 대상(dest = projectPath(dir, newName)) 이 복사 시작 전에
     // 해석되어야 하므로 물리 폴더를 선등록한다. 폴더 매핑도 meta 와 일치시켜 반영.
-    const dupFolder = this.getFolderOf(session.name) || '';
     let dupPreId: string | undefined;
     if (isWorkspaceLayout()) {
       dupPreId = v4();
@@ -3197,22 +3159,17 @@ export class SessionService extends ResourceSyncService<Session> {
         folder: dupFolder,
       });
     }
+    const references = collectAssetReferences(session.toJSON());
     const createdDests: string[] = [];
     try {
       for (const dir of PROJECT_IMAGE_ROOTS) {
         const src = projectPath(dir, session.name);
         // 소스 디렉터리가 없으면(해당 타입 이미지 없음) 건너뛴다.
-        let exists = true;
-        try {
-          await backend.listFiles(src);
-        } catch (e) {
-          exists = false;
-        }
-        if (!exists) continue;
+        if (!(await backend.existFile(src))) continue;
         const dest = projectPath(dir, newName);
-        // strict=true: 파일 복사 실패를 삼키지 않고 던져 반쪽 복제를 막는다.
-        await this.copyDirRecursive(src, dest, true);
+        if (await backend.existFile(dest)) throw new Error('복제 대상 폴더가 이미 있습니다: ' + dest);
         createdDests.push(dest);
+        await this.copyDirRecursive(src, dest, true, [dir], references);
       }
       const json = session.toJSON();
       json.name = newName;
@@ -3220,7 +3177,7 @@ export class SessionService extends ResourceSyncService<Session> {
         json.id = dupPreId; // 선등록 id 유지(migrate 가 그대로 둠)
       } else {
         delete json.id; // 복제본은 새 uuid 발급(트랙1 (b))
-        const folder = this.getFolderOf(session.name);
+        const folder = dupFolder;
         if (folder) {
           this.folderMap[newName] = folder;
         }
