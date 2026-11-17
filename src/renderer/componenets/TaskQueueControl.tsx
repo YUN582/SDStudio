@@ -327,11 +327,17 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
   const target=control.target?.session===appState.curSession?control.target:null;
   const queue=queueCurrent??target?.queue;
   const disabled=control.busy||queueDisabled||!!target?.disabled;
-  const enqueue=async(start:boolean)=>{
-    if(disabled||generationControlState.snapshot.busy)return;
+  const hasPendingTasks=()=>{
+    const {total,done}=taskQueueService.statsAllTasks();
+    return total>done;
+  };
+  const pending=hasPendingTasks();
+  const enqueue=async(start:boolean,append=false)=>{
+    const resume=start&&!append&&hasPendingTasks();
+    if((!resume&&disabled)||generationControlState.snapshot.busy)return;
     generationControlState.update({busy:true});
     try {
-      const queued=queue?await queue():appState.curSession
+      const queued=resume?true:queue?await queue():appState.curSession
         ?await addScenesToQueue(appState.curSession,queueType,false):false;
       if(!queued||!start)return;
       const costs=taskQueueService.calculateCost();
@@ -432,7 +438,7 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
         <TaskProgressBar fit={v2} />
       </div>
       {queue ? <SceneQueueMenu session={appState.curSession} type="inpaint" selectedOnly={false} disabled={disabled} customItems={[
-        {text:'현재 작업 예약',onClick:()=>void enqueue(false)}, {text:'현재 작업 예약 후 시작',onClick:()=>void enqueue(true)},
+        {text:'현재 작업 예약',onClick:()=>void enqueue(false)}, {text:'현재 작업 예약 후 시작',onClick:()=>void enqueue(true,true)},
       ]}><button type="button" className="round-button back-sky px-2 h-8 lg:px-6 disabled:opacity-50"
         title="현재 편집 작업 예약" aria-label="현재 편집 작업 예약" disabled={disabled} onClick={()=>void enqueue(false)}><ActionIcon id="queue-add" size={18}/></button></SceneQueueMenu>
         : <SceneQueueMenu session={appState.curSession} type={queueType} selectedOnly={appState.selectedSceneCount(queueType)>0}>
@@ -455,11 +461,11 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
         </button>
       </Tooltip>
       {!taskQueueService.isRunning() ? (
-        <Tooltip content={queue?"현재 작업 예약 추가 후 생성":"전체 씬 예약 추가 후 생성"}>
+        <Tooltip content={pending?"예약된 생성 시작":queue?"현재 작업 예약 후 생성":"전체 씬 예약 후 생성"}>
         <button
           className={v2 ? 'round-button back-green flex-none !h-10 min-w-[96px] px-4 gap-2 !rounded-xl font-bold text-[15px]' : `round-button back-green px-2 h-8 lg:px-6`}
           aria-label="생성 시작"
-          disabled={disabled||!appState.curSession}
+          disabled={control.busy||(!pending&&(disabled||!appState.curSession))}
           onClick={()=>void enqueue(true)}
         >
           <FaPlay size={15} />

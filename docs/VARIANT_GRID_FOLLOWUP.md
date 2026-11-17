@@ -90,3 +90,18 @@ intentional batch, bypassing the earlier single-image recovery.
   batch behavior. Typecheck and production renderer build passed. Isolated
   packaged-app check selected the second source combination and queued ten
   images once. No personal data writes or generation API calls.
+
+## Play/resume follow-up, 2026-11-17
+
+The revised user contract supersedes the earlier append-on-every-play behavior.
+Play resumes pending tasks without adding work. Only an empty queue creates the
+current editor work or normal scene batch before starting. Stop is unchanged;
+explicit reservation actions continue to append work. Resuming is available even
+while the editor canvas is loading. Paid-generation confirmation remains.
+
+Tests cover pending/empty/completed queues, editor and normal views, stop,
+explicit reservation, concurrent clicks, and paid cancellation. Full-suite run:
+215 of 216 suites passed; the remaining temporary-scene fixture exposed an
+optional-metadata guard, corrected and verified in a focused four-suite rerun
+(67 tests passed). Typecheck and production build passed. Isolated packaged-app
+check confirmed ten pending images remained ten after Play; network was blocked.

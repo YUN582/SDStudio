@@ -14,12 +14,15 @@ const state = {
 const service = {
   addEventListener: () => {},
   removeEventListener: () => {},
-  isRunning: () => false,
+  isRunning: jest.fn(() => false),
   isLongBreak: () => false,
-  statsAllTasks: () => ({ total: 50, done: 0 }),
+  statsAllTasks: jest.fn(() => ({ total: 0, done: 0 })),
   estimateTime: () => 1000,
+  estimateTopTaskTime: () => 1000,
+  boostWorkerCount: () => 1,
   calculateCost: jest.fn(() => [] as any[]),
   run,
+  stop: jest.fn(),
 };
 jest.mock('..', () => ({
   taskQueueService: service,
@@ -47,6 +50,8 @@ beforeEach(() => {
   root = createRoot(host);
   jest.clearAllMocks();
   service.calculateCost.mockReturnValue([]);
+  service.statsAllTasks.mockReturnValue({ total: 0, done: 0 });
+  service.isRunning.mockReturnValue(false);
   confirm.mockResolvedValue(true);
   generationControlState.update({ target: null, busy: false });
 });
@@ -62,11 +67,47 @@ const click = async (label: string) =>
     ).click();
   });
 
-test('normal play appends all current-tab scenes even when old tasks and selections exist, then starts', async () => {
+test('normal play creates current-tab work only when the queue is empty', async () => {
   await act(async () => root.render(<TaskQueueControl />));
   await click('생성 시작');
   expect(add).toHaveBeenCalledWith(state.curSession, 'scene', false);
   expect(run).toHaveBeenCalledTimes(1);
+});
+
+test.each([false, true])('play resumes an existing queue without adding work (editor=%s)', async (editor) => {
+  const queue = jest.fn(async () => true);
+  service.statsAllTasks.mockReturnValue({ total: 50, done: 7 });
+  await act(async () => root.render(<TaskQueueControl
+    queueCurrent={editor ? queue : undefined} queueDisabled={editor} />));
+  await click('생성 시작');
+  expect(add).not.toHaveBeenCalled();
+  expect(queue).not.toHaveBeenCalled();
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+test('finished jobs do not prevent empty-queue generation', async () => {
+  service.statsAllTasks.mockReturnValue({ total: 50, done: 50 });
+  await act(async () => root.render(<TaskQueueControl />));
+  await click('생성 시작');
+  expect(add).toHaveBeenCalledTimes(1);
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+test('stop never appends work', async () => {
+  service.isRunning.mockReturnValue(true);
+  await act(async () => root.render(<TaskQueueControl />));
+  await click('생성 중지');
+  expect(service.stop).toHaveBeenCalledTimes(1);
+  expect(add).not.toHaveBeenCalled();
+});
+
+test('reservation adds work even when a queue exists', async () => {
+  service.statsAllTasks.mockReturnValue({ total: 50, done: 7 });
+  const queue = jest.fn(async () => true);
+  await act(async () => root.render(<TaskQueueControl queueCurrent={queue} />));
+  await click('현재 편집 작업 예약');
+  expect(queue).toHaveBeenCalledTimes(1);
+  expect(run).not.toHaveBeenCalled();
 });
 test('both bars use the active editor target instead of all scenes; closing restores normal scope', async () => {
   const queue = jest.fn(async () => true);
