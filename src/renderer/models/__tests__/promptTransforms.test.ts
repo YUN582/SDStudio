@@ -79,19 +79,19 @@ describe('커서 기준 주석 토글(모바일 칩 #)', () => {
     const text = '1girl, blue hair, smile';
     const caret = text.indexOf('hair');
     const r = toggleAt(text, caret)!;
-    expect(r.text).toBe('1girl, ##blue hair, ##smile');
+    expect(r.text).toBe('1girl, ##blue hair,## smile');
     expect(r.text.slice(r.selectionStart, r.selectionStart + 4)).toBe('hair');
     expect(r.selectionEnd).toBe(r.selectionStart);
   });
 
-  it('앞 공백은 보존하고 뒤 쉼표와 공백은 함께 감싼다', () => {
-    expect(toggleAt('a,   b c  , d', 6)!.text).toBe('a,   ##b c  , ##d');
+  it('쉼표까지 감싸고 그 뒤 공백은 보존한다', () => {
+    expect(toggleAt('a,   b c  , d', 6)!.text).toBe('a,   ##b c  ,## d');
   });
 
   it('가중치 래퍼 구획은 래퍼째 감싸고 가중치는 건드리지 않는다', () => {
     const text = 'a, 1.2::x y::, b';
     const r = toggleAt(text, text.indexOf('y'))!;
-    expect(r.text).toBe('a, ##1.2::x y::, ##b');
+    expect(r.text).toBe('a, ##1.2::x y::,## b');
     expect(r.text[r.selectionStart]).toBe('y');
   });
 
@@ -99,10 +99,10 @@ describe('커서 기준 주석 토글(모바일 칩 #)', () => {
     const text = 'aa, bb, cc';
     // 커서 구획은 selectionStart 기준(bb). start=bb 안, end=cc 안
     const r = togglePromptCommentAtSelection(text, 5, 9)!;
-    expect(r.text).toBe('aa, ##bb, ##cc');
+    expect(r.text).toBe('aa, ##bb,## cc');
     expect(r.selectionStart).toBe(7); // b|b → ##b|b
     expect(r.selectionEnd).toBe(13); // c|c 가 4칸 밀림
-    expect(r.text.slice(r.selectionStart, r.selectionEnd)).toBe('b, ##c');
+    expect(r.text.slice(r.selectionStart, r.selectionEnd)).toBe('b,## c');
   });
 
   it('커서가 주석 안이면 여는·닫는 ## 만 지우고 안쪽은 보존한다', () => {

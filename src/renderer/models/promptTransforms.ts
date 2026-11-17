@@ -199,7 +199,7 @@ export function getPromptCommentAtSelection(
   );
 }
 
-/** Toggle a prompt comment, including its trailing comma and horizontal spacing. */
+/** Toggle a prompt comment, keeping the trailing comma inside and the following space outside. */
 export function togglePromptCommentAtSelection(
   text: string,
   selectionStart: number,
@@ -211,7 +211,12 @@ export function togglePromptCommentAtSelection(
   let comment = exact
     ? ranges.find(
         (range) =>
-          range.start <= selectionStart && selectionEnd <= range.end,
+          range.start <= selectionStart && (
+            selectionEnd <= range.end ||
+            // A drag can include padding left outside the closing marker.
+            (selectionStart < range.end && text.endsWith(',##', range.end) &&
+              /^[^\S\r\n]*$/.test(text.slice(range.end, selectionEnd)))
+          ),
       )
     : getPromptCommentAtSelection(text, selectionStart);
   if (
@@ -256,13 +261,10 @@ export function togglePromptCommentAtSelection(
   const contentEnd = exact ? selectionEnd : start + core.length;
   const content = text.slice(start, contentEnd);
   if (!content.trim()) return;
-  const remainder = text.slice(contentEnd);
-  const separator = /,[^\S\r\n]*$/.test(content)
-    ? remainder.match(/^[^\S\r\n]*/)
-    : remainder.match(
-        /^(?:[^\S\r\n]*,[^\S\r\n]*|[^\S\r\n]+(?=\r?\n|$))/,
-      );
-  const end = contentEnd + (separator?.[0].length ?? 0);
+  const includedComma = /,[^\S\r\n]*$/.exec(content);
+  const end = includedComma
+    ? start + includedComma.index + 1
+    : contentEnd + (text.slice(contentEnd).match(/^(?:[^\S\r\n]*,|[^\S\r\n]+(?=\r?\n|$))/)?.[0].length ?? 0);
   const selected = text.slice(start, end);
   const next =
     text.slice(0, start) + "##" + selected + "##" + text.slice(end);
