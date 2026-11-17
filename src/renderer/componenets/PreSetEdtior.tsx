@@ -213,7 +213,7 @@ const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
                 curSession,
                 variant,
                 {
-                  store: () => imageService.storeVibeImage(curSession!, file),
+                  store: () => imageService.storeWorkImage(curSession!, variant, 'input', file),
                   overwrite: (p) => imageService.writeVibeImage(curSession!, p, file),
                 },
                 () => onImageUploaded?.(input.field, file),

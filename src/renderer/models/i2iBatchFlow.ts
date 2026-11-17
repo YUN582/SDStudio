@@ -3,7 +3,7 @@
 // 순수 규칙·문구·값 입력은 i2iBatch.ts, 계약은 SPEC_GUIDE §6 「대량 작업 I2I」·§7-3 ⓕ·ⓖ.
 //
 // - 씬 추가·프리셋 변경은 세션 관문(session.addScene·프리셋 필드 대입 → toJSON reaction → 저장 큐)만 쓴다.
-//   직접 파일 쓰기는 첨부 이미지 저장(imageService.storeVibeImage) 하나 — 씬마다 고유 파일
+//   직접 파일 쓰기는 첨부 이미지 저장(imageService.storeWorkImage) 하나 — 씬마다 고유 파일
 //   (편집기가 씬 파일을 제자리에서 덮어쓰므로 파일 공유 금지, SPEC §11 일괄 예약 성능 규칙과 같은 이유).
 // - 비동기 준비(프롬프트 조립·이미지 저장)를 먼저 끝내고 씬 등록·프리셋 대입은 runInAction 한 번으로 묶는다
 //   (저장 reaction 이 씬 수만큼 돌지 않게 — 예약이 아니라 withProgressBatch 대상은 아님).
@@ -245,7 +245,7 @@ async function createVariantCopyScenes(
       if (image) {
         applyStrengthNoise(preset, values, workflowHasNoise(workflow));
         // 씬마다 고유 파일(공유 금지) — 쓴 내용을 읽기 캐시에 선적재
-        preset.image = await imageService.storeVibeImage(session, image.base64, true);
+
       }
       const name = numberedName(src.name, taken);
       planned.add(name);
@@ -268,6 +268,7 @@ async function createVariantCopyScenes(
         game: undefined,
       });
       if (!scene) throw new Error('변형 씬을 만들지 못했습니다.');
+      if (image) scene.preset.image = await imageService.storeWorkImage(session, scene, 'input', image.base64, true);
       prepared.push(scene);
     } catch (e: any) {
       console.error('변형 씬 복사 실패:', src.name, e);
@@ -378,7 +379,7 @@ async function attachImageToScenes(
   for (const scene of targets) {
     try {
       // 씬마다 고유 파일(공유 금지) — 쓴 내용을 읽기 캐시에 선적재
-      const path = await imageService.storeVibeImage(session, image.base64, true);
+      const path = await imageService.storeWorkImage(session, scene, 'input', image.base64, true);
       const maskPath: string = scene.preset?.mask || '';
       const isInpaint = scene.workflowType === INPAINT_WORKFLOW_TYPE;
       const mask = isInpaint

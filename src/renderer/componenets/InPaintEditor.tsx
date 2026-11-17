@@ -493,8 +493,8 @@ const InPaintEditor = observer(
       const srcBase64 = dataUriToBase64(srcData);
       const result = await prepareMirrorCanvas(srcBase64, curSession!.mirrorMode || 'blank');
       if (!editingScene.preset.image) {
-        editingScene.preset.image = await imageService.storeVibeImage(
-          curSession!,
+        editingScene.preset.image = await imageService.storeWorkImage(
+          curSession!, editingScene, 'input',
           result.canvas,
         );
       } else {
@@ -505,8 +505,8 @@ const InPaintEditor = observer(
         );
       }
       if (!editingScene.preset.mask) {
-        editingScene.preset.mask = await imageService.storeVibeImage(
-          curSession!,
+        editingScene.preset.mask = await imageService.storeWorkImage(
+          curSession!, editingScene, 'mask',
           result.mask,
         );
       } else {
@@ -712,8 +712,8 @@ const InPaintEditor = observer(
       if (def?.hasMask && brushTool.current) {
         const mask = brushTool.current.getMaskBase64();
         if (!editingScene.preset.mask) {
-          editingScene.preset.mask = await imageService.storeVibeImage(
-            curSession!,
+          editingScene.preset.mask = await imageService.storeWorkImage(
+            curSession!, editingScene, 'mask',
             mask,
           );
         } else {
@@ -735,7 +735,7 @@ const InPaintEditor = observer(
         const session = curSession;
         if (def?.hasMask && session && mask) {
           if (!scene.preset.mask) {
-            imageService.storeVibeImage(session, mask).then((path) => {
+            imageService.storeWorkImage(session, scene, 'mask', mask).then((path) => {
               scene.preset.mask = path;
             });
           } else {
@@ -830,7 +830,7 @@ const InPaintEditor = observer(
         const preset={...editingScene.preset};
         if(def?.hasMask&&!isMirror){
           preset.image=await brushTool.current!.getInputImage();
-          preset.mask=await imageService.storeVibeImage(curSession!,brushTool.current!.getMaskBase64());
+          preset.mask=await imageService.storeWorkImage(curSession!,editingScene,'mask',brushTool.current!.getMaskBase64());
         }
         const count=Math.max(1,Math.min(99,Math.floor(Number(appState.samples)||1)));
         appState.samples=count;

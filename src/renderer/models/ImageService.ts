@@ -1,3 +1,4 @@
+import { WORK_ASSET_META, WorkAssetRole, workAssetId, vibeAssetToken, collectAssetReferences, replaceAssetReferences } from './workAssets';
 import { cast } from 'mobx-state-tree';
 import {
   backend,
@@ -290,7 +291,7 @@ export class ImageService extends EventTarget {
   async fetchVibeImage(session: Session, name: string) {
     if (!name) return null;
     const path =
-      imageService.getVibesDir(session) + '/' + name.split('/').pop()!;
+      imageService.getVibesDir(session) + '/' + vibeAssetToken(name);
     return await this.fetchImage(path);
   }
 
@@ -306,7 +307,7 @@ export class ImageService extends EventTarget {
 
   async writeVibeImage(session: Session, name: string, data: string) {
     const path =
-      imageService.getVibesDir(session) + '/' + name.split('/').pop()!;
+      imageService.getVibesDir(session) + '/' + vibeAssetToken(name);
     await backend.writeDataFile(path, data);
     await imageService.invalidateCache(path);
   }
@@ -850,6 +851,41 @@ export class ImageService extends EventTarget {
     return path.split('/').pop()!;
   }
 
+  async storeWorkImage(session: Session, scene: InpaintScene, role: WorkAssetRole, data: string, primeCache = false) {
+    let id = scene.meta.get(WORK_ASSET_META);
+    if (!workAssetId(id) || [...session.inpaints.values()].some(other =>
+      other !== scene && other.meta.get(WORK_ASSET_META) === id)) {
+      id = v4();
+      scene.meta.set(WORK_ASSET_META, id);
+    }
+    const token = `works/${id}/${role}-${v4()}.${PNG_IMAGE_EXT}`;
+    const path = this.getVibeImagePath(session, token);
+    await backend.writeDataFile(path, data);
+    if (primeCache) this.cache.set(path, `data:image/${PNG_IMAGE_EXT};base64,${data}`);
+    return token;
+  }
+
+  async cloneWorkAssets(session: Session, scene: InpaintScene) {
+    const refs = collectAssetReferences(scene.toJSON());
+    const replacements = new Map<string, string>();
+    scene.meta.delete(WORK_ASSET_META);
+    for (const token of refs) {
+      const path = this.getVibeImagePath(session, token);
+      if (!(await backend.existFile(path))) continue;
+      const data = await this.fetchVibeImage(session, token);
+      if (!data) throw new Error('복제할 작업 이미지를 읽지 못했습니다.');
+      const role = token === scene.preset.image ? 'input' : token === scene.preset.mask ? 'mask' :
+        token === scene.meta.get('codex.inpaintDrawing.v1')?.layer ? 'drawing' : 'extra';
+      replacements.set(token, await this.storeWorkImage(session, scene, role, dataUriToBase64(data)));
+    }
+    // Scene serialization may share nested metadata objects with the source work.
+    // Replace a detached snapshot so a cloned drawing never rewrites the original's layer.
+    const detached = JSON.parse(JSON.stringify(scene.toJSON()));
+    replaceAssetReferences(detached, replacements);
+    Object.assign(scene.preset, detached.preset);
+    for (const [key, value] of Object.entries(detached.meta)) scene.meta.set(key, value);
+  }
+
   async storeEncodedVibeImage(
     session: Session,
     name: string,
@@ -870,7 +906,7 @@ export class ImageService extends EventTarget {
   }
 
   getVibeImagePath(session: Session, name: string) {
-    return imageService.getVibesDir(session) + '/' + name.split('/').pop()!;
+    return imageService.getVibesDir(session) + '/' + vibeAssetToken(name);
   }
 
   getEncodedVibeImagePath(session: Session, name: string, info: number) {

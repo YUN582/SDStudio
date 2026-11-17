@@ -71,8 +71,7 @@ export async function createSourceVariant(
       image,
       session.mirrorMode || 'blank',
     );
-    preset.image = await imageService.storeVibeImage(session, result.canvas);
-    preset.mask = await imageService.storeVibeImage(session, result.mask);
+
     const newScene = InpaintScene.fromJSON({
       type: 'inpaint',
       name,
@@ -91,6 +90,8 @@ export async function createSourceVariant(
       game: undefined,
     });
     if (newScene) {
+      newScene.preset.image = await imageService.storeWorkImage(session, newScene, 'input', result.canvas);
+      newScene.preset.mask = await imageService.storeWorkImage(session, newScene, 'mask', result.mask);
       session.addScene(newScene);
       // 되돌리기(U2a): 씬은 휴지통행, 세션 미러 원본은 이번 값 그대로일 때만 이전 값으로(새 이미지 파일은 남김)
       recordScenesCreated(
@@ -138,7 +139,7 @@ export async function createSourceVariant(
         const middle = await sourceImageCombination(session, newScene, job);
         applySourceImageCombination(newScene, middle, job!);
       }
-      newScene.preset.image = await imageService.storeVibeImage(session, image);
+      newScene.preset.image = await imageService.storeWorkImage(session, newScene, 'input', image);
       session.addScene(newScene);
 
       // 되돌리기(U2a): 씬은 휴지통행(저장한 첨부 이미지 파일은 남김)

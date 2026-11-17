@@ -1,7 +1,7 @@
 // 대량 작업 「🎭 인페인트 마스크 일괄 적용」(P3)·「🎚️ 강도·노이즈 일괄 변경」(P4) 흐름(2026-10-04, 변형 탭 대량 작업·
 // 선택 모드 「선택 작업」 — PC·모바일 공용). 순수 규칙·문구는 variantBatch.ts, 계약은 SPEC_GUIDE §6 「대량 작업 I2I」·§7-2.
 //
-// - 프리셋 변경은 runInAction 한 번(toJSON reaction → 저장 큐). 직접 파일 쓰기는 마스크 저장(imageService.storeVibeImage)
+// - 프리셋 변경은 runInAction 한 번(toJSON reaction → 저장 큐). 직접 파일 쓰기는 마스크 저장(imageService.storeWorkImage)
 //   하나 — 씬마다 새 파일(편집기가 마스크를 제자리에서 덮어쓰므로 파일 공유 금지), 옛 마스크 파일은 지우지 않는다.
 // - preselected = 선택 모드에서 이미 고른 씬(씬 선택 창을 건너뜀 — 해상도 변경 changeResolutionOfScenes 와 같은 관례).
 import { runInAction } from 'mobx';
@@ -151,7 +151,7 @@ async function applyMaskToScenes(
       const same = sameSize(sourceSize, size);
       const data = same ? sourceMask : await resizeMaskPng(sourceMask, size.width, size.height);
       // 씬마다 새 파일(공유 금지) — 쓴 내용을 읽기 캐시에 선적재
-      const path = await imageService.storeVibeImage(session, data, true);
+      const path = await imageService.storeWorkImage(session, scene, 'mask', data, true);
       prepared.push({ scene, path, focus: focusPatchForTarget(sourcePreset, sourceSize, size) });
       if (!same) resized++;
     } catch (e) {

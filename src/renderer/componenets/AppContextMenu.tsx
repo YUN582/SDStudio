@@ -181,6 +181,7 @@ export const AppContextMenu = observer(() => {
     // 복제 이름 단일 규칙(2026-11-14 M2 C7) — 「X 복사본」→「X 복사본 (2)」(종전 「X_copy」·「X_copy1」).
     // 생성·변형 탭 공용 한 함수, 겹침 판정 범위는 종전과 같이 같은 종류(type) 씬만
     newScene.name = suggestFolderCopyName(newScene.name, (n) => session.hasScene(newScene.type, n));
+    if (newScene.type === 'inpaint') await imageService.cloneWorkAssets(session, newScene);
     session.addScene(newScene);
     // 되돌리기(U2a): 되돌림 = 휴지통행, 다시 실행 = 휴지통 복원
     recordScenesCreated(session, [newScene], UNDO_TEXT.sceneDuplicate(newScene.name));

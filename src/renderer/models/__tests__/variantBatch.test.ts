@@ -38,7 +38,7 @@ jest.mock('../AppService', () => ({
 jest.mock('..', () => ({
   imageService: {
     fetchVibeImage: async (_s: any, path: string) => `data:image/png;base64,${path}`,
-    storeVibeImage: async (_s: any, data: string) => {
+    storeWorkImage: async (_s: any, _work: any, _role: string, data: string) => {
       stored.push(data);
       return `vibe_${stored.length}.png`;
     },

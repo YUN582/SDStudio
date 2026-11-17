@@ -19,7 +19,7 @@ jest.mock('..', () => ({
     fetchImage,
     fetchInpaintInput: fetchInput,
     fetchVibeImage: fetchInput,
-    storeVibeImage: jest.fn(async () => 'snapshot.png'),
+    storeWorkImage: jest.fn(async () => 'snapshot.png'),
   },
   workFlowService: {
     createPreset: (type: string, meta: any) => {
@@ -200,7 +200,7 @@ test('cancelled prompt choice stores no image and creates no work', async () => 
   answer.mockResolvedValueOnce('');
   await createSourceVariant(session, scene, 'SDInpaint', 'outputs/original.png', jest.fn());
   expect(fetchImage).not.toHaveBeenCalled();
-  expect(jest.requireMock('..').imageService.storeVibeImage).not.toHaveBeenCalled();
+  expect(jest.requireMock('..').imageService.storeWorkImage).not.toHaveBeenCalled();
   expect(session.inpaints.size).toBe(0);
 });
 
@@ -283,7 +283,7 @@ test('unidentifiable source combination creates no work or orphan image', async 
   answer.mockResolvedValue('snapshot');
   await expect(createSourceVariant(session, scene, 'SDI2I', 'outputs/original.png', jest.fn())).rejects.toThrow('정확히 확인');
   expect(session.inpaints.size).toBe(0);
-  expect(jest.requireMock('..').imageService.storeVibeImage).not.toHaveBeenCalled();
+  expect(jest.requireMock('..').imageService.storeWorkImage).not.toHaveBeenCalled();
 });
 test('choosing to retain manually edited combinations never replaces their prompts', async () => {
   const { session, scene } = setup();

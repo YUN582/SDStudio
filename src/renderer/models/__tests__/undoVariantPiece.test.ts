@@ -499,7 +499,7 @@ describe('파일 덮어쓰기 경로는 기록하지 않는다(소스 검사)', 
     expect(to).toBeGreaterThan(from);
     expect(ipe.slice(from, to)).not.toMatch(RECORDERS);
     // 되돌리기 모듈은 파일을 쓰지 않는다
-    expect(read('models/variantSceneUndo.ts')).not.toMatch(/writeVibeImage|storeVibeImage/);
+    expect(read('models/variantSceneUndo.ts')).not.toMatch(/writeVibeImage|storeVibeImage|storeWorkImage/);
     expect(read('models/pieceUndo.ts')).not.toMatch(/writeFile|writeVibeImage/);
   });
 });

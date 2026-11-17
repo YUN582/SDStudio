@@ -250,7 +250,9 @@ describe('C7 씬 복제(AppContextMenu.duplicateScene — 생성·변형 공용)
       addScene: (s: any) => scenes.push(s),
     };
     const recordScenesCreated = jest.fn();
+    const cloneWorkAssets = jest.fn(async () => {});
     const fn = constFn('componenets/AppContextMenu.tsx', 'duplicateScene', {
+      imageService: { cloneWorkAssets },
       genericSceneFromJSON: (j: any) => ({ ...j }),
       appState: { curSession: session },
       recordScenesCreated,
@@ -265,6 +267,7 @@ describe('C7 씬 복제(AppContextMenu.duplicateScene — 생성·변형 공용)
     // 변형 씬도 같은 함수
     await fn({ scene: { toJSON: () => ({ type: 'inpaint', name: 'S' }) } });
     expect(scenes[scenes.length - 1]).toEqual({ type: 'inpaint', name: 'S 복사본 (2)' });
+    expect(cloneWorkAssets).toHaveBeenCalledTimes(1);
     expectNoOldMarker(['S 복사본', 'S 복사본 (2)']);
   });
 });

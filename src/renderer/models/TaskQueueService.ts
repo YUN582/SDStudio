@@ -2650,8 +2650,8 @@ export const queueMirrorWorkflow = async (
       : await buildMirrorCanvas(session, session.mirrorImage, mode);
     // primeCache: 바로 아래 핸들러(이미지·마스크)와 씬 카드가 같은 파일을 곧장 다시
     // 읽으므로 쓴 내용을 캐시에 넣어 디스크 왕복을 생략한다.
-    preset.image = await imageService.storeVibeImage(session, result.canvas, true);
-    preset.mask = await imageService.storeVibeImage(session, result.mask, true);
+    preset.image = await imageService.storeWorkImage(session, scene, 'input', result.canvas, true);
+    preset.mask = await imageService.storeWorkImage(session, scene, 'mask', result.mask, true);
     scene.resolution = 'custom';
     scene.resolutionWidth = result.width;
     scene.resolutionHeight = result.height;

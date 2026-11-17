@@ -297,7 +297,7 @@ const WorkflowCanvas = React.forwardRef<WorkflowCanvasRef, WorkflowCanvasProps>(
             return;
           if (d.layerPath)
             await imageService.writeVibeImage(session, d.layerPath, png);
-          else d.layerPath = await imageService.storeVibeImage(session, png);
+          else d.layerPath = await imageService.storeWorkImage(session, scene, 'drawing', png);
           if (revision !== d.revision || scene.preset.image !== d.source)
             return;
           scene.meta.set(PAINT_META, {

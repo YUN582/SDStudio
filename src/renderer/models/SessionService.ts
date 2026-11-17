@@ -1,3 +1,4 @@
+import { collectAssetReferences, managedWorkAsset } from './workAssets';
 import type { WorkspaceEntry, WorkspaceSnapshot, WorkspaceScan } from './workspaceSnapshot';
 import extractChunks from 'png-chunks-extract';
 import { Buffer } from 'buffer';
@@ -2972,6 +2973,12 @@ export class SessionService extends ResourceSyncService<Session> {
         path: projectPath('vibes', session.name, vibe),
         name: prefix + 'vibes/' + vibe,
       });
+    }
+    for (const token of collectAssetReferences(session.toJSON())) {
+      if (!managedWorkAsset(token)) continue;
+      const path = imageService.getVibeImagePath(session, token);
+      if (!(await backend.existFile(path))) throw new Error('내보낼 작업 이미지를 찾을 수 없습니다: ' + token);
+      entries.push({ path, name: prefix + 'vibes/' + token });
     }
     for (const ref of references) {
       if (!ref.endsWith('.png')) continue;

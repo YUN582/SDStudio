@@ -18,7 +18,7 @@ jest.mock('..', () => {
       maskHasPaint: jest.fn(async()=>true),
       fetchInpaintInput: jest.fn(async(_session:any,_scene:any,preset:any)=>preset.image.endsWith('.png')?'data:image/png;base64,FETCHED':'data:image/png;base64,'+preset.image),
       fetchVibeImage: (...a: any[]) => (fetchVibeImage as any)(...a),
-      storeVibeImage: jest.fn(async () => 'stored.png'),
+      storeWorkImage: jest.fn(async () => 'stored.png'),
       getOutputDir: jest.fn(() => 'inpaints/project/scene'),
     },
     isMobile: false,

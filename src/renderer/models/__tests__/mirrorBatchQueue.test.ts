@@ -4,7 +4,7 @@
 // - 일괄 예약 묶음은 길어지면 간격마다 중간 진행 반영(이벤트 수는 N 과 무관한 상한)
 // - 모바일 알림은 스로틀로 버린 마지막 변경을 꼬리 갱신으로 반영
 const fetchVibeImage = jest.fn();
-const storeVibeImage = jest.fn();
+const storeWorkImage = jest.fn();
 const getOutputDir = jest.fn(() => 'outs/project/scene');
 const getDef = jest.fn();
 const addTask = jest.fn(async () => {});
@@ -18,7 +18,7 @@ const fakeQueue = Object.assign(new EventTarget(), {
 
 jest.mock('..', () => ({
   backend: { getConfig: jest.fn(), updateBackgroundNotification },
-  imageService: { fetchVibeImage, storeVibeImage, getOutputDir },
+  imageService: { fetchVibeImage, storeWorkImage, getOutputDir },
   isMobile: true,
   localAIService: {},
   promptService: { parseWord: jest.fn() },
@@ -79,7 +79,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   fileSeq = 0;
   fetchVibeImage.mockImplementation(async () => 'data:image/png;base64,SRC');
-  storeVibeImage.mockImplementation(async () => `file${fileSeq++}.png`);
+  storeWorkImage.mockImplementation(async () => `file${fileSeq++}.png`);
   prepare.mockImplementation(async () => CANVAS);
 });
 
@@ -105,9 +105,9 @@ describe('미러 일괄 예약 — 합성 캔버스 기억', () => {
     }
     expect(fetchVibeImage).toHaveBeenCalledTimes(1);
     expect(prepare).toHaveBeenCalledTimes(1);
-    expect(storeVibeImage).toHaveBeenCalledTimes(400);
-    for (const call of storeVibeImage.mock.calls as any[][]) {
-      expect(call[2]).toBe(true);
+    expect(storeWorkImage).toHaveBeenCalledTimes(400);
+    for (const call of storeWorkImage.mock.calls as any[][]) {
+      expect(call[4]).toBe(true);
     }
     // 저장 내용·씬 필드는 종전과 동일, 파일은 씬마다 따로
     const paths = new Set<string>();
@@ -122,8 +122,8 @@ describe('미러 일괄 예약 — 합성 캔버스 기억', () => {
       paths.add(scene.preset.mask);
     }
     expect(paths.size).toBe(400);
-    expect(storeVibeImage.mock.calls.filter((c: any[]) => c[1] === 'CANVAS')).toHaveLength(200);
-    expect(storeVibeImage.mock.calls.filter((c: any[]) => c[1] === 'MASK')).toHaveLength(200);
+    expect(storeWorkImage.mock.calls.filter((c: any[]) => c[3] === 'CANVAS')).toHaveLength(200);
+    expect(storeWorkImage.mock.calls.filter((c: any[]) => c[3] === 'MASK')).toHaveLength(200);
     expect(handler).toHaveBeenCalledTimes(200);
     for (const call of handler.mock.calls as any[][]) {
       expect(call[10]).toBe(snapshot);
@@ -164,7 +164,7 @@ describe('미러 일괄 예약 — 합성 캔버스 기억', () => {
     scene.preset = { image: 'kept.png', mask: 'kept-mask.png' };
     await queueMirrorWorkflow(session, 'SDMirror', scene.preset, scene, 1, undefined, undefined, createMirrorCanvasMemo());
     expect(prepare).not.toHaveBeenCalled();
-    expect(storeVibeImage).not.toHaveBeenCalled();
+    expect(storeWorkImage).not.toHaveBeenCalled();
     expect(scene.preset.image).toBe('kept.png');
   });
 });
