@@ -3,6 +3,8 @@ import type { PaintHistory, WorkflowCanvasRef } from './WorkflowCanvas';
 interface Props {
   tool: 'mask' | 'paint';
   setTool: (tool: 'mask' | 'paint') => void;
+  eraser: boolean;
+  setEraser: (enabled: boolean) => void;
   color: string;
   setColor: (color: string) => void;
   opacity: number;
@@ -18,6 +20,8 @@ interface Props {
 export function InpaintDrawingTools({
   tool,
   setTool,
+  eraser,
+  setEraser,
   color,
   setColor,
   opacity,
@@ -95,6 +99,18 @@ export function InpaintDrawingTools({
             초기화
           </button>
         </div>
+        <button
+          type="button"
+          className={'round-button ' + (eraser ? 'back-sky' : 'back-gray')}
+          aria-pressed={eraser}
+          title={tool === 'mask' ? '마스크 지우기' : '그리기 지우기'}
+          onClick={() => {
+            setEraser(!eraser);
+            canvas.current?.focus();
+          }}
+        >
+          지우개
+        </button>
         {focusControl}
         <span className="sds-tool-group sds-history-tools">
           <button
@@ -124,7 +140,6 @@ export function InpaintDrawingTools({
             aria-label="그리기 색상"
             type="color"
             value={color}
-            disabled={tool === 'mask'}
             onChange={(event) => setColor(event.target.value)}
           />
         </label>

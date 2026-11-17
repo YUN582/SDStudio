@@ -17,6 +17,7 @@ import {
   imageService,
   workFlowService,
   taskQueueService,
+  sessionService,
 } from '../models';
 import { dataUriToBase64 } from '../models/ImageService';
 import { InpaintScene, PromptPiece, Scene } from '../models/types';
@@ -198,6 +199,9 @@ const InPaintEditor = observer(
       return ()=>{observer.disconnect();viewport.removeEventListener('pointerenter',enter);viewport.removeEventListener('pointerleave',leave);viewport.removeEventListener('wheel',wheel,true);window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',up,true);window.removeEventListener('blur',release);};
     },[]);
     const [image, setImage] = useState('');
+    const [inputError, setInputError] = useState<string>();
+    const [canUseStoredInput, setCanUseStoredInput] = useState(false);
+    const [inputReload, setInputReload] = useState(0);
     const [width, setWidth] = useState(0);
     const [height, setHeight] = useState(0);
     // 크기를 잰 이미지(같은 이미지일 때만 해상도 불일치 안내 — 씬 전환 직후 옛 크기로 판단하지 않게)
@@ -293,7 +297,7 @@ const InPaintEditor = observer(
         if(!activeEditor||!pointerInside.current||pointerTarget!=='brush'||spaceRef.current||isTextEntryFocused()||appState.dialogs.length)return;
         if(editingScene.workflowType!=='SDInpaint')return;
         event.preventDefault();event.stopImmediatePropagation();
-        if(!event.repeat)setPaintTool(value=>value==='mask'?'paint':'mask');
+        if(!event.repeat){setPaintTool(value=>value==='mask'?'paint':'mask');setEraserMode(false);}
       };
       window.addEventListener('keydown',toggle,true);return ()=>window.removeEventListener('keydown',toggle,true);
     },[activeEditor,pointerTarget,editingScene]);
@@ -537,6 +541,7 @@ const InPaintEditor = observer(
       let inputRequest=0;
       async function loadImage() {
         const request=++inputRequest;
+        setInputError(undefined);setCanUseStoredInput(false);
         try {
           const data = ['SDInpaint','SDI2I'].includes(editingScene.workflowType)
             ? await imageService.fetchInpaintInput(curSession!,editingScene,editingScene.preset,false)
@@ -544,7 +549,18 @@ const InPaintEditor = observer(
           if(cancelled||request!==inputRequest)return;
           setImage(dataUriToBase64(data!));setInputRevision(value=>value+1);
         } catch (e) {
-          appState.pushMessage('인페인트 이미지를 불러오는데 실패했습니다.');
+          if(cancelled||request!==inputRequest)return;
+          setInputError(e instanceof Error ? e.message : String(e));
+          // Offer the original snapshot explicitly; never silently substitute stale pixels.
+          if (!editingScene.meta.get(DETACHED_INPUT_META) && /\.(png|webp)$/i.test(editingScene.preset.image ?? '')) {
+            try {
+              const stored = await imageService.fetchVibeImage(curSession!, editingScene.preset.image);
+              if (stored) {
+                await getImageDimensions(dataUriToBase64(stored));
+                if(!cancelled&&request===inputRequest)setCanUseStoredInput(true);
+              }
+            } catch { /* No usable snapshot; keep the source error visible. */ }
+          }
         }
       }
       async function loadMask() {
@@ -558,7 +574,7 @@ const InPaintEditor = observer(
         } catch (e) {}
       }
       const dispose = reaction(
-        () => editingScene.preset.image,
+        () => [editingScene.preset.image, editingScene.sourceImage, editingScene.sourceInpaint, editingScene.sceneRef, editingScene.meta.get(DETACHED_INPUT_META)],
         () => {
           loadImage();
         },
@@ -576,7 +592,7 @@ const InPaintEditor = observer(
         imageService.removeEventListener('image-cache-invalidated', loadImage);
         dispose();
       };
-    }, [editingScene]);
+    }, [editingScene, inputReload]);
     useEffect(() => {
       // 영역 도구가 포인터를 받는 동안 마스크 캔버스는 칠하지 않는다(오버레이가 위에서 받음 — 이중 차단).
       if (pointerTarget === 'brush' && !spaceHeld && paintTool === 'mask') {
@@ -691,6 +707,7 @@ const InPaintEditor = observer(
     };
 
     const saveMask = async () => {
+      if (inputError || !paintHistory.ready) return;
       await brushTool.current?.saveDrawing?.();
       if (def?.hasMask && brushTool.current) {
         const mask = brushTool.current.getMaskBase64();
@@ -804,7 +821,7 @@ const InPaintEditor = observer(
       onConfirm();
     };
     const queueWork=async()=>{
-      if(queuingRef.current)return false;
+      if(queuingRef.current||inputError)return false;
       queuingRef.current=true;setQueuing(true);
       try {
         if(!await ensureSingleImagePrompt(curSession!,editingScene,()=>mountedRef.current&&sceneRef.current===editingScene))return false;
@@ -825,7 +842,7 @@ const InPaintEditor = observer(
       finally{queuingRef.current=false;if(mountedRef.current)setQueuing(false);}
     };
     const queueWorkRef=useRef(queueWork);queueWorkRef.current=queueWork;
-    const generationDisabled=queuing||!!def?.hasMask&&!isMirror&&!paintHistory.ready;
+    const generationDisabled=queuing||!!inputError||!!def?.hasMask&&!isMirror&&!paintHistory.ready;
     useLayoutEffect(()=>{
       if(!activeEditor)return;
       const target={session:curSession!,scene:editingScene,queue:()=>queueWorkRef.current(),disabled:generationDisabled};
@@ -990,7 +1007,8 @@ const InPaintEditor = observer(
             </div>
           )}
           {def?.hasMask && !isMirror && <div className={pcComboWide?'md:hidden':''}>
-            <InpaintDrawingTools tool={paintTool} setTool={tool=>{setPaintTool(tool);setFocusTool(false);setBrushing(true);}}
+            <InpaintDrawingTools tool={paintTool} setTool={tool=>{setPaintTool(tool);setEraserMode(false);setFocusTool(false);setBrushing(true);}}
+              eraser={eraserMode} setEraser={enabled=>{setEraserMode(enabled);setFocusTool(false);setBrushing(true);}}
               color={paintColor} setColor={setPaintColor} opacity={paintOpacity} setOpacity={setPaintOpacity}
               history={paintHistory} canvas={brushTool} brushSize={Number(brushSize)}
               setBrushSize={value=>{setBrushSize(value);brushSizeSaved=value;}}
@@ -1037,6 +1055,20 @@ const InPaintEditor = observer(
         <div
           className={`flex flex-col flex-1 ${pcComboWide ? 'md:flex-none' : ''} overflow-hidden`}
         >
+          {inputError && (
+            <div role="alert" className="flex-none m-3 p-3 rounded-lg bg-[var(--c-surface-2)] text-default">
+              <p className="font-bold">입력 이미지를 불러오지 못했습니다</p>
+              <p className="text-sm text-sub mt-1">{inputError}</p>
+              {canUseStoredInput && <p className="text-sm text-sub mt-1">작업 생성 당시 저장본으로 열 수 있습니다. 이후 원본 편집 내용은 포함되지 않으며, 이 작업은 저장본을 사용하게 됩니다.</p>}
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button type="button" className="round-button back-gray" onClick={() => setInputReload(value => value + 1)}>다시 불러오기</button>
+                {canUseStoredInput && <button type="button" className="round-button back-sky" onClick={() => {
+                  editingScene.meta.set(DETACHED_INPUT_META, true);
+                  sessionService.markDirty(curSession!.name);
+                }}>저장된 입력본으로 열기</button>}
+              </div>
+            </div>
+          )}
           {/* PC 조합 에디터 탭: 이미지만 숨기고 아래 생성 바는 남긴다(언마운트 금지 — 마스크·Focused 보존) */}
           <div ref={viewportRef} data-space-pan={spaceHeld} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} className={`sds-inpaint-viewport flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
             <TransformWrapper
@@ -1053,7 +1085,7 @@ const InPaintEditor = observer(
                   session={curSession!} inputRevision={inputRevision}
                   pointerToImage={(element,event,width,height)=>canvasPointerPoint(element,event,width,height,rotation)}
                   brushPreviewEnabled={activeEditor&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
-                  tool={spaceHeld||pointerTarget!=='brush'?'pan':paintTool}
+                  tool={spaceHeld||pointerTarget!=='brush'?'pan':paintTool==='paint'&&eraserMode?'erase':paintTool}
                   color={paintColor} opacity={paintOpacity} onHistoryChange={setPaintHistory} onPickColor={setPaintColor}
                   brushSize={brushSize}
                   eraserMode={eraserMode}
