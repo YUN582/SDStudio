@@ -120,3 +120,16 @@ produce `img2img`; painted masks produce `infill`. An isolated Chromium canvas
 check passed 14 interactions and checked the composited drawing's actual pixels.
 No paid generation or personal data writes. These checks establish request
 contents, not a guarantee that the image model follows a requested visual edit.
+
+
+## Drag preview origin correction (2026-11-17)
+
+Virtual grid cells retain absolute row/column offsets when cloned. Reset the
+floating clone's position and transform; its host alone follows the pointer.
+Suppress the clone's image entrance animation so pixels stay attached to the
+shadow from drag start. Keep stacked multi-selection, scrolling, Escape and
+click suppression unchanged.
+
+Regression: drag a cell away from the grid origin and move the pointer again.
+Assert clone/host alignment and preserve the original cell position. Verified
+single and multiple drags in the isolated packaged app with synthetic images.

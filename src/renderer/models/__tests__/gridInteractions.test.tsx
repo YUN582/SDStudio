@@ -76,3 +76,38 @@ test('drag shows a stack, leaves wheel scrolling native, commits the group and s
     ui.unmount(); document.elementFromPoint = previous; rect.mockRestore(); raf.mockRestore(); cancel.mockRestore();
   }
 });
+
+
+test('floating card pixels share the shadow origin instead of retaining virtual grid offsets', () => {
+  const rect = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 620, top: 180, right: 720, bottom: 280, width: 100, height: 100 } as DOMRect);
+  const raf = jest.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+  const cancel = jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+  const ui = render(<Fixture commit={jest.fn()} open={jest.fn()} />);
+  const card = ui.container.querySelector<HTMLElement>('[data-card=b]')!;
+  Object.assign(card.style, { position: 'absolute', left: '600px', top: '200px', transform: 'translate(0px, 10px)' });
+  card.innerHTML = '<img class="image-anime" src="fixture.png" />';
+  const previous = document.elementFromPoint;
+  document.elementFromPoint = () => card;
+  try {
+    fireEvent.mouseDown(card, { button: 0, clientX: 645, clientY: 200 });
+    fireEvent.mouseMove(window, { buttons: 1, clientX: 400, clientY: 300 });
+    const overlay = document.querySelector('[data-reorder-drag-preview]')!;
+    const position = overlay.firstElementChild as HTMLElement;
+    const clone = overlay.querySelector<HTMLElement>('[data-card=b]')!;
+    expect(position.style.left).toBe('375px');
+    expect(position.style.top).toBe('280px');
+    expect(clone.style.position).toBe('relative');
+    expect(clone.style.left).toBe('0px');
+    expect(clone.style.top).toBe('0px');
+    expect(clone.style.transform).toBe('none');
+    expect(clone.querySelector('img')!.style.animation).toBe('none');
+    expect(card.style.left).toBe('600px');
+    expect(card.style.top).toBe('200px');
+    fireEvent.mouseMove(window, { buttons: 1, clientX: 450, clientY: 320 });
+    expect(position.style.left).toBe('425px');
+    expect(overlay.querySelector('[data-card=b]')).toBe(clone);
+    fireEvent.mouseUp(window, { clientX: 450, clientY: 320 });
+  } finally {
+    ui.unmount(); document.elementFromPoint = previous; rect.mockRestore(); raf.mockRestore(); cancel.mockRestore();
+  }
+});

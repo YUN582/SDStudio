@@ -16,7 +16,16 @@ function captureCard(card: HTMLElement, event: React.MouseEvent): CardPreview | 
   const copy = card.cloneNode(true) as HTMLElement;
   copy.removeAttribute('id');
   for (const child of Array.from(copy.querySelectorAll('[id]'))) child.removeAttribute('id');
-  Object.assign(copy.style, { margin: '0', width: '100%', height: '100%' });
+  // Virtual grid cells carry absolute row/column offsets. The floating host
+  // already owns positioning; keeping those offsets displaces the pixels from its shadow.
+  Object.assign(copy.style, {
+    position: 'relative', top: '0', left: '0', right: 'auto', bottom: 'auto',
+    transform: 'none', margin: '0', width: '100%', height: '100%',
+    animation: 'none', transition: 'none',
+  });
+  for (const child of Array.from(copy.querySelectorAll<HTMLElement>('.image-anime'))) {
+    child.style.animation = 'none';
+  }
   return {
     width: bounds.width, height: bounds.height,
     offsetX: event.clientX - bounds.left, offsetY: event.clientY - bounds.top,
@@ -29,7 +38,7 @@ export function ReorderDragPreview<T>({ type, drag }: { type: string; drag: Grid
   const { preview, point, items } = drag;
   return createPortal(
     <div data-reorder-drag-preview={type} aria-hidden="true" style={{ position: 'fixed', inset: 0, overflow: 'hidden', contain: 'strict', pointerEvents: 'none', zIndex: 'var(--z-dnd-preview)' }}>
-      <div className="absolute image-anime" style={{ left: point.x - preview.offsetX, top: point.y - preview.offsetY, width: preview.width, height: preview.height, rotate: '2deg', scale: '1.025' }}>
+      <div className="absolute" style={{ left: point.x - preview.offsetX, top: point.y - preview.offsetY, width: preview.width, height: preview.height, rotate: '2deg', scale: '1.025' }}>
         {Array.from({ length: Math.min(2, items.length - 1) }, (_, i) => i + 1).reverse().map(depth =>
           <div key={depth} data-reorder-stack-card="" className="absolute inset-0 rounded-lg border line-color bg-[var(--c-zone)]" style={{ transform: `translate(${depth * 6}px,${depth * 5}px) rotate(${depth * 3}deg)` }} />)}
         <div ref={preview.attach} className="relative w-full h-full rounded-lg" style={{ boxShadow: '0 8px 22px rgba(0,0,0,0.32)' }} />
