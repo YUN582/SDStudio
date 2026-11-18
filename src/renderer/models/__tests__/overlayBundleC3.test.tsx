@@ -345,6 +345,9 @@ describe('character workspace', () => {
     await act(async () => fireEvent.click(cards()[2], { shiftKey: true }));
     expect(cards().filter(card => card.dataset.librarySelected === 'true')).toHaveLength(3);
     expect(mockAppState.applyCharacterPreset).not.toHaveBeenCalled();
+    expect(q('[data-character-toolbar-end] [data-character-selection-bar]')).not.toBeNull();
+    expect(q('[data-character-toolbar-end]')!.textContent).toContain('선택 적용');
+    expect(q('[data-character-toolbar-end] [data-character-help]')).not.toBeNull();
     await pressEscape();
     expect(cards().filter(card => card.dataset.librarySelected === 'true')).toHaveLength(0);
   });

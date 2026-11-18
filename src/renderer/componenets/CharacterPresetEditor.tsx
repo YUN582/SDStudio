@@ -67,7 +67,7 @@ import { recordSceneTemplateImport } from '../models/sceneImportUndo';
 import { UNDO_TEXT } from '../models/undoService';
 import { useLibraryGridSelection } from './LibraryGridSelection';
 import { focusGridSurface } from '../models/gridSelection';
-import { GridSearchBar, LibraryAction, LibraryToolbar } from './GridToolbar';
+import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
 import {
@@ -1374,7 +1374,13 @@ export function useCharacterPresetPanel({
     </>
   );
 
-  // [모두 글로벌로 복사](로컬)·[내보내기]·[불러오기]·도움말
+  const presetHelp = <HelpIcon content={
+    '캐릭터 프리셋은 캐릭터 프롬프트, 네거티브, 바이브, 레퍼런스의 묶음입니다.\n' +
+    '카드를 클릭하여 현재 프로젝트에 적용/해제합니다. Ctrl·Shift 클릭이나 드래그로 여러 개를 선택할 수 있습니다.\n' +
+    '글로벌 프리셋은 모든 프로젝트에서 공유되며, 적용하면 현재 프로젝트로 사본이 들어갑니다.'
+  } />;
+
+  // [모두 글로벌로 복사](로컬)·[내보내기]·[불러오기]
   const fileButtons = (
     <>
       {!globalView && presets.length > 0 && (
@@ -1461,14 +1467,7 @@ export function useCharacterPresetPanel({
           </label>
         </Tooltip>
       )}
-      {/* 도움말은 행 맨 끝 고정 (버튼 사이 배치가 어색하다는 피드백) */}
-      <HelpIcon
-        content={
-          '캐릭터 프리셋은 캐릭터 프롬프트, 네거티브, 바이브, 레퍼런스의 묶음입니다.\n' +
-          '카드 버튼으로 현재 프로젝트에 적용/해제합니다 (여러 개 일괄 적용 가능).\n' +
-          '글로벌 프리셋은 모든 프로젝트에서 공유되며, 적용하면 현재 프로젝트로 사본이 들어갑니다.'
-        }
-      />
+      {(!workspace || !wide) && presetHelp}
     </>
   );
 
@@ -2030,12 +2029,26 @@ export function useCharacterPresetPanel({
   const toolbar = workspace ? (
     <div>
       <GridSearchBar label="캐릭터 프리셋 이름 검색" query={listQuery} onChange={setListQuery} />
-      <LibraryToolbar view={null}>
-        <LibraryAction label="새 캐릭터 프리셋" tone="sky" icon={<FaPlus />} onClick={handleAddNewGlobal} />
-        {modeButtons}{fileButtons}
-        {selectedGlobalIds.size > 0 && !cyclingMode && <LibraryAction label={`선택 해제 (${selectedGlobalIds.size})`} icon={<FaTimes />} onClick={selection.clear} />}
+      <LibraryToolbar view={<div className="flex items-end gap-4" data-character-toolbar-end="">
+        {selectedGlobalIds.size > 0 && !cyclingMode && <div data-character-selection-bar="" className="scene-toolbar-row">
+          <GridToolbarGroup id="character-selection" caption={`${selectedGlobalIds.size}개 선택`}>
+            <LibraryAction label={allShownSelected ? '전체 해제' : '전체 선택'} icon={<FaCheckSquare />} onClick={toggleSelectAllShown} />
+            <button type="button" className="round-button back-sky h-8 gap-1.5 px-3 text-sm font-medium" onClick={bulkApplyCharacter}>
+              <FaUserAlt size={14} /><span>선택 적용</span>
+            </button>
+            <LibraryAction label="폴더로 이동" icon={<FaFolder />} onClick={bulkMoveToFolder} />
+            <LibraryAction label="선택 삭제" tone="red" icon={<FaTrash />} onClick={handleDeleteSelected} />
+            <LibraryAction label="선택 해제" icon={<FaTimes />} onClick={selection.clear} />
+          </GridToolbarGroup>
+        </div>}
+        <div data-character-help="" className="h-8 flex items-center flex-none">{presetHelp}</div>
+      </div>}>
+        <GridToolbarGroup id="character-create" caption="생성">
+          <LibraryAction label="새 캐릭터 프리셋" tone="sky" icon={<FaPlus />} onClick={handleAddNewGlobal} />
+          {modeButtons}
+        </GridToolbarGroup>
+        <GridToolbarGroup id="character-files" caption="파일" separate>{fileButtons}</GridToolbarGroup>
       </LibraryToolbar>
-      {selectedGlobalIds.size > 0 && !cyclingMode && selectionBar('flex items-center gap-2 flex-wrap')}
     </div>
   ) : (
     <div className="w-full flex flex-col gap-2" data-character-preset-toolbar="">

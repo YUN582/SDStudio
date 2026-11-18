@@ -511,7 +511,6 @@ export const GlobalCharacterPresetCard = observer(({
         }}
       >
         <GlobalCardImage entry={entry} className="w-full h-full object-cover" />
-        {workspace && applied && <span className="absolute top-2 left-2 z-10 rounded-full back-green px-2 py-1 text-xs font-medium flex items-center gap-1 pointer-events-none"><FaCheck size={10} />적용 중</span>}
         <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
         {/* "글로벌" 코너 배지 제거 — 글로벌이 기본 화면이 되면서(주종 역전,
             2026-07-16) 더 이상 구분 표기가 불필요. */}
