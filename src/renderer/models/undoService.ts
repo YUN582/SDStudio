@@ -405,6 +405,7 @@ export const UNDO_TEXT = {
   artistRename: (from: string, to: string) => `작가 이름 변경: ${from} → ${to}`,
   artistFavoriteOn: (name: string) => `작가 즐겨찾기: ${name}`,
   artistFavoriteOff: (name: string) => `작가 즐겨찾기 해제: ${name}`,
+  artistFavoriteBulk: (count: number, on: boolean) => `작가 ${count}명 즐겨찾기 ${on ? '지정' : '해제'}`,
   artistThumbnail: (name: string) => `작가 대표 썸네일 지정: ${name}`,
   artistImageFamily: (name: string) => `작가 샘플 모델 계열 변경: ${name}`,
   artistTagAdd: (name: string, tag: string) => `작가 태그 추가: ${name} ${tag}`,

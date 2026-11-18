@@ -66,6 +66,7 @@ import {
   setGlobalPresetsDefaultRecorded,
   setTemplateBadgeColorRecorded,
   toggleArtistFavoriteRecorded,
+  setArtistsFavoriteRecorded,
 } from '../globalLibraryUndo';
 
 beforeEach(() => jest.useFakeTimers());
@@ -417,6 +418,29 @@ describe('작가 라이브러리', () => {
     expect(await h.service.redo()).toBe(true);
     h.artists.setFavorite('a', false);
     expect(await h.service.undo()).toBe(false);
+  });
+
+  test('일괄 즐겨찾기는 한 번에 되돌리고 다시 실행한다', async () => {
+    const h = harness(); seedArtist(h.artists);
+    setArtistsFavoriteRecorded(['a', 'z', 'a', 'missing'], true, h.opts);
+    expect(h.past()).toEqual([UNDO_TEXT.artistFavoriteBulk(2, true)]);
+    expect(h.artists.artists.map(a => a.favorite)).toEqual([true, true]);
+    expect(await h.service.undo()).toBe(true);
+    expect(h.artists.artists.map(a => a.favorite)).toEqual([false, false]);
+    expect(await h.service.redo()).toBe(true);
+    expect(h.artists.artists.map(a => a.favorite)).toEqual([true, true]);
+  });
+
+  test('일괄 즐겨찾기에서 이미 지정된 카드와 외부 변경은 덮어쓰지 않는다', async () => {
+    const h = harness(); seedArtist(h.artists);
+    h.artists.setFavorite('z', true);
+    setArtistsFavoriteRecorded(['a', 'z'], true, h.opts);
+    expect(await h.service.undo()).toBe(true);
+    expect(h.artists.artists.map(a => a.favorite)).toEqual([false, true]);
+    await h.service.redo();
+    h.artists.setFavorite('a', false);
+    expect(await h.service.undo()).toBe(false);
+    expect(h.artists.artists.map(a => a.favorite)).toEqual([false, true]);
   });
 
   test('대표 썸네일 지정 되돌리면 이미지 순서가 원래 자리 그대로', async () => {

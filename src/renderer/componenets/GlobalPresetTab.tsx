@@ -12,9 +12,11 @@ import {
 } from 'react-icons/fa';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { useLibraryGridSelection } from './LibraryGridSelection';
-import { focusGridSurface } from '../models/gridSelection';
+import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
+import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
+import { contextMenuBackLayer } from './contextMenuBack';
 import {
   backend,
   globalPresetService,
@@ -107,17 +109,21 @@ interface EasyCardProps {
   onEdit: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onContextMenu: (event: React.MouseEvent) => void;
 }
 
 const EasyCard = observer(({
   entry, reorderClass, selected, multiSelectMode, onToggleSelect,
-  onImportToSession, onToggleDefault, onEdit, onExport, onDelete,
+  onImportToSession, onToggleDefault, onEdit, onExport, onDelete, onContextMenu,
 }: EasyCardProps) => (
-  <div data-global-preset-id={entry.id} data-library-selected={selected ? 'true' : 'false'}
+  <div data-global-preset-id={entry.id} data-library-selected={selected ? 'true' : 'false'} onContextMenu={onContextMenu}
     className={(reorderClass || '') + 'relative flex-none w-[calc(50%-8px)] md:w-64 group rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
       (selected ? 'border-sky-500 ring-2 ring-inset ring-sky-500' : 'line-color')}>
     <div className="relative cursor-pointer" title={entry.name + ' · 프로젝트에 추가'}
-      onClick={() => { if (isMobile && multiSelectMode) onToggleSelect(); else onImportToSession(); }}>
+      onClick={event => {
+        if (!isMobile && gridCardUsesSelection(event)) return;
+        if (isMobile && multiSelectMode) onToggleSelect(); else onImportToSession();
+      }}>
       <GlobalVibeImage profile={entry.profile} className="w-full aspect-[3/4] md:aspect-auto md:h-96 object-cover" />
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 pt-6 pb-2 pointer-events-none">
         <div className="text-sm text-white font-medium drop-shadow truncate">{entry.name}</div>
@@ -270,6 +276,8 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
   const viewport = useRef<HTMLDivElement>(null);
   const suppressClick = useRef(false);
   const [editing, setEditing] = useState<IGlobalPresetEntry | null>(null);
+  const [contextId, setContextId] = useState<string>();
+  const { show: showContextMenu } = useContextMenu({ id: 'global-preset-menu' });
 
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
   const [draftProfile, setDraftProfile] = useState<string | null>(null);
@@ -599,6 +607,11 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
                 onEdit={() => setEditing(entry)}
                 onExport={() => handleExport(entry)}
                 onDelete={() => handleDelete(entry)}
+                onContextMenu={event => {
+                  event.preventDefault(); event.stopPropagation();
+                  if (!selectedIds.has(entry.id)) setSelectedIds(new Set([entry.id]));
+                  setContextId(entry.id); showContextMenu({ event });
+                }}
               />
             ))}
             {!multiSelectMode && !q && (
@@ -611,6 +624,24 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
           </div>
         )}
       </div>
+      <Menu id="global-preset-menu" onVisibilityChange={contextMenuBackLayer('global-preset-menu')}>
+        <Item onClick={() => {
+          const entry = contextId && globalPresetService.get(contextId);
+          if (selectedIds.size === 1 && entry) void handleImportToSession(entry);
+          else void handleBulkImportToSession();
+        }}>프로젝트에 추가{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        <Item onClick={() => { void handleBulkSetDefault(true); }}>기본으로 지정</Item>
+        <Item onClick={() => { void handleBulkSetDefault(false); }}>기본 해제</Item>
+        <Separator />
+        <Item disabled={selectedIds.size !== 1} onClick={() => {
+          const entry = contextId && globalPresetService.get(contextId); if (entry) setEditing(entry);
+        }}>수정</Item>
+        <Item disabled={selectedIds.size !== 1} onClick={() => {
+          const entry = contextId && globalPresetService.get(contextId); if (entry) void handleExport(entry);
+        }}>PNG로 내보내기</Item>
+        <Separator />
+        <Item onClick={handleBulkDelete}>삭제{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+      </Menu>
       {draft && (
         <PresetEditModal title="새 글로벌 프리셋" initialName="" preset={draft}
           adapter={{

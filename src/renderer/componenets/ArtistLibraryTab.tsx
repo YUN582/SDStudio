@@ -22,7 +22,9 @@ import {
 } from 'react-icons/fa';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { useLibraryGridSelection } from './LibraryGridSelection';
-import { focusGridSurface } from '../models/gridSelection';
+import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection';
+import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
+import { contextMenuBackLayer } from './contextMenuBack';
 import { ActionIcon } from './ActionIcon';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
@@ -38,6 +40,7 @@ import {
   setArtistImageFamilyRecorded,
   setArtistThumbnailRecorded,
   toggleArtistFavoriteRecorded,
+  setArtistsFavoriteRecorded,
 } from '../models/globalLibraryUndo';
 import { promptName } from '../models/nameInput';
 import {
@@ -513,6 +516,7 @@ const ArtistCard = observer(({
   selected,
   onToggleSelect,
   familyView,
+  onContextMenu,
 }: {
   artist: IArtistEntry;
   onOpen: () => void;
@@ -520,13 +524,17 @@ const ArtistCard = observer(({
   selected: boolean;
   onToggleSelect: () => void;
   familyView: FamilyView;
+  onContextMenu: (event: React.MouseEvent) => void;
 }) => {
   // 계열 보기면 그 계열의 첫 이미지가 대표(없으면 "샘플 없음"), 전체 보기면 대표 썸네일(images[0])
   const shown = imagesFor(artist, familyView);
   const thumb = shown[0];
-  const handleClick = () => { if (isMobile && multiSelectMode) onToggleSelect(); else onOpen(); };
+  const handleClick = (event: React.MouseEvent) => {
+    if (!isMobile && gridCardUsesSelection(event)) return;
+    if (isMobile && multiSelectMode) onToggleSelect(); else onOpen();
+  };
   return (
-    <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} className={
+    <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} onContextMenu={onContextMenu} className={
       'group relative flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] transition-colors ' +
       (selected
         ? 'border-sky-500 ring-2 ring-inset ring-sky-500'
@@ -610,6 +618,8 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
   const [sortBy, setSortBy] = useState<SortKey>('recent');
   const [favOnly, setFavOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [contextId, setContextId] = useState<string>();
+  const { show: showContextMenu } = useContextMenu({ id: 'artist-library-menu' });
   const [mobileSelectMode, setMultiSelectMode] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
   const suppressClick = useRef(false);
@@ -827,6 +837,11 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
                 onToggleSelect={() => toggleSelect(a.id)}
                 onOpen={() => setOpenId(a.id)}
                 familyView={familyView}
+                onContextMenu={event => {
+                  event.preventDefault(); event.stopPropagation();
+                  if (!selectedIds.has(a.id)) setSelectedIds(new Set([a.id]));
+                  setContextId(a.id); showContextMenu({ event });
+                }}
               />
             ))}
             {/* 항상 그리드 끝에 추가 카드 (멀티선택 중엔 숨김) */}
@@ -835,6 +850,22 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
         )}
       </div>
 
+      <Menu id="artist-library-menu" onVisibilityChange={contextMenuBackLayer('artist-library-menu')}>
+        <Item disabled={selectedIds.size !== 1} onClick={() => { if (contextId) setOpenId(contextId); }}>상세·수정</Item>
+        <Item onClick={() => {
+          const tags = Array.from(selectedIds).map(id => artistLibraryService.getArtist(id)).filter(Boolean).map(artist => 'artist:' + artist!.name);
+          void copyText(tags.join(', '), `작가 태그 ${tags.length}개를 복사했습니다`);
+        }}>작가 태그 복사{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        {(isMobile || appState.webSearchEnabled) && <Item disabled={selectedIds.size !== 1} onClick={() => {
+          const artist = contextId && artistLibraryService.getArtist(contextId);
+          if (artist) window.dispatchEvent(new CustomEvent('danbooru-search-request', { detail: { text: artist.name } }));
+        }}>Danbooru에서 검색</Item>}
+        <Separator />
+        <Item onClick={() => setArtistsFavoriteRecorded(selectedIds, true)}>즐겨찾기 지정</Item>
+        <Item onClick={() => setArtistsFavoriteRecorded(selectedIds, false)}>즐겨찾기 해제</Item>
+        <Separator />
+        <Item onClick={doBulkDelete}>삭제{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+      </Menu>
       {openId && <ArtistDetailModal artistId={openId} onClose={() => setOpenId(null)} />}
     </div>
   );

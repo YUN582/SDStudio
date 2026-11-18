@@ -610,6 +610,41 @@ export function toggleArtistFavoriteRecorded(id: string, opts: GlobalLibraryUndo
   });
 }
 
+/** Set selected artists to one favorite state; undo restores only entries changed here. */
+export function setArtistsFavoriteRecorded(ids: Iterable<string>, on: boolean, opts: GlobalLibraryUndoOptions = {}): void {
+  const { service, ops } = resolve(opts, 'artists');
+  const changes: { id: string; name: string }[] = [];
+  for (const id of new Set(ids)) {
+    const artist = ops.getArtist(id);
+    if (!artist || artist.favorite === on) continue;
+    ops.setFavorite(id, on);
+    if (ops.getArtist(id)?.favorite === on) changes.push({ id, name: artist.name });
+  }
+  if (!changes.length) return;
+  const apply = (dir: 'undo' | 'redo'): UndoOutcome => {
+    const expected = dir === 'undo' ? on : !on;
+    const order = dir === 'undo' ? [...changes].reverse() : [...changes];
+    let failed = 0;
+    let firstError: string | undefined;
+    for (const change of order) {
+      const artist = ops.getArtist(change.id);
+      const reason = !artist ? UNDO_TEXT.artistGone(change.name)
+        : artist.favorite !== expected ? UNDO_TEXT.artistChanged(artist.name) : undefined;
+      if (reason) {
+        failed++; firstError ??= reason;
+        changes.splice(changes.indexOf(change), 1);
+      } else ops.setFavorite(change.id, !expected);
+    }
+    return { total: order.length, failed, firstError };
+  };
+  service.record(GLOBAL_UNDO_SCOPE, {
+    label: changes.length === 1
+      ? (on ? UNDO_TEXT.artistFavoriteOn(changes[0].name) : UNDO_TEXT.artistFavoriteOff(changes[0].name))
+      : UNDO_TEXT.artistFavoriteBulk(changes.length, on),
+    undo: () => apply('undo'), redo: () => apply('redo'),
+  });
+}
+
 /**
  * 작가 한 명의 목록 상태(이미지 순서·태그) 전후 기록 — 되살리기는 통째 지정 메서드(setImageOrder·setTags, 원래 자리 그대로).
  * 실행 직전 지금 값이 기록 결과와 다르면 폐기(D15).
