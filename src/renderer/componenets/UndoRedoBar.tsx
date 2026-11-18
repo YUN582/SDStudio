@@ -299,13 +299,19 @@ export function pickUndoAnchor(): UndoAnchorPick | null {
 
   // 1. 구석 자리 — 그 머리줄(부모)이 보여야 한다(위에 다른 창이 떠 덮으면 건너뜀)
   let corner: HTMLElement | null = null;
+  let cornerTop = Infinity;
   document.querySelectorAll<HTMLElement>(`[${UNDO_CORNER_ATTR}]`).forEach((c) => {
     const header = c.parentElement;
     if (!header) return;
     const r = header.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0 || r.top >= vh || r.bottom <= 0) return;
     if (!anchorExposed(header, r)) return;
-    corner = c;
+    const inline = c.getAttribute(UNDO_CORNER_ATTR) === 'inline';
+    const previousInline = corner?.getAttribute(UNDO_CORNER_ATTR) === 'inline';
+    if (!corner || !inline || (previousInline && r.top < cornerTop)) {
+      corner = c;
+      cornerTop = r.top;
+    }
   });
   const cornerEl = corner as HTMLElement | null;
   if (cornerEl) {

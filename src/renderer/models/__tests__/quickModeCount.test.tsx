@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 
 const queueQuickScene = jest.fn(async () => undefined);
 const run = jest.fn();
+let outputs: string[] = [];
+const fetchImage = jest.fn(async () => 'data:image/png;base64,QUJD');
 const quickScene = { name: 'default', resolution: 'portrait' };
 const quickSession = {
   name: '퀵 생성',
@@ -28,13 +30,13 @@ const taskQueueService = {
 
 jest.mock('..', () => ({
   cyclingSessionService: { state: 'idle' },
-  gameService: { getOutputs: () => [] },
+  gameService: { getOutputs: () => outputs },
   imageService: {
     refresh: jest.fn(async () => undefined),
-    fetchImage: jest.fn(async () => undefined),
+    fetchImage,
     addEventListener: jest.fn(),
     removeEventListener: jest.fn(),
-    getOutputDir: jest.fn(),
+    getOutputDir: () => 'outs/quick/default',
   },
   sessionService: { markDirty: jest.fn() },
   taskQueueService,
@@ -69,7 +71,25 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   appState.samples = 10;
+  outputs = [];
   jest.clearAllMocks();
+});
+
+test('quick image buttons and arrow keys navigate the same list without hijacking input keys', async () => {
+  outputs = ['3.png', '2.png', '1.png'];
+  await act(async () => { root.render(<QuickModeTab />); await Promise.resolve(); });
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/3.png');
+  await act(async () => (host.querySelector('[aria-label="퀵 생성 다음 이미지"]') as HTMLButtonElement).click());
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/2.png');
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/1.png');
+  const calls = fetchImage.mock.calls.length;
+  (host.querySelector('[aria-label="퀵 생성 개수"]') as HTMLInputElement).focus();
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  expect(fetchImage).toHaveBeenCalledTimes(calls);
+  (document.activeElement as HTMLElement).blur();
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/2.png');
 });
 
 afterEach(async () => {

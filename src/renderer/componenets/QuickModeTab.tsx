@@ -17,6 +17,10 @@ import { appState } from '../models/AppService';
 import { queueQuickScene } from '../models/sceneQueueActions';
 import { ContextMenuType, Scene, Session } from '../models/types';
 import { ResolutionPicker } from './ResolutionPicker';
+import { UndoInlineSlot } from './UndoBarSlot';
+import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { isTextEntryFocused } from '../models/keyTargetGuard';
+import { hasOpenContextMenu } from './contextMenuBack';
 
 // 퀵 모드 탭 — NAI 공식 웹풍의 즉시 생성 화면.
 // 중앙에 최신 생성 이미지를 크게 표시하고, 생성 버튼 하나로
@@ -71,6 +75,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
   // 퀵 생성 전용 프로젝트 — 마운트 시 확보(없으면 자동 생성). 로드 전엔 null.
   const [quickSession, setQuickSession] = useState<Session | null>(null);
   const [latestPath, setLatestPath] = useState<string | undefined>(undefined);
+  const [paths, setPaths] = useState<string[]>([]);
   const [image, setImage] = useState<string | undefined>(undefined);
   const [running, setRunning] = useState(taskQueueService.isRunning());
   const [sceneStats, setSceneStats] = useState({ done: 0, total: 0 });
@@ -101,15 +106,14 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
     if (!quickSession) return;
     const scene = quickSession.scenes.get(DEFAULT_SCENE);
     if (!scene) {
+      setPaths([]);
       setLatestPath(undefined);
       return;
     }
     const outputs = gameService.getOutputs(quickSession, scene);
-    setLatestPath(
-      outputs.length
-        ? imageService.getOutputDir(quickSession, scene) + '/' + outputs[0]
-        : undefined,
-    );
+    const next = outputs.map(name => imageService.getOutputDir(quickSession, scene) + '/' + name);
+    setPaths(next);
+    setLatestPath(current => current && next.includes(current) ? current : next[0]);
   }, [quickSession]);
 
   useEffect(() => {
@@ -126,6 +130,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
         d.sceneType === 'scene' &&
         d.sceneName === DEFAULT_SCENE
       ) {
+        setPaths(current => [d.path, ...current.filter(path => path !== d.path)]);
         setLatestPath(d.path);
       }
     };
@@ -148,6 +153,26 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
       taskQueueService.removeEventListener('complete', onComplete);
     };
   }, [quickSession, refreshLatest]);
+
+  const selectedIndex = latestPath ? paths.indexOf(latestPath) : -1;
+  const navigate = useCallback((direction: number) => {
+    setLatestPath(current => {
+      const index = current ? paths.indexOf(current) : -1;
+      return paths[Math.max(0, Math.min(paths.length - 1, index + direction))];
+    });
+  }, [paths]);
+  useEffect(() => {
+    if (!isActive) return;
+    const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
+          isTextEntryFocused() || appState.dialogs?.length || appState.modalOverlayCount || appState.configScreenOpen || hasOpenContextMenu()) return;
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      navigate(event.key === 'ArrowLeft' ? -1 : 1);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [isActive, navigate]);
 
   // 고해상 이미지 로드 (중앙 대형 표시용)
   useEffect(() => {
@@ -372,6 +397,15 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
             프롬프트를 입력하고 아래 버튼으로 바로 생성해보세요
           </div>
         )}
+        {paths.length > 1 && <>
+          <button type="button" aria-label="퀵 생성 이전 이미지" title="이전 이미지 (←)"
+            className="absolute left-3 top-1/2 -translate-y-1/2 round-button back-gray w-9 h-9 disabled:opacity-30"
+            disabled={selectedIndex <= 0} onClick={() => navigate(-1)}><FaChevronLeft size={16} /></button>
+          <button type="button" aria-label="퀵 생성 다음 이미지" title="다음 이미지 (→)"
+            className="absolute right-3 top-1/2 -translate-y-1/2 round-button back-gray w-9 h-9 disabled:opacity-30"
+            disabled={selectedIndex >= paths.length - 1} onClick={() => navigate(1)}><FaChevronRight size={16} /></button>
+          <span className="absolute bottom-3 right-3 px-2 py-1 rounded-md bg-[var(--c-zone)] text-muted text-xs tabular-nums">{selectedIndex + 1} / {paths.length}</span>
+        </>}
         {busy && (
           <div
             className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full border line-color"
@@ -388,7 +422,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
       {(() => {
         const controls = (
           <>
-            <label
+            <div
               className={
                 v2Bar
                   ? 'flex-none flex items-center'
@@ -416,7 +450,8 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
                     : 1;
                 }}
               />
-            </label>
+              <UndoInlineSlot />
+            </div>
         <button
           className={
             (v2Bar

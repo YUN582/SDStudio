@@ -789,6 +789,15 @@ describe('설계 E — 클래식 모바일 프롬프트 편집 창 구석 예외
     expect(bar()!.querySelectorAll('button')).toHaveLength(2);
   });
 
+  test('quick generation count takes priority over the lower main bar regardless of DOM order', () => {
+    const quick = mountCorner(true);
+    quick.parentElement!.getBoundingClientRect = () => rectOf(window.innerHeight - 120, 40);
+    const main = mountCorner(true);
+    main.parentElement!.getBoundingClientRect = () => rectOf(window.innerHeight - 52, 40);
+    render();
+    expect(bar()!.parentElement).toBe(quick);
+  });
+
   test('구석 자리가 보이면 하단 막대보다 우선 — 그 안에 포털, 끌기 손잡이 없음, 사방 테두리, 토스트 변수 없음', () => {
     mountAnchor(window.innerHeight - 52, 52, 'bar');
     const corner = mountCorner();

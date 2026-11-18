@@ -55,5 +55,5 @@ export const UndoCornerSlot = () => (
 
 /** Generation controls reserve an inline seat beside their sample count. */
 export const UndoInlineSlot = () => (
-  <span data-undo-corner="inline" className="ml-2 flex-none inline-flex items-center h-8 min-w-[64px]" />
+  <span data-undo-corner="inline" className="ml-2 flex-none inline-flex items-center h-8" />
 );
