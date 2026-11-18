@@ -20,6 +20,8 @@ import {
   FaMagic,
 } from 'react-icons/fa';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
+import { useLibraryGridSelection } from './LibraryGridSelection';
+import { focusGridSurface } from '../models/gridSelection';
 import { ActionIcon } from './ActionIcon';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
@@ -521,9 +523,9 @@ const ArtistCard = observer(({
   // 계열 보기면 그 계열의 첫 이미지가 대표(없으면 "샘플 없음"), 전체 보기면 대표 썸네일(images[0])
   const shown = imagesFor(artist, familyView);
   const thumb = shown[0];
-  const handleClick = () => { if (multiSelectMode) onToggleSelect(); else onOpen(); };
+  const handleClick = () => { if (isMobile && multiSelectMode) onToggleSelect(); else onOpen(); };
   return (
-    <div className={
+    <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} className={
       'flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border bg-[var(--c-surface-2)] transition-colors ' +
       (selected
         ? 'border-sky-500 ring-2 ring-inset ring-sky-500'
@@ -612,13 +614,14 @@ const AddArtistCard = ({ onClick }: { onClick: () => void }) => (
 // ─── 탭 ───
 type SortKey = 'recent' | 'name' | 'favorite';
 
-const ArtistLibraryTab = observer(() => {
+const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) => {
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('recent');
   const [favOnly, setFavOnly] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [multiSelectMode, setMultiSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mobileSelectMode, setMultiSelectMode] = useState(false);
+  const viewport = useRef<HTMLDivElement>(null);
+  const suppressClick = useRef(false);
   const [mergingDuplicates, setMergingDuplicates] = useState(false);
   const [familyView, setFamilyViewState] = useState<FamilyView>(loadFamilyView);
   const setFamilyView = (v: FamilyView) => {
@@ -634,7 +637,7 @@ const ArtistLibraryTab = observer(() => {
 
   const exitMultiSelect = () => {
     setMultiSelectMode(false);
-    setSelectedIds(new Set());
+    selection.clear();
   };
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -755,6 +758,13 @@ const ArtistLibraryTab = observer(() => {
   });
 
   const total = artistLibraryService.artists.length;
+  const selection = useLibraryGridSelection({
+    desktop: !isMobile, active: isActive, scope: query + '/' + sortBy + '/' + favOnly + '/' + familyView,
+    ids: list.map(artist => artist.id), viewport, suppressClick,
+    cardSelector: '[data-artist-id]', idOf: card => card.dataset.artistId,
+  });
+  const { selectedIds, setSelectedIds } = selection;
+  const multiSelectMode = isMobile ? mobileSelectMode : selectedIds.size > 0;
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--c-surface)] overflow-hidden">
@@ -781,9 +791,9 @@ const ArtistLibraryTab = observer(() => {
           <GridToolbarGroup caption="탐색" separate>
             <LibraryAction label="즐겨찾기" pressed={favOnly} tone={favOnly ? 'orange' : 'gray'}
               icon={<FaHeart />} onClick={() => setFavOnly(v => !v)} />
-            <LibraryAction label={multiSelectMode ? '멀티선택 취소' : '멀티선택'} pressed={multiSelectMode}
+            {(isMobile || multiSelectMode) && <LibraryAction label={isMobile ? (multiSelectMode ? '멀티선택 취소' : '멀티선택') : `선택 해제 (${selectedIds.size})`} pressed={multiSelectMode}
               tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
-              onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />
+              onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />}
             {multiSelectMode && <LibraryAction label={`선택 삭제 (${selectedIds.size})`} tone="red"
               icon={<FaTrash />} disabled={selectedIds.size === 0} onClick={doBulkDelete} />}
           </GridToolbarGroup>
@@ -801,7 +811,10 @@ const ArtistLibraryTab = observer(() => {
       </div>
 
       {/* 본문 */}
-      <div className="flex-1 overflow-auto px-1 pt-1 pb-4">
+      <div ref={viewport} tabIndex={0} aria-label="작가 라이브러리 목록" className="relative select-none outline-none flex-1 overflow-auto px-1 pt-1 pb-4"
+        onMouseDownCapture={e => { if (!isMobile) focusGridSurface(e); selection.onMouseDownCapture(e); }}
+        onClickCapture={selection.onClickCapture}>
+        {selection.overlay}
         {total > 0 && list.length === 0 ? (
           <div className="text-center text-faint py-10">검색 결과가 없습니다.</div>
         ) : (

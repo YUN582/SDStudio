@@ -10,6 +10,8 @@ import {
   FaFileImport,
 } from 'react-icons/fa';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
+import { useLibraryGridSelection } from './LibraryGridSelection';
+import { focusGridSurface } from '../models/gridSelection';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
 import {
@@ -130,6 +132,7 @@ const EasyCard = observer(
     return (
       <div
         data-global-preset-id={entry.id}
+        data-library-selected={selected ? 'true' : 'false'}
         className={
           (reorderClass || '') +
           // 테두리 폭은 항상 border-2 로 고정(선택 시 크기 변화 방지).
@@ -150,7 +153,7 @@ const EasyCard = observer(
           }
           onClick={() => {
             // 실수 클릭 임포트 방지 — 임포트는 호버 시 나타나는 중앙 버튼으로만.
-            if (multiSelectMode) onToggleSelect();
+            if (isMobile && multiSelectMode) onToggleSelect();
           }}
         >
           <GlobalVibeImage
@@ -184,11 +187,11 @@ const EasyCard = observer(
             </div>
           )}
           {/* PC: 호버 시 어두워지는 레이어 (버튼 클릭을 막지 않도록 pointer-events-none) */}
-          {!multiSelectMode && !isMobile && (
+          {!isMobile && (
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 z-10 pointer-events-none" />
           )}
           {/* PC: 중앙 큰 불러오기 버튼 (솔리드 — 어둠 레이어와 무관하게 선명) */}
-          {!multiSelectMode && !isMobile && (
+          {!isMobile && (
             <button
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-lg btn-solid-sky text-base font-semibold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"
               onClick={(e) => {
@@ -201,7 +204,7 @@ const EasyCard = observer(
             </button>
           )}
           {/* PC: 하단 액션 바 (솔리드 색·확대·균등 배치 — 씬 카드 스타일) */}
-          {!multiSelectMode && !isMobile && (
+          {!isMobile && (
             <div className="absolute bottom-0 left-0 right-0 z-20 flex justify-center items-center gap-2 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <Tooltip content={entry.isDefault ? '기본 해제' : '기본으로 지정'}>
                 <button
@@ -420,10 +423,9 @@ const GenRow = observer(
 );
 
 
-export const GlobalPresetTab = observer(() => {
+export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boolean }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [multiSelectMode, setMultiSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [mobileSelectMode, setMultiSelectMode] = useState(false);
   // 통합: 이지/일반 구분 없이 하나의 라이브러리 + 검색/정렬
   const [query, setQuery] = useState('');
   const [sortBy, setSort] = useState<GlobalPresetSortBy>(() => {
@@ -473,7 +475,7 @@ export const GlobalPresetTab = observer(() => {
 
   const exitMultiSelect = () => {
     setMultiSelectMode(false);
-    setSelectedIds(new Set());
+    selection.clear();
   };
 
   const handleFiles = async (files: FileList) => {
@@ -681,8 +683,15 @@ export const GlobalPresetTab = observer(() => {
   const q = query.trim().toLowerCase();
   // 검색·정렬 규칙 단일 출처 — 공용 고르기 창(GlobalPresetPicker)과 같다
   const visible = filterSortGlobalPresets(allPresets, query, sortBy);
+  const selection = useLibraryGridSelection({
+    desktop: !isMobile, active: isActive, scope: query + '/' + sortBy,
+    ids: visible.map(entry => entry.id), viewport, suppressClick,
+    cardSelector: '[data-global-preset-id]', idOf: card => card.dataset.globalPresetId,
+  });
+  const { selectedIds, setSelectedIds } = selection;
+  const multiSelectMode = isMobile ? mobileSelectMode : selectedIds.size > 0;
   const reorder = useGridReorder<string>({
-    enabled: !isMobile, scope: query + '/' + sortBy, viewport, suppressClick,
+    enabled: !isMobile && isActive, scope: query + '/' + sortBy, viewport, suppressClick,
     cardSelector: '[data-global-preset-id]',
     resolve: card => card.dataset.globalPresetId,
     selected: id => selectedIds.has(id) ? visible.filter(p => selectedIds.has(p.id)).map(p => p.id) : [id],
@@ -717,11 +726,11 @@ export const GlobalPresetTab = observer(() => {
             <LibraryAction label="백업" hint="글로벌 프리셋 전체 백업" icon={<FaFileArchive />} onClick={() => appState.globalPresetBackupExport()} />
             <LibraryAction label="백업 불러오기" icon={<FaFileImport />} onClick={() => appState.globalPresetBackupImport()} />
           </GridToolbarGroup>
-          <GridToolbarGroup caption="선택" separate>
-            <LibraryAction label={multiSelectMode ? '멀티선택 취소' : '멀티선택'} pressed={multiSelectMode}
+          {(isMobile || multiSelectMode) && <GridToolbarGroup caption="선택" separate>
+            <LibraryAction label={isMobile ? (multiSelectMode ? '멀티선택 취소' : '멀티선택') : `선택 해제 (${selectedIds.size})`} pressed={multiSelectMode}
               tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
               onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />
-          </GridToolbarGroup>
+          </GridToolbarGroup>}
         </LibraryToolbar>
         {multiSelectMode && (
           <div className="flex items-center gap-1.5">
@@ -744,11 +753,11 @@ export const GlobalPresetTab = observer(() => {
         />
       </div>
       {/* 본문 */}
-      <div ref={viewport} className={isMobile ? 'flex-1 overflow-auto px-3 pt-1 pb-3' : 'flex-1 overflow-auto px-1 pt-1 pb-6'}
-        onMouseDownCapture={e => { suppressClick.current = false; reorder.start(e); }}
-        onClickCapture={e => {
-          if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false; }
-        }}>
+      <div ref={viewport} tabIndex={0} aria-label="글로벌 프리셋 목록"
+        className={'relative select-none outline-none ' + (isMobile ? 'flex-1 overflow-auto px-3 pt-1 pb-3' : 'flex-1 overflow-auto px-1 pt-1 pb-6')}
+        onMouseDownCapture={e => { if (!isMobile) focusGridSurface(e); if (!selection.onMouseDownCapture(e)) reorder.start(e); }}
+        onClickCapture={selection.onClickCapture}>
+        {selection.overlay}
         {reorder.drag && <ReorderDragPreview type="global-preset" drag={reorder.drag} />}
         {/* 통합 카드 그리드 (이지/일반 구분 없음) */}
         {total > 0 && visible.length === 0 && (

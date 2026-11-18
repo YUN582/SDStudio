@@ -604,7 +604,7 @@ export const App = observer(() => {
     },
     {
       label: '글로벌 프리셋',
-      content: <GlobalPresetTab />,
+      content: (isActive: boolean) => <GlobalPresetTab isActive={isActive} />,
       emoji: <ActionIcon id="global-presets" />,
       banToggle: true,
       onClick: () => {
@@ -613,7 +613,7 @@ export const App = observer(() => {
     },
     {
       label: '작가 라이브러리',
-      content: <ArtistLibraryTab />,
+      content: (isActive: boolean) => <ArtistLibraryTab isActive={isActive} />,
       emoji: <FaPalette />,
       banToggle: true,
       onClick: () => {

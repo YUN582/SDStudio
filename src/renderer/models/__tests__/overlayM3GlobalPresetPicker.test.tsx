@@ -45,6 +45,7 @@ jest.mock('../index', () => ({
   sessionService: {},
 }));
 const mockAppState: any = {
+  dialogs: [],
   globalPresetPicker: undefined,
   closeGlobalPresetPicker: jest.fn(),
   pushMessage: jest.fn(),
