@@ -564,6 +564,10 @@ export class AndroidBackend extends Backend {
     }
   }
 
+  async startFileDrag(_path: string): Promise<void> {
+    // OS-native file dragging is a desktop interaction.
+  }
+
   async publishExport(arg: string): Promise<void> {
     const normalized = arg.replace(/\\/g, '/').replace(/^\/+/, '');
     if (!normalized.startsWith('exports/') || normalized.includes('../')) {

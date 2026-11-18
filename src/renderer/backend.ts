@@ -87,6 +87,8 @@ export abstract class Backend {
   abstract writeTokenProfileData(data: string): Promise<void>;
   abstract encodeVibeImage(arg: EncodeVibeImageInput): Promise<string>;
   abstract showFile(arg: string): Promise<void>;
+  /** Start an OS-native drag for a file in the app data root. Desktop only. */
+  abstract startFileDrag(path: string): Promise<void>;
   // 앱 내부 exports/에 완성된 사용자 내보내기 산출물을 OS 다운로드 폴더로
   // 옮긴 뒤 표시한다. 생성 원본을 다루는 showFile/copyToDownloads와 분리해
   // 성공 후 내부 스테이징 사본을 안전하게 정리할 수 있게 한다.

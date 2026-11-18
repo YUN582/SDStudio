@@ -31,6 +31,7 @@ import {
 import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
+import { resolveNativeFileDragPath } from './nativeFileDrag';
 import { v4 as uuidv4 } from 'uuid';
 const sharp = require('sharp');
 // 대량 병렬 변환 최적화: 각 sharp 연산이 libvips 스레드를 코어 수만큼 점유하면,
@@ -651,6 +652,25 @@ ipcMain.handle('show-file', async (event, arg) => {
   // 절대경로(목표 폴더 export 결과)면 그대로, 아니면 APP_DIR 기준 상대경로로 해석.
   const filePath = path.resolve(APP_DIR, arg);
   shell.showItemInFolder(filePath);
+});
+
+ipcMain.handle('start-file-drag', (event, arg) => {
+  const file = resolveNativeFileDragPath(APP_DIR, arg);
+  const image = nativeImage.createFromPath(file);
+  if (image.isEmpty()) {
+    throw new Error('드래그할 이미지를 읽지 못했습니다.');
+  }
+  const size = image.getSize();
+  const scale = Math.min(1, 64 / size.width, 64 / size.height);
+  const icon =
+    scale < 1
+      ? image.resize({
+          width: Math.max(1, Math.round(size.width * scale)),
+          height: Math.max(1, Math.round(size.height * scale)),
+          quality: 'good',
+        })
+      : image;
+  event.sender.startDrag({ file, icon });
 });
 
 // 폴더를 OS 파일 탐색기로 연다(내용물 표시 — show-file 은 부모에서 선택만 함).

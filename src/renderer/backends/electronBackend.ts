@@ -243,6 +243,10 @@ export class ElectornBackend extends Backend {
     await invoke('show-file', arg);
   }
 
+  async startFileDrag(path: string): Promise<void> {
+    await invoke('start-file-drag', path);
+  }
+
   async publishExport(arg: string): Promise<void> {
     await invoke('publish-export', arg);
   }

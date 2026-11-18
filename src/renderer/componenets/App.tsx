@@ -479,6 +479,10 @@ export const App = observer(() => {
 
     const handleDragEnter = (event: any) => {
       event.preventDefault();
+      if (
+        document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
+      )
+        return;
       dragCounter.current++;
       if (dragCounter.current === 1) {
         // 모달 오버레이가 열려 있으면 메타데이터 드래그 안내를 표시하지 않음
@@ -492,11 +496,21 @@ export const App = observer(() => {
 
     const handleDragOver = (event: any) => {
       event.preventDefault();
+      if (
+        document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
+      ) {
+        event.dataTransfer.dropEffect = 'none';
+        return;
+      }
       event.dataTransfer.dropEffect = 'move';
     };
 
     const handleDragLeave = (event: any) => {
       event.preventDefault();
+      if (
+        document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
+      )
+        return;
       dragCounter.current--;
       if (dragCounter.current <= 0) {
         dragCounter.current = 0;
@@ -509,6 +523,10 @@ export const App = observer(() => {
       event.stopPropagation();
       dragCounter.current = 0;
       setDragOverlay(null);
+      if (
+        document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
+      )
+        return;
       // 모달 오버레이가 열려 있으면 메타데이터 처리도 차단
       if (appState.modalOverlayCount > 0) return;
       const file = event.dataTransfer.files[0];

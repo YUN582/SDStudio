@@ -30,6 +30,7 @@ export type Channels =
   | 'close'
   | 'restart-app'
   | 'show-file'
+  | 'start-file-drag'
   | 'publish-export'
   | 'save-export-to-downloads'
   | 'drive-auth-status'

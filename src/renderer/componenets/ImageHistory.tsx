@@ -139,10 +139,35 @@ const HistoryImageCell = observer(
     }, [entry.path]);
 
     const isFav = !!scene && scene.mains.includes(entry.filename);
+    const finishFileDrag = () => {
+      delete document.documentElement.dataset.sdstudioHistoryFileDrag;
+    };
 
     return (
       <div
-        className="flex flex-col cursor-pointer select-none hover:brightness-95 active:brightness-90"
+        className={
+          'flex flex-col select-none hover:brightness-95 active:brightness-90 ' +
+          (isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing')
+        }
+        draggable={!isMobile}
+        onDragStart={(event) => {
+          if (isMobile) {
+            event.preventDefault();
+            return;
+          }
+          event.preventDefault();
+          document.documentElement.dataset.sdstudioHistoryFileDrag = 'true';
+          void backend
+            .startFileDrag(entry.path)
+            .catch(() =>
+              appState.pushMessage(
+                '이미지 파일을 드래그하지 못했습니다.',
+                'error',
+              ),
+            )
+            .finally(finishFileDrag);
+        }}
+        onDragEnd={finishFileDrag}
         onClick={onClick}
         onContextMenu={(e) => {
           show({
