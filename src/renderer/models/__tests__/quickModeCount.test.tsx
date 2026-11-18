@@ -5,6 +5,7 @@ const queueQuickScene = jest.fn(async () => undefined);
 const run = jest.fn();
 let outputs: string[] = [];
 const fetchImage = jest.fn(async () => 'data:image/png;base64,QUJD');
+const imageEvents = new EventTarget();
 const quickScene = { name: 'default', resolution: 'portrait' };
 const quickSession = {
   name: '퀵 생성',
@@ -15,6 +16,11 @@ const appState = {
   curSession: currentSession,
   samples: 10,
   mobileV2QuickBar: false,
+  dialogs: [],
+  floatViewCount: 0,
+  undoFloatViewCount: 0,
+  imageGridFocusable: false,
+  resultViewerOpen: false,
   pushMessage: jest.fn(),
 };
 const taskQueueService = {
@@ -29,13 +35,14 @@ const taskQueueService = {
 };
 
 jest.mock('..', () => ({
+  isMobile: true,
   cyclingSessionService: { state: 'idle' },
   gameService: { getOutputs: () => outputs },
   imageService: {
     refresh: jest.fn(async () => undefined),
     fetchImage,
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
+    addEventListener: jest.fn((...args: Parameters<EventTarget['addEventListener']>) => imageEvents.addEventListener(...args)),
+    removeEventListener: jest.fn((...args: Parameters<EventTarget['removeEventListener']>) => imageEvents.removeEventListener(...args)),
     getOutputDir: () => 'outs/quick/default',
   },
   sessionService: { markDirty: jest.fn() },
@@ -61,38 +68,81 @@ jest.mock('../../componenets/ResolutionPicker', () => ({
 }));
 
 import QuickModeTab from '../../componenets/QuickModeTab';
+import { KeyboardShortcutService } from '../KeyboardShortcutService';
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
+let shortcuts: KeyboardShortcutService;
 
 beforeEach(() => {
   (global as any).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
+  shortcuts = new KeyboardShortcutService();
+  shortcuts.install();
   appState.samples = 10;
+  appState.floatViewCount = 0;
   outputs = [];
   jest.clearAllMocks();
 });
 
-test('quick image buttons and arrow keys navigate the same list without hijacking input keys', async () => {
-  outputs = ['3.png', '2.png', '1.png'];
+test('quick navigation works with global shortcuts installed, from older to newer, without hijacking inputs', async () => {
+  outputs = ['2.png', '3.png', '1.png'];
   await act(async () => { root.render(<QuickModeTab />); await Promise.resolve(); });
   expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/3.png');
-  await act(async () => (host.querySelector('[aria-label="퀵 생성 다음 이미지"]') as HTMLButtonElement).click());
+  expect((host.querySelector('[aria-label="퀵 생성 다음 이미지"]') as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => (host.querySelector('[aria-label="퀵 생성 이전 이미지"]') as HTMLButtonElement).click());
   expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/2.png');
-  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })));
   expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/1.png');
   const calls = fetchImage.mock.calls.length;
   (host.querySelector('[aria-label="퀵 생성 개수"]') as HTMLInputElement).focus();
-  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
   expect(fetchImage).toHaveBeenCalledTimes(calls);
   (document.activeElement as HTMLElement).blur();
-  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
   expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/2.png');
 });
 
+test('newly generated images append on the right and refresh preserves the current image', async () => {
+  outputs = ['3.png', '2.png', '1.png'];
+  await act(async () => { root.render(<QuickModeTab />); await Promise.resolve(); });
+  outputs = ['4.png', ...outputs];
+  await act(async () => imageEvents.dispatchEvent(new CustomEvent('image-added', { detail: {
+    session: quickSession, sceneType: 'scene', sceneName: 'default', path: 'outs/quick/default/4.png',
+  } })));
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/4.png');
+  expect((host.querySelector('[aria-label="퀵 생성 다음 이미지"]') as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })));
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/3.png');
+  await act(async () => imageEvents.dispatchEvent(new Event('updated')));
+  const calls = fetchImage.mock.calls.length;
+  appState.floatViewCount = 1;
+  await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })));
+  expect(fetchImage).toHaveBeenCalledTimes(calls);
+  appState.floatViewCount = 0;
+  await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+  expect(fetchImage).toHaveBeenLastCalledWith('outs/quick/default/4.png');
+});
+
+test('inactive quick tab does not consume the scene navigation keys', async () => {
+  outputs = ['2.png', '1.png'];
+  await act(async () => { root.render(<QuickModeTab isActive={false} />); await Promise.resolve(); });
+  const action = jest.fn();
+  window.addEventListener('shortcut-action', action);
+  const calls = fetchImage.mock.calls.length;
+  try {
+    await act(async () => host.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })));
+    expect(fetchImage).toHaveBeenCalledTimes(calls);
+    expect(action.mock.calls[0][0].detail.action).toBe('scene-left');
+  } finally {
+    window.removeEventListener('shortcut-action', action);
+  }
+});
+
 afterEach(async () => {
+  shortcuts.uninstall();
   await act(async () => root.unmount());
   host.remove();
 });

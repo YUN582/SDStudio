@@ -313,6 +313,10 @@ export class KeyboardShortcutService {
       const action = this.getActionDef(actionId);
       if (!action) continue;
       if (!isShortcutActionActive(action, gate)) continue;
+      // The quick browser handles arrows itself. Do not consume them as scene
+      // navigation in the global capture listener before its handler can run.
+      if (action.category === 'scene' && (normalized === 'ArrowLeft' || normalized === 'ArrowRight') &&
+          document.querySelector('[data-quick-image-navigation="true"]')) continue;
 
       // 첫 번째로 조건을 통과한 액션 실행
       e.preventDefault();

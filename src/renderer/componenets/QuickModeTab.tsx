@@ -110,10 +110,13 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
       setLatestPath(undefined);
       return;
     }
-    const outputs = gameService.getOutputs(quickSession, scene);
+    // Generated filenames carry their timestamp. Keep this browser chronological,
+    // independent of the scene's manual/gallery order: newest is on the right.
+    const outputs = [...gameService.getOutputs(quickSession, scene)].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     const next = outputs.map(name => imageService.getOutputDir(quickSession, scene) + '/' + name);
     setPaths(next);
-    setLatestPath(current => current && next.includes(current) ? current : next[0]);
+    setLatestPath(current => current && next.includes(current) ? current : next[next.length - 1]);
   }, [quickSession]);
 
   useEffect(() => {
@@ -130,7 +133,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
         d.sceneType === 'scene' &&
         d.sceneName === DEFAULT_SCENE
       ) {
-        setPaths(current => [d.path, ...current.filter(path => path !== d.path)]);
+        setPaths(current => [...current.filter(path => path !== d.path), d.path]);
         setLatestPath(d.path);
       }
     };
@@ -165,7 +168,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
     if (!isActive) return;
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
-          isTextEntryFocused() || appState.dialogs?.length || appState.modalOverlayCount || appState.configScreenOpen || hasOpenContextMenu()) return;
+          isTextEntryFocused() || appState.dialogs?.length || appState.modalOverlayCount || appState.floatViewCount || appState.configScreenOpen || hasOpenContextMenu()) return;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       navigate(event.key === 'ArrowLeft' ? -1 : 1);
@@ -378,7 +381,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
   };
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-full w-full flex flex-col" data-quick-image-navigation={isActive ? 'true' : undefined}>
       {/* 중앙 대형 이미지 — 클릭 무동작, 우클릭/롱프레스로 메뉴 */}
       <div
         className="flex-1 min-h-0 relative flex items-center justify-center p-2"
