@@ -216,6 +216,15 @@ export class GlobalPresetService extends EventTarget {
     return this.presets.slice();
   }
 
+  @action
+  reorder(ids: readonly string[]): void {
+    const current = new Map(this.presets.map(entry => [entry.id, entry]));
+    if (ids.length !== current.size || new Set(ids).size !== ids.length || ids.some(id => !current.has(id))) return;
+    this.presets = ids.map(id => current.get(id)!);
+    this.scheduleSave();
+    this.dispatchEvent(new CustomEvent('changed', {}));
+  }
+
   get(id: string): IGlobalPresetEntry | undefined {
     return this.presets.find((p) => p.id === id);
   }

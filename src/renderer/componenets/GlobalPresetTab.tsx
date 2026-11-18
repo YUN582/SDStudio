@@ -9,6 +9,7 @@ import {
   FaFileArchive,
   FaFileImport,
 } from 'react-icons/fa';
+import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { ListSearchBar } from './ListSearchBar';
 import { ActionIcon } from './ActionIcon';
 import {
@@ -32,7 +33,7 @@ import {
 } from '../models/deleteFlowRules';
 import Tooltip from './Tooltip';
 import { PresetEditModal } from './PresetEditModal';
-import { filterSortGlobalPresets, GlobalPresetSortBy } from '../models/globalPresetListView';
+import { filterSortGlobalPresets, reorderGlobalPresetIds, GlobalPresetSortBy } from '../models/globalPresetListView';
 import { GlobalPresetPicker } from './GlobalPresetPicker';
 import { beginPresetListRecord } from '../models/presetUndo';
 import { UNDO_TEXT } from '../models/undoService';
@@ -96,6 +97,7 @@ export const GlobalVibeImage = observer(
 
 interface EasyCardProps {
   entry: IGlobalPresetEntry;
+  reorderClass?: string;
   selected: boolean;
   multiSelectMode: boolean;
   onToggleSelect: () => void;
@@ -110,6 +112,7 @@ interface EasyCardProps {
 const EasyCard = observer(
   ({
     entry,
+    reorderClass,
     selected,
     multiSelectMode,
     onToggleSelect,
@@ -126,7 +129,9 @@ const EasyCard = observer(
     // 데스크탑에선 기존대로 이미지 탭 = 불러오기, 호버 시 버튼 노출
     return (
       <div
+        data-global-preset-id={entry.id}
         className={
+          (reorderClass || '') +
           // 테두리 폭은 항상 border-2 로 고정(선택 시 크기 변화 방지).
           // 선택 강조는 레이아웃에 영향 없는 안쪽 ring(ring-inset)으로 표현.
           // 모바일은 한 줄에 2개(50%-half gap), 데스크톱은 고정폭.
@@ -421,7 +426,16 @@ export const GlobalPresetTab = observer(() => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // 통합: 이지/일반 구분 없이 하나의 라이브러리 + 검색/정렬
   const [query, setQuery] = useState('');
-  const [sortBy, setSortBy] = useState<GlobalPresetSortBy>('recent');
+  const [sortBy, setSort] = useState<GlobalPresetSortBy>(() => {
+    const saved = localStorage.getItem('global-preset-sort');
+    return saved === 'manual' || saved === 'name' || saved === 'default' ? saved : 'recent';
+  });
+  const setSortBy = (sort: GlobalPresetSortBy) => {
+    setSort(sort);
+    localStorage.setItem('global-preset-sort', sort);
+  };
+  const viewport = useRef<HTMLDivElement>(null);
+  const suppressClick = useRef(false);
   const [editing, setEditing] = useState<IGlobalPresetEntry | null>(null);
 
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
@@ -647,6 +661,19 @@ export const GlobalPresetTab = observer(() => {
   const q = query.trim().toLowerCase();
   // 검색·정렬 규칙 단일 출처 — 공용 고르기 창(GlobalPresetPicker)과 같다
   const visible = filterSortGlobalPresets(allPresets, query, sortBy);
+  const reorder = useGridReorder<string>({
+    enabled: !isMobile, scope: query + '/' + sortBy, viewport, suppressClick,
+    cardSelector: '[data-global-preset-id]',
+    resolve: card => card.dataset.globalPresetId,
+    selected: id => selectedIds.has(id) ? visible.filter(p => selectedIds.has(p.id)).map(p => p.id) : [id],
+    commit: (dragged, target, group) => {
+      const order = filterSortGlobalPresets(globalPresetService.list(), '', sortBy).map(p => p.id);
+      const next = reorderGlobalPresetIds(order, visible.map(p => p.id), group, dragged, target);
+      if (!next) return;
+      globalPresetService.reorder(next);
+      setSortBy('manual');
+    },
+  });
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--c-surface)]">
@@ -692,6 +719,7 @@ export const GlobalPresetTab = observer(() => {
             <select aria-label="프리셋 정렬" value={sortBy}
               onChange={e => setSortBy(e.target.value as GlobalPresetSortBy)}
               className="ml-auto h-8 px-1.5 text-sm rounded border line-color bg-[var(--c-input-bg)] text-default">
+              <option value="manual">사용자 지정순</option>
               <option value="recent">최근 수정순</option>
               <option value="name">이름순</option>
               <option value="default">기본 우선</option>
@@ -718,7 +746,12 @@ export const GlobalPresetTab = observer(() => {
           />
         </div>
       {/* 본문 */}
-      <div className={isMobile ? 'flex-1 overflow-auto p-3' : 'flex-1 overflow-auto p-6'}>
+      <div ref={viewport} className={isMobile ? 'flex-1 overflow-auto p-3' : 'flex-1 overflow-auto p-6'}
+        onMouseDownCapture={e => { suppressClick.current = false; reorder.start(e); }}
+        onClickCapture={e => {
+          if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false; }
+        }}>
+        {reorder.drag && <ReorderDragPreview type="global-preset" drag={reorder.drag} />}
         {/* 통합 카드 그리드 (이지/일반 구분 없음) */}
         {total > 0 && visible.length === 0 && (
           <div className="text-center text-muted py-10">
@@ -731,6 +764,8 @@ export const GlobalPresetTab = observer(() => {
               <EasyCard
                 key={entry.id}
                 entry={entry}
+                reorderClass={reorder.drag?.items.includes(entry.id) ? 'opacity-30 no-touch ' :
+                  reorder.drag?.target === entry.id ? 'ring-2 ring-sky-500 ' : undefined}
                 selected={selectedIds.has(entry.id)}
                 multiSelectMode={multiSelectMode}
                 onToggleSelect={() => toggleSelect(entry.id)}

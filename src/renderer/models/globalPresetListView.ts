@@ -6,7 +6,7 @@
 
 import { compareNames, matchesQuery } from './listSearch';
 
-export type GlobalPresetSortBy = 'recent' | 'name' | 'default';
+export type GlobalPresetSortBy = 'manual' | 'recent' | 'name' | 'default';
 
 /**
  * 이름 검색(앞뒤 공백 제거·대소문자 무시 부분 일치) 후 정렬한 새 배열을 돌려준다(원본 불변).
@@ -18,6 +18,7 @@ export function filterSortGlobalPresets<
   T extends { name: string; isDefault?: boolean; updatedAt?: number },
 >(list: readonly T[], query: string, sortBy: GlobalPresetSortBy): T[] {
   const visible = list.filter((p) => matchesQuery(p.name, query));
+  if (sortBy === 'manual') return visible;
   return visible.sort((a, b) => {
     if (sortBy === 'name') return compareNames(a.name, b.name);
     if (sortBy === 'default')
@@ -27,4 +28,19 @@ export function filterSortGlobalPresets<
       );
     return (b.updatedAt || 0) - (a.updatedAt || 0); // recent
   });
+}
+
+// Reorder the visible slots only. A filtered-out preset keeps its place.
+export function reorderGlobalPresetIds(
+  order: readonly string[], visible: readonly string[], group: readonly string[],
+  dragged: string, target: string,
+): string[] | undefined {
+  const from = visible.indexOf(dragged), to = visible.indexOf(target);
+  const moving = new Set(group);
+  if (from < 0 || to < 0 || !moving.has(dragged) || moving.has(target)) return;
+  const slots = new Set(visible);
+  const remaining = visible.filter(id => !moving.has(id));
+  remaining.splice(remaining.indexOf(target) + (from < to ? 1 : 0), 0, ...visible.filter(id => moving.has(id)));
+  let index = 0;
+  return order.map(id => slots.has(id) ? remaining[index++] : id);
 }

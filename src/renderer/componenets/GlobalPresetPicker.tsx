@@ -32,6 +32,7 @@ export interface GlobalPresetPickerProps {
 }
 
 const SORT_OPTIONS: { value: GlobalPresetSortBy; label: string }[] = [
+  { value: 'manual', label: '사용자 지정순' },
   { value: 'default', label: '기본 우선' },
   { value: 'recent', label: '최근' },
   { value: 'name', label: '이름' },
