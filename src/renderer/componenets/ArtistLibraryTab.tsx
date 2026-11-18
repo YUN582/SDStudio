@@ -4,7 +4,6 @@ import { observer } from 'mobx-react-lite';
 import { Buffer } from 'buffer';
 import {
   FaPlus,
-  FaSearch,
   FaHeart,
   FaRegHeart,
   FaCopy,
@@ -20,6 +19,7 @@ import {
   FaCompressArrowsAlt,
   FaMagic,
 } from 'react-icons/fa';
+import { ListSearchBar } from './ListSearchBar';
 import { ActionIcon } from './ActionIcon';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
@@ -758,19 +758,19 @@ const ArtistLibraryTab = observer(() => {
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--c-surface)] overflow-hidden">
-      {/* 툴바 */}
-      <div className="flex-none p-3 border-b line-color flex flex-wrap gap-2 items-center bg-[var(--c-surface)]">
-        <div className="relative flex-1 min-w-[180px]">
-          <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" size={13} />
-          <input className="w-full pl-9 pr-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-sm text-default focus:outline-none focus:ring-2 focus:ring-sky-400"
-            placeholder="작가 이름 · 태그로 검색…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <select className="gray-input text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
+      <div className="flex-none px-2 py-1.5 border-b line-color flex flex-col gap-1.5">
+        <ListSearchBar clearable query={query} onQueryChange={setQuery} placeholder="작가 이름 · 태그 검색"
+          shown={list.length} total={total} />
+        <div className="flex flex-wrap items-center gap-1.5">
+        <button className="round-button back-sky px-3 h-8 text-sm flex items-center gap-1" onClick={newArtist}>
+          <FaPlus size={12} /> 새 작가
+        </button>
+        <select aria-label="작가 정렬" className="gray-input h-8 text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
           <option value="recent">최근순</option>
           <option value="name">이름순</option>
           <option value="favorite">즐겨찾기 우선</option>
         </select>
-        <button className={'round-button px-3 py-2 text-sm ' + (favOnly ? 'back-orange' : 'back-gray')} onClick={() => setFavOnly((v) => !v)}>
+        <button className={'round-button px-3 h-8 text-sm ' + (favOnly ? 'back-orange' : 'back-gray')} aria-pressed={favOnly} onClick={() => setFavOnly((v) => !v)}>
           <FaHeart className="inline mr-1" size={12} />즐겨찾기
         </button>
         {/* 모델 계열 보기: 카드의 대표 이미지·장수가 그 계열 샘플 기준이 된다 */}
@@ -778,7 +778,7 @@ const ArtistLibraryTab = observer(() => {
           {(['all', 'v4_5', 'v5'] as FamilyView[]).map((v) => (
             <button
               key={v}
-              className={'px-3 py-2 ' + (familyView === v ? 'back-sky' : 'back-gray')}
+              className={'px-3 h-8 ' + (familyView === v ? 'back-sky' : 'back-gray')}
               onClick={() => setFamilyView(v)}
               aria-pressed={familyView === v}
             >
@@ -786,12 +786,9 @@ const ArtistLibraryTab = observer(() => {
             </button>
           ))}
         </div>
-        <button className="round-button back-sky px-4 py-2 text-sm flex items-center gap-1" onClick={newArtist}>
-          <FaPlus size={12} /> 새 작가
-        </button>
         <Tooltip content="동일한 이름의 기존 작가 카드를 일괄 병합">
           <button
-            className="round-button back-gray px-3 py-2 text-sm flex items-center gap-1 disabled:opacity-50"
+            className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1 disabled:opacity-50"
             disabled={mergingDuplicates}
             onClick={mergeDuplicates}
           >
@@ -799,33 +796,34 @@ const ArtistLibraryTab = observer(() => {
           </button>
         </Tooltip>
         <Tooltip content="작가 라이브러리 전체 백업">
-          <button className="round-button back-gray px-3 py-2 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupExport()}>
+          <button className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupExport()}>
             <FaFileArchive size={13} /> 백업
           </button>
         </Tooltip>
         <Tooltip content="백업 파일 불러오기 (동명 처리 선택)">
-          <button className="round-button back-gray px-3 py-2 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupImport()}>
+          <button className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupImport()}>
             <FaFileImport size={13} /> 백업 불러오기
           </button>
         </Tooltip>
         {!multiSelectMode ? (
-          <button className="round-button back-gray px-3 py-2 text-sm" onClick={() => setMultiSelectMode(true)}>
+          <button className="round-button back-gray px-3 h-8 text-sm" onClick={() => setMultiSelectMode(true)}>
             멀티선택
           </button>
         ) : (
           <>
             <button
-              className="round-button btn-solid-red px-3 py-2 text-sm flex items-center gap-1 disabled:opacity-50"
+              className="round-button btn-solid-red px-3 h-8 text-sm flex items-center gap-1 disabled:opacity-50"
               disabled={selectedIds.size === 0}
               onClick={doBulkDelete}
             >
               <FaTrash size={12} /> 선택 삭제 ({selectedIds.size})
             </button>
-            <button className="round-button back-gray px-3 py-2 text-sm" onClick={exitMultiSelect}>
+            <button className="round-button back-gray px-3 h-8 text-sm" onClick={exitMultiSelect}>
               취소
             </button>
           </>
         )}
+      </div>
       </div>
 
       {/* 본문 */}

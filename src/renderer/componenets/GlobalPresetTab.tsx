@@ -9,10 +9,12 @@ import {
   FaFileArchive,
   FaFileImport,
 } from 'react-icons/fa';
+import { ListSearchBar } from './ListSearchBar';
 import { ActionIcon } from './ActionIcon';
 import {
   backend,
   globalPresetService,
+  workFlowService,
   imageService,
   isMobile,
 } from '../models';
@@ -422,6 +424,8 @@ export const GlobalPresetTab = observer(() => {
   const [sortBy, setSortBy] = useState<GlobalPresetSortBy>('recent');
   const [editing, setEditing] = useState<IGlobalPresetEntry | null>(null);
 
+  const [draft, setDraft] = useState<Record<string, any> | null>(null);
+  const newPreset = () => setDraft(workFlowService.buildPreset('SDImageGen').toJSON());
   const allPresets = globalPresetService.list();
 
   const toggleSelect = (id: string) => {
@@ -646,33 +650,35 @@ export const GlobalPresetTab = observer(() => {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--c-surface)]">
-      {/* 상단 툴바 — 모바일(2026-09-27, 클래식·V2 공통): PC 의 text-base·px-4 버튼이 3~4줄로 늘어져 머리가 약 350px 를 차지하던 것을
-          2줄(멀티선택 중 3줄)·h-8 로 압축. 기능·핸들러는 PC 와 같다. PC 마크업은 아래 그대로. */}
-      {isMobile && (
-        <div className="flex-none px-2 py-1.5 border-b line-color flex flex-col gap-1.5 bg-[var(--c-surface)]" data-gp-mobile-toolbar="">
-          <div className="flex items-center gap-1.5">
+      <div className="flex-none px-2 py-1.5 border-b line-color flex flex-col gap-1.5" data-gp-mobile-toolbar={isMobile ? '' : undefined}>
+          <ListSearchBar clearable query={query} onQueryChange={setQuery} placeholder="프리셋 이름 검색"
+            shown={visible.length} total={total} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" className="round-button back-sky h-8 px-3 text-sm flex items-center gap-1.5" onClick={newPreset}>
+              <ActionIcon id="add-scene" size={14} /> 새 프리셋
+            </button>
             <button
               type="button"
-              className="round-button back-sky h-8 px-3 text-sm flex items-center gap-1.5"
+              className="round-button back-gray h-8 px-3 text-sm flex items-center gap-1.5"
               onClick={() => fileInputRef.current?.click()}
             >
               <ActionIcon id="import" size={14} />
               <span>PNG 불러오기</span>
             </button>
             <Tooltip content="글로벌 프리셋 전체를 tar 파일로 백업">
-              <button type="button" className="round-button back-gray h-8 w-9 min-w-0 px-0 flex items-center justify-center" aria-label="백업" onClick={() => appState.globalPresetBackupExport()}>
-                <FaFileArchive size={14} />
+              <button type="button" className="round-button back-gray h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm" aria-label="백업" onClick={() => appState.globalPresetBackupExport()}>
+                <FaFileArchive size={14} /> <span className="hidden md:inline">백업</span>
               </button>
             </Tooltip>
             <Tooltip content="백업 파일에서 글로벌 프리셋 불러오기 (동명 처리 선택)">
-              <button type="button" className="round-button back-gray h-8 w-9 min-w-0 px-0 flex items-center justify-center" aria-label="백업 불러오기" onClick={() => appState.globalPresetBackupImport()}>
-                <FaFileImport size={14} />
+              <button type="button" className="round-button back-gray h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm" aria-label="백업 불러오기" onClick={() => appState.globalPresetBackupImport()}>
+                <FaFileImport size={14} /> <span className="hidden md:inline">백업 불러오기</span>
               </button>
             </Tooltip>
             <Tooltip content={multiSelectMode ? '멀티선택 취소' : '멀티선택 모드'}>
               <button
                 type="button"
-                className={`round-button h-8 w-9 min-w-0 px-0 flex items-center justify-center ${multiSelectMode ? 'back-orange' : 'back-gray'}`}
+                className={`round-button h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm ${multiSelectMode ? 'back-orange' : 'back-gray'}`}
                 aria-pressed={multiSelectMode}
                 aria-label="멀티선택 모드"
                 onClick={() => {
@@ -680,26 +686,12 @@ export const GlobalPresetTab = observer(() => {
                   else setMultiSelectMode(true);
                 }}
               >
-                <FaCheckSquare size={14} />
+                <FaCheckSquare size={14} /> <span className="hidden md:inline">멀티선택</span>
               </button>
             </Tooltip>
-            <div className="ml-auto text-xs text-muted whitespace-nowrap">
-              {multiSelectMode ? `${selectedIds.size}개 선택` : q ? `${visible.length} / ${total}개` : `총 ${total}개`}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="프리셋 검색..."
-              className="flex-1 min-w-0 h-8 px-2.5 text-sm rounded border line-color bg-[var(--c-input-bg)] text-default focus:outline-none focus:ring-2 focus:ring-sky-400"
-            />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="h-8 px-1.5 text-sm rounded border line-color bg-[var(--c-input-bg)] text-default flex-none"
-            >
+            <select aria-label="프리셋 정렬" value={sortBy}
+              onChange={e => setSortBy(e.target.value as GlobalPresetSortBy)}
+              className="ml-auto h-8 px-1.5 text-sm rounded border line-color bg-[var(--c-input-bg)] text-default">
               <option value="recent">최근 수정순</option>
               <option value="name">이름순</option>
               <option value="default">기본 우선</option>
@@ -725,139 +717,15 @@ export const GlobalPresetTab = observer(() => {
             }}
           />
         </div>
-      )}
-      {!isMobile && (
-      <div className="flex-none p-3 border-b line-color flex flex-wrap gap-3 items-center bg-[var(--c-surface)]">
-        <Tooltip content="글로벌 프리셋 이미지뿐 아니라, 프롬프트 메타데이터가 있는 PNG도 그림체 프리셋으로 불러옵니다.">
-          <button
-            className="round-button back-sky flex items-center gap-2 px-4 py-2 text-base"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <ActionIcon id="import" size={18} />
-            <span>PNG 불러오기</span>
-          </button>
-        </Tooltip>
-        <input
-          type="file"
-          accept="image/png"
-          multiple
-          ref={fileInputRef}
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) handleFiles(e.target.files);
-            e.target.value = '';
-          }}
-        />
-        <Tooltip content="글로벌 프리셋 전체를 tar 파일로 백업">
-          <button
-            className="round-button back-gray flex items-center gap-2 px-4 py-2 text-base"
-            onClick={() => appState.globalPresetBackupExport()}
-          >
-            <FaFileArchive size={16} />
-            <span>백업</span>
-          </button>
-        </Tooltip>
-        <Tooltip content="백업 파일에서 글로벌 프리셋 불러오기 (동명 처리 선택)">
-          <button
-            className="round-button back-gray flex items-center gap-2 px-4 py-2 text-base"
-            onClick={() => appState.globalPresetBackupImport()}
-          >
-            <FaFileImport size={16} />
-            <span>백업 불러오기</span>
-          </button>
-        </Tooltip>
-        <button
-          className={
-            'round-button px-4 py-2 text-base ' +
-            (multiSelectMode ? 'back-orange' : 'back-gray')
-          }
-          onClick={() => {
-            if (multiSelectMode) exitMultiSelect();
-            else setMultiSelectMode(true);
-          }}
-        >
-          {multiSelectMode
-            ? `멀티선택 취소 (${selectedIds.size})`
-            : '멀티선택 모드'}
-        </button>
-        {multiSelectMode && (
-          <>
-            <button
-              className="round-button back-sky px-4 py-2 text-base"
-              disabled={selectedIds.size === 0}
-              onClick={handleBulkImportToSession}
-            >
-              프로젝트로 일괄 복사
-            </button>
-            <button
-              className="round-button back-orange px-4 py-2 text-base"
-              disabled={selectedIds.size === 0}
-              onClick={() => handleBulkSetDefault(true)}
-            >
-              일괄 기본 지정
-            </button>
-            <button
-              className="round-button back-gray px-4 py-2 text-base"
-              disabled={selectedIds.size === 0}
-              onClick={() => handleBulkSetDefault(false)}
-            >
-              일괄 기본 해제
-            </button>
-            <button
-              className="round-button back-red px-4 py-2 text-base"
-              disabled={selectedIds.size === 0}
-              onClick={handleBulkDelete}
-            >
-              일괄 삭제
-            </button>
-          </>
-        )}
-        <div className="flex-1" />
-        {/* 검색 */}
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="프리셋 검색..."
-          className="px-3 py-2 text-base rounded border line-color bg-[var(--c-input-bg)] text-default focus:outline-none focus:ring-2 focus:ring-sky-400 w-44"
-        />
-        {/* 정렬 */}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-          className="px-2 py-2 text-base rounded border line-color bg-[var(--c-input-bg)] text-default"
-        >
-          <option value="recent">최근 수정순</option>
-          <option value="name">이름순</option>
-          <option value="default">기본 우선</option>
-        </select>
-        <div className="text-sm text-muted whitespace-nowrap">
-          {q ? `검색 ${visible.length} / 총 ${total}개` : `총 ${total}개`}
-        </div>
-      </div>
-      )}
-
       {/* 본문 */}
       <div className={isMobile ? 'flex-1 overflow-auto p-3' : 'flex-1 overflow-auto p-6'}>
-        {total === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-muted">
-            <p className="mb-2 text-lg">글로벌 프리셋이 비어있습니다.</p>
-            <p className="text-sm">
-              세션 프리셋을 우클릭하여 "글로벌로 복사"하거나,
-            </p>
-            <p className="text-sm">
-              상단의 "PNG 불러오기" 버튼을 사용하세요.
-            </p>
-          </div>
-        )}
-
         {/* 통합 카드 그리드 (이지/일반 구분 없음) */}
         {total > 0 && visible.length === 0 && (
           <div className="text-center text-muted py-10">
             "{query}" 검색 결과가 없습니다.
           </div>
         )}
-        {visible.length > 0 && (
+        {(visible.length > 0 || (!multiSelectMode && !q)) && (
           <div className="flex flex-wrap gap-4">
             {visible.map((entry) => (
               <EasyCard
@@ -874,9 +742,31 @@ export const GlobalPresetTab = observer(() => {
                 onDelete={() => handleDelete(entry)}
               />
             ))}
+            {!multiSelectMode && !q && (
+              <button type="button" onClick={newPreset}
+                className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub hover:border-sky-500 clickable select-none flex flex-col items-center justify-center gap-1.5">
+                <ActionIcon id="add-scene" size={22} />
+                <span className="text-sm">새 글로벌 프리셋</span>
+              </button>
+            )}
           </div>
         )}
       </div>
+      {draft && (
+        <PresetEditModal title="새 글로벌 프리셋" initialName="" preset={draft}
+          adapter={{
+            fetchProfile: async () => null,
+            save: async (name, patch, profile) => {
+              if (globalPresetService.list().some(p => p.name === name))
+                throw new Error('이미 존재하는 이름입니다');
+              await globalPresetService.addFromPresetAndImage({ ...draft, ...patch, name, type: 'SDImageGen' }, profile, name);
+              setQuery('');
+              exitMultiSelect();
+            },
+          }}
+          onClose={() => setDraft(null)}
+        />
+      )}
       {editing && (
         <PresetEditModal
           title="글로벌 프리셋 편집"
