@@ -18,6 +18,7 @@ import {
   FaGlobe,
   FaCompressArrowsAlt,
   FaMagic,
+  FaTimes,
 } from 'react-icons/fa';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { useLibraryGridSelection } from './LibraryGridSelection';
@@ -526,13 +527,13 @@ const ArtistCard = observer(({
   const handleClick = () => { if (isMobile && multiSelectMode) onToggleSelect(); else onOpen(); };
   return (
     <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} className={
-      'flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border bg-[var(--c-surface-2)] transition-colors ' +
+      'group relative flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] transition-colors ' +
       (selected
         ? 'border-sky-500 ring-2 ring-inset ring-sky-500'
         : 'line-color hover:border-sky-400')
     }>
       {/* 대표 이미지 */}
-      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-72 bg-[var(--c-surface)] cursor-pointer" onClick={handleClick}>
+      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-72 bg-[var(--c-surface)] cursor-pointer" title={artist.name + ' · 상세·수정 열기'} onClick={handleClick}>
         {thumb ? (
           <ArtistImage path={thumb.path} className="w-full h-full" />
         ) : (
@@ -544,49 +545,39 @@ const ArtistCard = observer(({
           </div>
         )}
         {shown.length > 0 && (
-          <span className="absolute top-2 right-2 text-xs bg-black/60 text-white rounded-md px-2 py-0.5">
+          <span className="absolute bottom-2 right-2 text-xs bg-black/60 text-white rounded-md px-2 py-0.5 pointer-events-none">
             {familyView === 'all' ? `${shown.length}장` : `${FAMILY_LABEL[familyView]} ${shown.length}장`}
           </span>
         )}
         {familyView === 'all' && <FamilyBadge family={thumb?.family} className="absolute bottom-2 left-2" />}
         {multiSelectMode && (
-          <div className="absolute top-2 left-2 bg-[var(--c-surface-2)] rounded p-1 shadow">
+          <button type="button" aria-label={selected ? '선택 해제' : '선택'}
+            className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-[var(--c-surface-2)] rounded shadow"
+            onClick={event => { event.stopPropagation(); onToggleSelect(); }}>
             {selected ? <FaCheckSquare className="text-sky-500" size={20} /> : <FaSquare className="text-faint" size={20} />}
-          </div>
+          </button>
         )}
-      </div>
-      {/* 이름 + 큰 액션 버튼 — 모바일(md 미만)은 두 줄(이름 한 줄 전체 + 버튼 줄). 반 폭 카드에서 한 줄에 두면
-          버튼 3개(약 114px)에 밀려 이름이 한 글자만 보였다(2026-10-02 I1). PC(md 이상)는 예전 한 줄 그대로. */}
-      <div className="p-2.5">
-        <div className="flex flex-col items-stretch gap-1 md:flex-row md:items-center md:justify-between md:gap-2">
-          <span className="block min-w-0 text-sm font-medium text-default truncate cursor-pointer" title={artist.name} onClick={handleClick}>{artist.name}</span>
-          <div className="flex gap-1.5 flex-none justify-end md:justify-start">
-            <Tooltip content="작가 태그 복사">
-              <button
-                className="p-2 max-md:inline-flex max-md:items-center max-md:justify-center max-md:min-w-9 max-md:min-h-9 rounded-lg text-muted hover:bg-sky-100 dark:hover:bg-sky-900/40 hover:text-sky-500 transition-colors"
-                onClick={(e) => { e.stopPropagation(); copyText('artist:' + artist.name, '작가 태그를 복사했습니다'); }}
-              >
-                <FaCopy size={18} />
-              </button>
-            </Tooltip>
-            {(isMobile || appState.webSearchEnabled) && <Tooltip content="Danbooru에서 검색">
-              <button
-                className="p-2 max-md:inline-flex max-md:items-center max-md:justify-center max-md:min-w-9 max-md:min-h-9 rounded-lg text-muted hover:bg-sky-100 dark:hover:bg-sky-900/40 hover:text-sky-500 transition-colors"
-                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('danbooru-search-request', { detail: { text: artist.name } })); }}
-              >
-                <FaGlobe size={18} />
-              </button>
-            </Tooltip>}
-            <Tooltip content="즐겨찾기">
-              <button
-                className="p-2 max-md:inline-flex max-md:items-center max-md:justify-center max-md:min-w-9 max-md:min-h-9 rounded-lg text-muted hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                onClick={(e) => { e.stopPropagation(); toggleArtistFavoriteRecorded(artist.id); }}
-              >
-                {artist.favorite ? <FaHeart size={18} className="text-red-500" /> : <FaRegHeart size={18} className="hover:text-red-500" />}
-              </button>
-            </Tooltip>
-          </div>
+        <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+        <div data-library-card-actions="" className="absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200">
+          <Tooltip content="작가 태그 복사">
+            <button type="button" aria-label="작가 태그 복사" title="작가 태그 복사" className="w-8 h-8 rounded-full btn-solid-sky flex items-center justify-center shadow-lg transition-colors"
+              onClick={event => { event.stopPropagation(); copyText('artist:' + artist.name, '작가 태그를 복사했습니다'); }}><FaCopy size={14} /></button>
+          </Tooltip>
+          {(isMobile || appState.webSearchEnabled) && <Tooltip content="Danbooru에서 검색">
+            <button type="button" aria-label="Danbooru에서 검색" title="Danbooru에서 검색" className="w-8 h-8 rounded-full btn-solid-purple flex items-center justify-center shadow-lg transition-colors"
+              onClick={event => { event.stopPropagation(); window.dispatchEvent(new CustomEvent('danbooru-search-request', { detail: { text: artist.name } })); }}><FaGlobe size={14} /></button>
+          </Tooltip>}
+          <Tooltip content={artist.favorite ? '즐겨찾기 해제' : '즐겨찾기 지정'}>
+            <button type="button" aria-label={artist.favorite ? '즐겨찾기 해제' : '즐겨찾기 지정'} title={artist.favorite ? '즐겨찾기 해제' : '즐겨찾기 지정'} className="w-8 h-8 rounded-full btn-solid-red flex items-center justify-center shadow-lg transition-colors"
+              onClick={event => { event.stopPropagation(); toggleArtistFavoriteRecorded(artist.id); }}>
+              {artist.favorite ? <FaHeart size={14} /> : <FaRegHeart size={14} />}
+            </button>
+          </Tooltip>
         </div>
+      </div>
+      {/* 이름·태그는 정보 영역에, 동작은 이미지 상단에 둔다. */}
+      <div className="p-2.5">
+          <span className="block min-w-0 text-sm font-medium text-default truncate cursor-pointer" title={artist.name} onClick={handleClick}>{artist.name}</span>
         {artist.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {artist.tags.slice(0, 4).map((t) => (
@@ -770,7 +761,16 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
     <div className="w-full h-full flex flex-col bg-[var(--c-surface)] overflow-hidden">
       <div className="flex-none">
         <GridSearchBar label="작가 이름 · 태그 검색" query={query} onChange={setQuery} />
-        <LibraryToolbar view={<>
+        <LibraryToolbar view={<div data-library-toolbar-end="artists" className="flex items-end gap-4">
+          {multiSelectMode && <div className="scene-toolbar-row" data-library-selection-actions="">
+            <GridToolbarGroup caption={`${selectedIds.size}개 선택`}>
+              <LibraryAction label={list.every(artist => selectedIds.has(artist.id)) ? '전체 해제' : '전체 선택'} icon={<FaCheckSquare />}
+                onClick={() => setSelectedIds(list.every(artist => selectedIds.has(artist.id)) ? new Set() : new Set(list.map(artist => artist.id)))} />
+              <LibraryAction label="선택 삭제" tone="red" icon={<FaTrash />} disabled={!selectedIds.size} onClick={doBulkDelete} />
+              <LibraryAction label="선택 해제" icon={<FaTimes />} onClick={exitMultiSelect} />
+            </GridToolbarGroup>
+          </div>}
+          <div className="flex items-center gap-2 h-8">
           {(query.trim() || favOnly) && <span role="status" className="text-xs text-muted tabular-nums">결과 {list.length}개</span>}
           <select aria-label="작가 정렬" className="gray-input text-sm py-1 px-2" value={sortBy}
             onChange={e => setSortBy(e.target.value as SortKey)}>
@@ -778,7 +778,8 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
             <option value="name">이름순</option>
             <option value="favorite">즐겨찾기 우선</option>
           </select>
-        </>}>
+          </div>
+        </div>}>
           <GridToolbarGroup caption="작가">
             <LibraryAction label="새 작가" tone="sky" icon={<FaPlus />} onClick={newArtist} />
             <LibraryAction label="중복 병합" hint="같은 이름의 작가 카드 병합" icon={<FaCompressArrowsAlt />}
@@ -791,11 +792,9 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
           <GridToolbarGroup caption="탐색" separate>
             <LibraryAction label="즐겨찾기" pressed={favOnly} tone={favOnly ? 'orange' : 'gray'}
               icon={<FaHeart />} onClick={() => setFavOnly(v => !v)} />
-            {(isMobile || multiSelectMode) && <LibraryAction label={isMobile ? (multiSelectMode ? '멀티선택 취소' : '멀티선택') : `선택 해제 (${selectedIds.size})`} pressed={multiSelectMode}
+            {isMobile && <LibraryAction label={multiSelectMode ? '멀티선택 취소' : '멀티선택'} pressed={multiSelectMode}
               tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
               onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />}
-            {multiSelectMode && <LibraryAction label={`선택 삭제 (${selectedIds.size})`} tone="red"
-              icon={<FaTrash />} disabled={selectedIds.size === 0} onClick={doBulkDelete} />}
           </GridToolbarGroup>
           <GridToolbarGroup caption="모델 계열" separate>
             <div className="flex h-8 rounded-lg border line-color overflow-hidden text-sm" role="group" aria-label="모델 계열 보기" data-artist-family-view={familyView}>
