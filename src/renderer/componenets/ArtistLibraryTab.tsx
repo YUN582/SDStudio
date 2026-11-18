@@ -19,7 +19,7 @@ import {
   FaCompressArrowsAlt,
   FaMagic,
 } from 'react-icons/fa';
-import { ListSearchBar } from './ListSearchBar';
+import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
@@ -758,76 +758,50 @@ const ArtistLibraryTab = observer(() => {
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--c-surface)] overflow-hidden">
-      <div className="flex-none px-2 py-1.5 border-b line-color flex flex-col gap-1.5">
-        <ListSearchBar clearable query={query} onQueryChange={setQuery} placeholder="작가 이름 · 태그 검색"
-          shown={list.length} total={total} />
-        <div className="flex flex-wrap items-center gap-1.5">
-        <button className="round-button back-sky px-3 h-8 text-sm flex items-center gap-1" onClick={newArtist}>
-          <FaPlus size={12} /> 새 작가
-        </button>
-        <select aria-label="작가 정렬" className="gray-input h-8 text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
-          <option value="recent">최근순</option>
-          <option value="name">이름순</option>
-          <option value="favorite">즐겨찾기 우선</option>
-        </select>
-        <button className={'round-button px-3 h-8 text-sm ' + (favOnly ? 'back-orange' : 'back-gray')} aria-pressed={favOnly} onClick={() => setFavOnly((v) => !v)}>
-          <FaHeart className="inline mr-1" size={12} />즐겨찾기
-        </button>
-        {/* 모델 계열 보기: 카드의 대표 이미지·장수가 그 계열 샘플 기준이 된다 */}
-        <div className="flex rounded-lg border line-color overflow-hidden text-sm" role="group" aria-label="모델 계열 보기" data-artist-family-view={familyView}>
-          {(['all', 'v4_5', 'v5'] as FamilyView[]).map((v) => (
-            <button
-              key={v}
-              className={'px-3 h-8 ' + (familyView === v ? 'back-sky' : 'back-gray')}
-              onClick={() => setFamilyView(v)}
-              aria-pressed={familyView === v}
-            >
-              {v === 'all' ? '전체' : FAMILY_LABEL[v]}
-            </button>
-          ))}
-        </div>
-        <Tooltip content="동일한 이름의 기존 작가 카드를 일괄 병합">
-          <button
-            className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1 disabled:opacity-50"
-            disabled={mergingDuplicates}
-            onClick={mergeDuplicates}
-          >
-            <FaCompressArrowsAlt size={12} /> 중복 병합
-          </button>
-        </Tooltip>
-        <Tooltip content="작가 라이브러리 전체 백업">
-          <button className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupExport()}>
-            <FaFileArchive size={13} /> 백업
-          </button>
-        </Tooltip>
-        <Tooltip content="백업 파일 불러오기 (동명 처리 선택)">
-          <button className="round-button back-gray px-3 h-8 text-sm flex items-center gap-1" onClick={() => appState.artistLibraryBackupImport()}>
-            <FaFileImport size={13} /> 백업 불러오기
-          </button>
-        </Tooltip>
-        {!multiSelectMode ? (
-          <button className="round-button back-gray px-3 h-8 text-sm" onClick={() => setMultiSelectMode(true)}>
-            멀티선택
-          </button>
-        ) : (
-          <>
-            <button
-              className="round-button btn-solid-red px-3 h-8 text-sm flex items-center gap-1 disabled:opacity-50"
-              disabled={selectedIds.size === 0}
-              onClick={doBulkDelete}
-            >
-              <FaTrash size={12} /> 선택 삭제 ({selectedIds.size})
-            </button>
-            <button className="round-button back-gray px-3 h-8 text-sm" onClick={exitMultiSelect}>
-              취소
-            </button>
-          </>
-        )}
-      </div>
+      <div className="flex-none">
+        <GridSearchBar label="작가 이름 · 태그 검색" query={query} onChange={setQuery} />
+        <LibraryToolbar view={<>
+          {(query.trim() || favOnly) && <span role="status" className="text-xs text-muted tabular-nums">결과 {list.length}개</span>}
+          <select aria-label="작가 정렬" className="gray-input text-sm py-1 px-2" value={sortBy}
+            onChange={e => setSortBy(e.target.value as SortKey)}>
+            <option value="recent">최근순</option>
+            <option value="name">이름순</option>
+            <option value="favorite">즐겨찾기 우선</option>
+          </select>
+        </>}>
+          <GridToolbarGroup caption="작가">
+            <LibraryAction label="새 작가" tone="sky" icon={<FaPlus />} onClick={newArtist} />
+            <LibraryAction label="중복 병합" hint="같은 이름의 작가 카드 병합" icon={<FaCompressArrowsAlt />}
+              disabled={mergingDuplicates} onClick={mergeDuplicates} />
+          </GridToolbarGroup>
+          <GridToolbarGroup caption="백업" separate>
+            <LibraryAction label="백업" hint="작가 라이브러리 전체 백업" icon={<FaFileArchive />} onClick={() => appState.artistLibraryBackupExport()} />
+            <LibraryAction label="백업 불러오기" icon={<FaFileImport />} onClick={() => appState.artistLibraryBackupImport()} />
+          </GridToolbarGroup>
+          <GridToolbarGroup caption="탐색" separate>
+            <LibraryAction label="즐겨찾기" pressed={favOnly} tone={favOnly ? 'orange' : 'gray'}
+              icon={<FaHeart />} onClick={() => setFavOnly(v => !v)} />
+            <LibraryAction label={multiSelectMode ? '멀티선택 취소' : '멀티선택'} pressed={multiSelectMode}
+              tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
+              onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />
+            {multiSelectMode && <LibraryAction label={`선택 삭제 (${selectedIds.size})`} tone="red"
+              icon={<FaTrash />} disabled={selectedIds.size === 0} onClick={doBulkDelete} />}
+          </GridToolbarGroup>
+          <GridToolbarGroup caption="모델 계열" separate>
+            <div className="flex h-8 rounded-lg border line-color overflow-hidden text-sm" role="group" aria-label="모델 계열 보기" data-artist-family-view={familyView}>
+              {(['all', 'v4_5', 'v5'] as FamilyView[]).map(v => (
+                <button key={v} className={'px-3 ' + (familyView === v ? 'back-sky' : 'back-gray')}
+                  onClick={() => setFamilyView(v)} aria-pressed={familyView === v}>
+                  {v === 'all' ? '전체' : FAMILY_LABEL[v]}
+                </button>
+              ))}
+            </div>
+          </GridToolbarGroup>
+        </LibraryToolbar>
       </div>
 
       {/* 본문 */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto px-1 pt-1 pb-4">
         {total > 0 && list.length === 0 ? (
           <div className="text-center text-faint py-10">검색 결과가 없습니다.</div>
         ) : (

@@ -121,7 +121,8 @@ describe('App.css 상태 표시(D10·S3·S2·D11·W1)', () => {
   test('10.5px 글자 없음(툴바 캡션 11px)', () => {
     expect(css).not.toMatch(/font-size:\s*10\.5px/);
     expect(css).toMatch(/\.toolbar-group-caption\s*\{[^}]*font-size:\s*11px/);
-    expect(read('SceneQueueControl.tsx')).toContain('toolbar-group-caption text-muted');
+    expect(read('SceneQueueControl.tsx')).toContain('<GridToolbarGroup');
+    expect(read('GridToolbar.tsx')).toContain('toolbar-group-caption text-muted');
   });
   test('패널 폭 상한 — 1024 이상 프리셋 40vw·히스토리 30vw, 1023 이하 36vw 유지', () => {
     expect(css).toMatch(/@media \(max-width: 1023px\)\s*\{\s*\.panel-vw-clamp\s*\{\s*max-width: 36vw;/);

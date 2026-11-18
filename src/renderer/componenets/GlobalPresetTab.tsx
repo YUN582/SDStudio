@@ -10,7 +10,7 @@ import {
   FaFileImport,
 } from 'react-icons/fa';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
-import { ListSearchBar } from './ListSearchBar';
+import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
 import {
   backend,
@@ -677,76 +677,54 @@ export const GlobalPresetTab = observer(() => {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--c-surface)]">
-      <div className="flex-none px-2 py-1.5 border-b line-color flex flex-col gap-1.5" data-gp-mobile-toolbar={isMobile ? '' : undefined}>
-          <ListSearchBar clearable query={query} onQueryChange={setQuery} placeholder="프리셋 이름 검색"
-            shown={visible.length} total={total} />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button type="button" className="round-button back-sky h-8 px-3 text-sm flex items-center gap-1.5" onClick={newPreset}>
-              <ActionIcon id="add-scene" size={14} /> 새 프리셋
-            </button>
-            <button
-              type="button"
-              className="round-button back-gray h-8 px-3 text-sm flex items-center gap-1.5"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ActionIcon id="import" size={14} />
-              <span>PNG 불러오기</span>
-            </button>
-            <Tooltip content="글로벌 프리셋 전체를 tar 파일로 백업">
-              <button type="button" className="round-button back-gray h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm" aria-label="백업" onClick={() => appState.globalPresetBackupExport()}>
-                <FaFileArchive size={14} /> <span className="hidden md:inline">백업</span>
-              </button>
-            </Tooltip>
-            <Tooltip content="백업 파일에서 글로벌 프리셋 불러오기 (동명 처리 선택)">
-              <button type="button" className="round-button back-gray h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm" aria-label="백업 불러오기" onClick={() => appState.globalPresetBackupImport()}>
-                <FaFileImport size={14} /> <span className="hidden md:inline">백업 불러오기</span>
-              </button>
-            </Tooltip>
-            <Tooltip content={multiSelectMode ? '멀티선택 취소' : '멀티선택 모드'}>
-              <button
-                type="button"
-                className={`round-button h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 text-sm ${multiSelectMode ? 'back-orange' : 'back-gray'}`}
-                aria-pressed={multiSelectMode}
-                aria-label="멀티선택 모드"
-                onClick={() => {
-                  if (multiSelectMode) exitMultiSelect();
-                  else setMultiSelectMode(true);
-                }}
-              >
-                <FaCheckSquare size={14} /> <span className="hidden md:inline">멀티선택</span>
-              </button>
-            </Tooltip>
-            <select aria-label="프리셋 정렬" value={sortBy}
-              onChange={e => setSortBy(e.target.value as GlobalPresetSortBy)}
-              className="ml-auto h-8 px-1.5 text-sm rounded border line-color bg-[var(--c-input-bg)] text-default">
-              <option value="manual">사용자 지정순</option>
-              <option value="recent">최근 수정순</option>
-              <option value="name">이름순</option>
-              <option value="default">기본 우선</option>
-            </select>
+      <div className="flex-none" data-gp-mobile-toolbar={isMobile ? '' : undefined}>
+        <GridSearchBar label="프리셋 이름 검색" query={query} onChange={setQuery} />
+        <LibraryToolbar view={<>
+          {q && <span role="status" className="text-xs text-muted tabular-nums">검색 결과 {visible.length}개</span>}
+          <select aria-label="프리셋 정렬" value={sortBy} onChange={e => setSortBy(e.target.value as GlobalPresetSortBy)}
+            className="gray-input text-sm py-1 px-2">
+            <option value="manual">사용자 지정순</option>
+            <option value="recent">최근 수정순</option>
+            <option value="name">이름순</option>
+            <option value="default">기본 우선</option>
+          </select>
+        </>}>
+          <GridToolbarGroup caption="추가">
+            <LibraryAction label="새 프리셋" tone="sky" icon={<ActionIcon id="add-scene" size={18} />} onClick={newPreset} />
+            <LibraryAction label="PNG 불러오기" icon={<ActionIcon id="import" size={18} />} onClick={() => fileInputRef.current?.click()} />
+          </GridToolbarGroup>
+          <GridToolbarGroup caption="백업" separate>
+            <LibraryAction label="백업" hint="글로벌 프리셋 전체 백업" icon={<FaFileArchive />} onClick={() => appState.globalPresetBackupExport()} />
+            <LibraryAction label="백업 불러오기" icon={<FaFileImport />} onClick={() => appState.globalPresetBackupImport()} />
+          </GridToolbarGroup>
+          <GridToolbarGroup caption="선택" separate>
+            <LibraryAction label={multiSelectMode ? '멀티선택 취소' : '멀티선택'} pressed={multiSelectMode}
+              tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
+              onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />
+          </GridToolbarGroup>
+        </LibraryToolbar>
+        {multiSelectMode && (
+          <div className="flex items-center gap-1.5">
+            <button type="button" className="round-button back-sky h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkImportToSession}>프로젝트로 복사</button>
+            <button type="button" className="round-button back-orange h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(true)}>기본 지정</button>
+            <button type="button" className="round-button back-gray h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(false)}>기본 해제</button>
+            <button type="button" className="round-button back-red h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkDelete}>삭제</button>
           </div>
-          {multiSelectMode && (
-            <div className="flex items-center gap-1.5">
-              <button type="button" className="round-button back-sky h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkImportToSession}>프로젝트로 복사</button>
-              <button type="button" className="round-button back-orange h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(true)}>기본 지정</button>
-              <button type="button" className="round-button back-gray h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(false)}>기본 해제</button>
-              <button type="button" className="round-button back-red h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkDelete}>삭제</button>
-            </div>
-          )}
-          <input
-            type="file"
-            accept="image/png"
-            multiple
-            ref={fileInputRef}
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) handleFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </div>
+        )}
+        <input
+          type="file"
+          accept="image/png"
+          multiple
+          ref={fileInputRef}
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </div>
       {/* 본문 */}
-      <div ref={viewport} className={isMobile ? 'flex-1 overflow-auto p-3' : 'flex-1 overflow-auto p-6'}
+      <div ref={viewport} className={isMobile ? 'flex-1 overflow-auto px-3 pt-1 pb-3' : 'flex-1 overflow-auto px-1 pt-1 pb-6'}
         onMouseDownCapture={e => { suppressClick.current = false; reorder.start(e); }}
         onClickCapture={e => {
           if (suppressClick.current) { e.preventDefault(); e.stopPropagation(); suppressClick.current = false; }

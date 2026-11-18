@@ -1,5 +1,4 @@
-import React, { useRef } from 'react';
-import { FaSearch, FaTimes } from 'react-icons/fa';
+import React from 'react';
 import { hasQuery } from '../models/listSearch';
 
 // ===== 공용 목록 검색 줄(2026-11-14 M4) =====
@@ -29,7 +28,6 @@ export interface ListSearchBarProps {
   autoFocus?: boolean;
   className?: string;
   compact?: boolean;
-  clearable?: boolean;
 }
 
 /** 개수 문구 — 검색 중이거나 걸러졌으면 「n / 전체 m」, 아니면 「전체 m개」 */
@@ -48,28 +46,16 @@ export function ListSearchBar({
   autoFocus,
   className,
   compact,
-  clearable,
 }: ListSearchBarProps) {
-  const input = useRef<HTMLInputElement>(null);
   const h = compact ? 'h-7 text-xs' : 'h-8 text-sm';
   return (
     <div
       className={'flex items-center gap-2 min-w-0 ' + (className ?? '')}
-      role={clearable ? 'search' : undefined}
       data-list-search-bar=""
     >
-      {clearable && <FaSearch aria-hidden="true" className="text-faint flex-none" size={14} />}
       {onQueryChange && (
         <input
           type="text"
-          ref={input}
-          data-esc-cancel={clearable || undefined}
-          onKeyDown={e => {
-            if (clearable && e.key === 'Escape' && !e.nativeEvent.isComposing) {
-              onQueryChange('');
-              e.currentTarget.blur();
-            }
-          }}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={placeholder}
@@ -78,12 +64,6 @@ export function ListSearchBar({
           data-list-search=""
           className={`flex-1 min-w-0 ${h} px-2.5 rounded border line-color bg-[var(--c-input-bg)] text-default focus:outline-none focus:ring-2 focus:ring-sky-400`}
         />
-      )}
-      {clearable && onQueryChange && (
-        <button type="button" className="round-button icon-only back-gray" aria-label="검색어 지우기"
-          disabled={!query} onClick={() => { onQueryChange(''); input.current?.focus(); }}>
-          <FaTimes size={14} />
-        </button>
       )}
       {sort && (
         <select

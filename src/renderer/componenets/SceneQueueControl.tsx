@@ -1,3 +1,4 @@
+import { GridSearchBar, GridToolbarGroup } from './GridToolbar';
 import { openSourceVariant } from '../models/sourceVariant';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { focusGridSurface, gridKeyboardMove, gridNavigationAction, gridCardUsesSelection, gridClickSelection, gridSelectionCanReceiveEscape, type GridModifiers } from '../models/gridSelection';
@@ -20,7 +21,6 @@ import {
   FaCheck,
   FaChevronDown,
   FaPen,
-  FaSearch,
   FaStar,
   FaTimes,
   FaToggleOn,
@@ -1334,7 +1334,6 @@ const QueueControl = observer(
       id: ContextMenuType.Scene,
     });
     const showCheatsheet = appState.showSceneCheatsheet;
-    const sceneSearchRef = useRef<HTMLInputElement>(null);
     type SceneDragBox = {
       x1: number;
       y1: number;
@@ -3014,36 +3013,7 @@ const QueueControl = observer(
         {/* 씬 휴지통·아티스트 태깅 모달은 App.tsx 전역 오버레이로 이관(B군 승격) */}
         {panel}
         {!!showPannel && !v2Layout && (
-          <div role="search" className="flex flex-none items-center gap-2 pb-2 px-1">
-            <FaSearch className="text-faint flex-none" aria-hidden="true" />
-            <input
-              ref={sceneSearchRef}
-              data-esc-cancel
-              type="text"
-              aria-label="씬 이름 검색"
-              className="min-w-0 flex-1 px-2 py-1 border line-color rounded bg-[var(--c-input-bg)] text-default outline-none focus:border-sky-500"
-              placeholder="씬 이름 검색..."
-              value={sceneSearchQuery}
-              onChange={(e) => setSceneSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Escape' || e.nativeEvent.isComposing) return;
-                setSceneSearchQuery('');
-                e.currentTarget.blur();
-              }}
-            />
-            <button
-              type="button"
-              className="round-button icon-only back-gray"
-              aria-label="검색어 지우기"
-              disabled={!sceneSearchQuery}
-              onClick={() => {
-                setSceneSearchQuery('');
-                sceneSearchRef.current?.focus();
-              }}
-            >
-              <FaTimes />
-            </button>
-          </div>
+          <GridSearchBar label="씬 이름 검색" query={sceneSearchQuery} onChange={setSceneSearchQuery} />
         )}
         {!!showPannel && !v2Layout && (
           <div className={`flex flex-none pb-1.5 flex-wrap${groupedToolbar ? ' items-end' : ''}`}>
@@ -3092,20 +3062,9 @@ const QueueControl = observer(
                 ? // PC 그룹 칸: 그룹 순서 고정·그룹 안은 사용자 순서·그룹 없는 버튼은 맨 끝 「기타」 칸(비면 없음).
                   // 칸 사이 구분선은 다음 칸의 ::before(.toolbar-group-sep) — 줄 끝에 선만 남지 않는다.
                   toolbarSegments.map((seg, si) => (
-                    <div
-                      key={seg.group}
-                      role="group"
-                      aria-label={seg.caption}
-                      data-toolbar-group={seg.group}
-                      className={`toolbar-group${si > 0 ? ' toolbar-group-sep' : ''}`}
-                    >
-                      <div className="toolbar-group-caption text-muted" aria-hidden="true">
-                        {seg.caption}
-                      </div>
-                      <div className="toolbar-group-buttons">
-                        {seg.ids.map(inlineToolbarButton)}
-                      </div>
-                    </div>
+                    <GridToolbarGroup key={seg.group} id={seg.group} caption={seg.caption} separate={si > 0}>
+                      {seg.ids.map(inlineToolbarButton)}
+                    </GridToolbarGroup>
                   ))
                 : toolbarLayout.inline.map(inlineToolbarButton)}
               {(toolbarLayout.menu.length > 0 || toolbarDragActive) && (
