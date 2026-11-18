@@ -24,8 +24,8 @@ body {
 :root {
   --z-float-view: 100;    /* 전체화면 서브뷰(FloatView: 상세 뷰어 등) */
   --z-widget: 1000;       /* 비차단 위젯: 내보내기 진행/완료, 작업 큐 목록 */
-  --z-prompt-back: 1400;  /* 프롬프트 확장 편집기 백드롭 */
-  --z-prompt-popup: 1500; /* 프롬프트 확장 편집기·자동완성 팝업 (위젯 위, 모달 아래) */
+  --z-prompt-back: 2350;  /* 어느 모달에서 열어도 그 위에 놓이는 프롬프트 확대 배경 */
+  --z-prompt-popup: 2400; /* 확대 편집기·자동완성 (확인창·컨텍스트 메뉴 아래) */
   --z-modal: 2000;        /* 모달(ModalOverlay·환경설정·탭 내 자체 모달) */
   --z-drawer: 2100;       /* 슬라이드 드로어(프로젝트·이미지 히스토리) — 모달 위 */
   --z-drawer-handle: 2200;/* 드로어 가장자리 손잡이 버튼 */
@@ -933,20 +933,20 @@ html:not(.finish-classic) .tab-seg > .tab-seg-off:hover {
   animation: toast-rise 0.28s ease-out;
 }
 
-.prompt-full {
-  width: 60vw;
-  left: 17vw;
-  top: 20vh;
+.prompt-expanded {
+  width: min(1600px, 94vw);
+  height: 90vh;
+  height: 90dvh;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 @media screen and (max-width: 768px) {
-  /* 모바일은 h-96(24rem) 고정 높이가 화면을 넘겨 하단이 잘리므로, 화면 비율
-     기준으로 낮춰 하단 여백(키보드 노출 대비)을 확보한다. */
-  .prompt-full {
-    width: 90vw;
-    left: 0;
-    top: 14vh;
-    height: 56vh;
+  .prompt-expanded {
+    width: 96vw;
+    height: 94vh;
+    height: 94dvh;
   }
 }
 

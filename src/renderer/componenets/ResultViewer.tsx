@@ -2867,7 +2867,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
 
     return (
       <div className="w-full h-full flex flex-col">
-        {!isMobile && showImageCheatsheet && !tournament && (
+        {!isMobile && showImageCheatsheet && !tournament && !appState.modalOverlayCount && (
           <ShortcutCheatsheet
             scope="image-grid"
             onClose={() => setShowImageCheatsheet(false)}

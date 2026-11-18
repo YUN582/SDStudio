@@ -3513,7 +3513,7 @@ const QueueControl = observer(
               </>
             );
           })()}
-        {!isMobile && showCheatsheet && appState.floatViewCount === 0 && (
+        {!isMobile && showCheatsheet && appState.floatViewCount === 0 && !appState.modalOverlayCount && (
           <ShortcutCheatsheet
             scope="scene"
             onClose={() => {

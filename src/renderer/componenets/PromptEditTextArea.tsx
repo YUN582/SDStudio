@@ -57,6 +57,9 @@ import {
   trimAutocompleteWord,
 } from '../models/promptAutocomplete';
 import { PROMPT_WEIGHT_OPEN_AT_START_RE } from '../models/promptWeightSyntax';
+import { createPortal } from 'react-dom';
+import { PromptSearchBar, PromptSearchEditor, PromptSearchHandle } from './PromptSearchBar';
+import { OVERLAY_CLOSE_BUTTON_CLASS, OVERLAY_CLOSE_ICON_SIZE } from './ModalOverlay';
 
 interface PromptEditTextAreaProps {
   value: string;
@@ -286,6 +289,8 @@ class CursorMemorizeEditor {
     const parentRect = this.container.getBoundingClientRect();
     if (rect.bottom > parentRect.bottom) {
       this.container.scrollTop += rect.bottom - parentRect.bottom;
+    } else if (rect.top < parentRect.top) {
+      this.container.scrollTop -= parentRect.top - rect.top;
     }
   }
 
@@ -1053,7 +1058,7 @@ interface EditTextAreaProps {
   closeAutoComplete: () => void;
 }
 
-interface EditTextAreaRef {
+interface EditTextAreaRef extends PromptSearchEditor {
   onCloseAutoComplete: () => void;
   onOpenAutoComplete: () => void;
   setCurWord: (word: string) => void;
@@ -1183,6 +1188,22 @@ const EmulatedEditTextArea = observer(
         adjustWeight: (delta: number) => {
           editorModelRef.current?.adjustWeight(delta);
         },
+        selectRange: async (start: number, end: number) => {
+          editorRef.current?.focus();
+          await editorModelRef.current?.setCaretPosition([start, end]);
+        },
+        replaceRange: async (start: number, end: number, replacement: string) => {
+          if (disabled) return;
+          await mutex.runExclusive(async () => {
+            const model = editorModelRef.current;
+            model.pushHistory();
+            model.compositionBuffer = [];
+            model.updateCurText(model.curText.slice(0, start) + replacement + model.curText.slice(end));
+            model.updateDOM(model.curText, start, false);
+            editorRef.current?.focus();
+            await model.setCaretPosition([start, start + replacement.length]);
+          });
+        },
         getCaretSegment: () => {
           const m = editorModelRef.current;
           if (!m) return '';
@@ -1210,6 +1231,7 @@ const EmulatedEditTextArea = observer(
               }
               ref={editorRef}
               contentEditable={disabled ? 'false' : 'true'}
+              tabIndex={disabled ? 0 : undefined}
             ></div>
           </div>
           <textarea
@@ -1457,6 +1479,17 @@ const NativeEditTextArea = observer(
         adjustWeight: (delta: number) => {
           adjustWeight(delta);
         },
+        selectRange: async (start: number, end: number) => {
+          const ta = textareaRef.current;
+          ta.focus(); ta.setSelectionRange(start, end);
+        },
+        replaceRange: async (start: number, end: number, replacement: string) => {
+          if (disabled) return;
+          const ta = textareaRef.current;
+          ta.value = ta.value.slice(0, start) + replacement + ta.value.slice(end);
+          ta.focus(); ta.setSelectionRange(start, start + replacement.length);
+          renderText(); pushHistory(); onUpdated(ta.value);
+        },
         undo() {
           doUndo();
         },
@@ -1595,6 +1628,8 @@ const PromptEditTextArea = observer(
     const selectedTagRef = useLatest(selectedTag);
     const curWordRef = useLatest(curWord);
     const [fullScreen, setFullScreen] = useState(false);
+    const searchRef = useRef<PromptSearchHandle>(null);
+    const portalHost = useRef<Element>(document.body);
     const accessorySlot = useContext(PromptAccessorySlotContext);
     // 모바일 「탭=확장 창」(클래식 동작). 자체 집중 모드가 있는 곳(V2 시트·PromptFocusShell·씬 편집 창)은 false 로 감싼다.
     const autoExpand = useContext(PromptAutoExpandContext);
@@ -1634,9 +1669,10 @@ const PromptEditTextArea = observer(
     // 바깥(하단 시트 등)을 통째로 닫아 버렸다(2026-09-22 실기기 5차).
     const closeFullScreenRef = useRef<() => void>(() => {});
     useEffect(() => {
-      if (!isMobile || !fullScreen) return undefined;
+      if (!fullScreen) return undefined;
+      appState.incrementModalOverlay();
       const handle = backStackService.push(() => closeFullScreenRef.current());
-      return () => handle.remove();
+      return () => { handle.remove(); appState.decrementModalOverlay(); };
     }, [fullScreen]);
     const EditTextAreaImpl = isMobile
       ? NativeEditTextArea
@@ -1726,7 +1762,10 @@ const PromptEditTextArea = observer(
     // 닫기는 X·배경 탭·뒤로 가기. V2 시트·PromptFocusShell·씬 편집 창은 컨텍스트 false 라 인라인 편집(집중 모드)이 기본.
     // PC 는 원래 포커스 확대가 없어 영향 없음.
     const onFoucs = () => {
-      if (isMobile && autoExpand && !disabled && !fullScreen) setFullScreen(true);
+      if (isMobile && autoExpand && !disabled && !fullScreen) {
+        portalHost.current = rootRef.current?.closest('[data-app-theme-root]') ?? document.body;
+        setFullScreen(true);
+      }
     };
     const onBlur = () => {};
     // 편집 확정(칸을 떠남) — 가중치 숫자 태그 공백 보정 확인(models/promptWeightSpacingFlow.ts, SPEC §12 N1).
@@ -1806,7 +1845,7 @@ const PromptEditTextArea = observer(
     let bgColor = 'bg-[var(--c-input-bg)]';
     if (fullScreen) bgColor = 'bg-[var(--c-input-bg)] shadow-lg';
 
-    return (
+    const contents = (
       <>
         <div
           ref={(el: HTMLDivElement | null) => {
@@ -1832,6 +1871,20 @@ const PromptEditTextArea = observer(
             if (isTextEntryElement(e.target as Element)) onTextBlur();
           }}
           spellCheck={false}
+          role={fullScreen ? 'dialog' : undefined}
+          aria-modal={fullScreen ? true : undefined}
+          aria-label={fullScreen ? '프롬프트 확대 편집' : undefined}
+          onKeyDownCapture={event => {
+            if (!fullScreen) return;
+            if (event.key === 'Escape' && tagsRef.current.length) {
+              event.preventDefault(); event.stopPropagation(); closeAutoComplete(); return;
+            }
+            if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+            const key = event.key.toLowerCase();
+            if (key !== 'f' && key !== 'h') return;
+            event.preventDefault(); event.stopPropagation();
+            searchRef.current?.focus(key === 'h');
+          }}
           draggable={true}
           onDragStart={(event) => event.preventDefault()}
           className={
@@ -1840,22 +1893,35 @@ const PromptEditTextArea = observer(
               ? // input-ring: 인라인 입력 창 윤곽(B1). 전체화면은 shadow-lg 와 box-shadow 가
                 // 겹치므로 제외(그림자가 경계 역할).
                 ' input-ring overflow-hidden h-full relative rounded-md'
-              : ' left-0 m-4 p-2 overflow-hidden fixed z-[var(--z-prompt-popup)] h-96 prompt-full rounded-lg') +
-            (extraClassName ? ' ' + extraClassName : '')
+              : ' prompt-expanded overflow-hidden fixed z-[var(--z-prompt-popup)] rounded-xl flex flex-col') +
+            (!fullScreen && extraClassName ? ' ' + extraClassName : '')
           }
         >
-          <div className="absolute right-0 top-0 z-10 flex items-center gap-1">
+          {fullScreen && <>
+            <div className="flex-none flex items-center justify-between gap-3 px-4 py-3 bg-[var(--c-zone)] border-b line-color">
+              <h2 className="text-base font-semibold text-default m-0">프롬프트 편집</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">Esc로 닫기</span>
+                <button type="button" aria-label="크게 편집 닫기" className={OVERLAY_CLOSE_BUTTON_CLASS} onClick={closeFullScreen}><FaTimes size={OVERLAY_CLOSE_ICON_SIZE} /></button>
+              </div>
+            </div>
+            <PromptSearchBar ref={searchRef} value={value} editor={editorRef} disabled={disabled} />
+          </>}
+          {!fullScreen && <div className="absolute right-0 top-0 z-10 flex items-center gap-1">
             {caretArtist && !accessorySlot && artistButton(caretArtist, 'mt-1')}
             <button
               aria-label={!fullScreen ? '크게 편집' : '크게 편집 닫기'}
               onClick={() => {
-                if (!disabled) setFullScreen(!fullScreen);
+                portalHost.current = rootRef.current?.closest('[data-app-theme-root]') ?? document.body;
+                setTags([]);
+                setFullScreen(true);
               }}
               className="text-gray-500 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-300 opacity-50 mr-1 mt-1"
             >
               {!fullScreen ? <FaExpand></FaExpand> : <FaTimes></FaTimes>}
             </button>
-          </div>
+          </div>}
+          <div className={fullScreen ? 'flex-1 min-h-0 p-4 relative' : 'h-full'}>
           <EditTextAreaImpl
             ref={editorRef}
             value={value}
@@ -1872,6 +1938,7 @@ const PromptEditTextArea = observer(
             onFocus={onFoucs}
             onBlur={onBlur}
           />
+          </div>
           {isMobile && fullScreen && (
             <div className="absolute right-0 bottom-0 z-10 p-1 active:brightness-90">
               <FaUndo
@@ -1897,12 +1964,16 @@ const PromptEditTextArea = observer(
         />
         {fullScreen && (
           <div
-            className="fixed bg-black opacity-15 w-screen h-screen top-0 left-0 z-[var(--z-prompt-back)]"
-            onClick={closeFullScreen}
+            data-prompt-expanded-backdrop=""
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[var(--z-prompt-back)]"
           ></div>
         )}
       </>
     );
+    return fullScreen ? <>
+      <div className={'h-full ' + (extraClassName ?? '')} />
+      {createPortal(contents, portalHost.current)}
+    </> : contents;
   },
 );
 
