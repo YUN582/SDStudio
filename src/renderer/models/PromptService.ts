@@ -12,6 +12,7 @@ import {
 } from './types';
 import { resolveSceneCharacterPrompts } from './sceneCharacterPrompts';
 import { variantComboMode } from './comboMode';
+import { activeRandomizerOptions, expandPromptAlternatives, promptRandomizerRanges, readPromptRandomizer, splitPromptTags } from './promptRandomizer';
 import {
   makeExplicitWeightRangeRegex,
   parsePromptWeightNumber,
@@ -32,67 +33,16 @@ export function stripPromptComments(str: string): string {
 }
 
 export function toPARR(str: string) {
-  return cleanPARR(
-    stripPromptComments(str).replace(/\r\n?|\n/g, ',').split(','),
-  ).filter((x) => x !== '');
+  return splitPromptTags(str);
 }
 
 /**
- * Expands inline alternatives such as `{jeans|black pants}`.
+ * Resolves NAI `||a|b||` sections and legacy `{a|b}` alternatives per image.
  * Braces without a top-level pipe remain untouched so NovelAI emphasis syntax
  * such as `{artist:name}` keeps its original meaning.
  */
 export function expandInlineRandom(text: string): string {
-  const expand = (value: string): string => {
-    let result = '';
-    for (let index = 0; index < value.length; index++) {
-      if (value[index] !== '{') {
-        result += value[index];
-        continue;
-      }
-
-      let depth = 1;
-      let closeIndex = -1;
-      const separators: number[] = [];
-      let cursor = index + 1;
-      for (; cursor < value.length; cursor++) {
-        const char = value[cursor];
-        if (char === '{') depth++;
-        else if (char === '}') {
-          depth--;
-          if (depth === 0) {
-            closeIndex = cursor;
-            break;
-          }
-        } else if (char === '|' && depth === 1) {
-          separators.push(cursor);
-        }
-      }
-
-      if (closeIndex < 0) {
-        result += value.slice(index);
-        break;
-      }
-
-      const inner = value.slice(index + 1, closeIndex);
-      if (separators.length === 0) {
-        result += `{${expand(inner)}}`;
-      } else {
-        const options: string[] = [];
-        let optionStart = index + 1;
-        for (const separator of separators) {
-          options.push(value.slice(optionStart, separator));
-          optionStart = separator + 1;
-        }
-        options.push(value.slice(optionStart, closeIndex));
-        result += expand(pickRandom(options).trim());
-      }
-      index = closeIndex;
-    }
-    return result;
-  };
-
-  return expand(text);
+  return expandPromptAlternatives(text);
 }
 
 /**
@@ -115,7 +65,7 @@ export function expandPieces(
   scene: Scene | InpaintScene | undefined,
 ): string {
   if (!text) return '';
-  const tokens = toPARR(text); // 내부에서 stripPromptComments 처리됨
+  const tokens = toPARR(text); // Keep randomizer comments until a candidate is selected.
   if (tokens.length === 0) return '';
   const node: PromptNode = {
     type: 'group',
@@ -199,7 +149,8 @@ export class PromptService extends EventTarget {
 
     for (const text of prompts) {
       let match;
-      while ((match = pieceRegex.exec(text)) !== null) {
+      const active = stripPromptComments(text);
+      while ((match = pieceRegex.exec(active)) !== null) {
         const inner = match[1];
         const parts = inner.split('.');
         if (parts.length !== 2) continue;
@@ -265,6 +216,15 @@ export class PromptService extends EventTarget {
     }
     if (!counter) {
       counter = { count: 0 };
+    }
+    const randomizer = readPromptRandomizer(word, 0);
+    if (randomizer?.end === word.length) {
+      const options = activeRandomizerOptions(randomizer);
+      if (!options.length) return { type: 'text', text: '' };
+      return { type: 'random', options: options.map(option => ({
+        type: 'group', children: toPARR(option).map(part =>
+          this.parseWord(part, session, scene, visited, depth + 1, counter)),
+      })) };
     }
     if (word.charAt(0) === '<' && word.charAt(word.length - 1) === '>') {
       if (!session) {
@@ -767,6 +727,7 @@ export const highlightPrompt = (
   text: string,
   lineHighlight: boolean = false,
 ) => {
+  const randomizers = promptRandomizerRanges(text);
   // 주석 범위 수집 (원본 text 기준 절대 오프셋)
   const commentRanges: Array<[number, number]> = [];
   const commentRegex = /##[\s\S]*?##/g;
@@ -850,7 +811,7 @@ export const highlightPrompt = (
     .split('\n')
     .map((x) => {
       const word = x
-        .split(/([,])/)
+        .split(/([,|])/)
         .map((word: string, index) => {
           if (word === '\n') {
             return word;
@@ -952,9 +913,9 @@ export const highlightPrompt = (
           }
           let js = '';
           let pword = word.substring(leftTrimPos, rightTrimPos + 1);
-          if (pword === '|') {
+          if (/^\|+$/.test(pword)) {
             classNames.push('syntax-split');
-            if (!isMobile)
+            if (!isMobile && !randomizers.some(range => range.start <= wordStart && wordEnd <= range.end))
               js =
                 'onmousemove="window.promptService.showPromptTooltip(\'' +
                 pword +

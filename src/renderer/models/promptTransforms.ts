@@ -39,12 +39,13 @@ interface CaretSegment {
   core: string;
 }
 
-/** 커서가 놓인 쉼표 구간(앞뒤 공백 분리). */
+/** Tag boundaries include commas and randomizer/interleaving pipes. */
 function caretSegmentOf(text: string, selectionStart: number): CaretSegment {
   const caret = clamp(selectionStart, 0, text.length);
-  const segmentStart = text.lastIndexOf(',', Math.max(0, caret - 1)) + 1;
-  const nextComma = text.indexOf(',', caret);
-  const segmentEnd = nextComma < 0 ? text.length : nextComma;
+  let segmentStart = caret;
+  let segmentEnd = caret;
+  while (segmentStart > 0 && !/[,|]/.test(text[segmentStart - 1])) segmentStart--;
+  while (segmentEnd < text.length && !/[,|]/.test(text[segmentEnd])) segmentEnd++;
   const segment = text.slice(segmentStart, segmentEnd);
   const leading = segment.match(/^\s*/)?.[0] ?? '';
   const trailing = segment.match(/\s*$/)?.[0] ?? '';
@@ -228,7 +229,7 @@ export function togglePromptCommentAtSelection(
     !exact &&
     comment?.end === selectionStart &&
     selectionStart < text.length &&
-    !/[,\s]/.test(text[selectionStart])
+    !/[,|\s]/.test(text[selectionStart])
   ) {
     comment = ranges.find((range) => range.start === selectionStart);
   }
