@@ -1238,6 +1238,18 @@ const PreSetSelect = observer(({ workflowType }: { workflowType: string }) => {
                       );
                       return;
                     }
+                    const remove = () => {
+                      if ((curSession.presets.get(workflowType)?.length ?? 0) <= 1) {
+                        appState.pushMessage('마지막 사전 세팅은 삭제할 수 없습니다');
+                        return;
+                      }
+                      editPresetList(curSession, UNDO_TEXT.presetRemove([option.name]), () => {
+                        curSession.removePreset(workflowType, option.name);
+                        curSession.selectedWorkflow = { workflowType, presetName: undefined };
+                      });
+                    };
+                    if (appState.skipStylePresetDeleteConfirm) { remove(); return; }
+                    let skipForSession = false;
                     appState.pushDialog({
                       type: 'confirm',
                       // 휴지통이 없다 — 이름을 보이고 Enter 무시. 버튼 툴팁(「그림체 삭제」)과 같은 라벨.
@@ -1247,14 +1259,13 @@ const PreSetSelect = observer(({ workflowType }: { workflowType: string }) => {
                         name: option.name,
                         outcome: 'undoable',
                       }),
+                      confirmCheck: {
+                        label: '이번 세션에서 다시 묻지 않음',
+                        onChange: checked => { skipForSession = checked; },
+                      },
                       callback: () => {
-                        editPresetList(curSession, UNDO_TEXT.presetRemove([option.name]), () => {
-                          curSession!.removePreset(workflowType, option.name);
-                          curSession!.selectedWorkflow = {
-                            workflowType: workflowType,
-                            presetName: undefined,
-                          };
-                        });
+                        if (skipForSession) appState.skipStylePresetDeleteConfirm = true;
+                        remove();
                       },
                     });
                   }}

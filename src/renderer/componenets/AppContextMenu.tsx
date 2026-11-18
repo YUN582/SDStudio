@@ -1003,12 +1003,8 @@ export const AppContextMenu = observer(() => {
       appState.pushMessage('그림체는 최소 한 개 이상이어야 합니다');
       return;
     }
-    appState.pushDialog({
-      type: 'confirm',
-      // 그림체는 휴지통이 없다 — Enter 무시(2026-10-03 E1). editPresetList 기록으로 되돌리기 가능(2026-11-15)
-      ...deleteConfirmText({ kind: 'style', name: ctx.preset.name, outcome: 'undoable' }),
-      callback: async () => {
-        const curSession = appState.curSession;
+    const remove = () => {
+        const curSession = ctx.session;
         const presets = curSession?.presets.get(ctx.preset.type) ?? [];
         // 확인 창이 떠 있는 동안 다른 곳에서 지워졌을 수 있어 한 번 더 본다
         if (presets.length <= 1) {
@@ -1019,6 +1015,19 @@ export const AppContextMenu = observer(() => {
         editPresetList(curSession, UNDO_TEXT.presetRemove([ctx.preset.name]), () =>
           curSession!.removePreset(ctx.preset.type, ctx.preset.name),
         );
+    };
+    if (appState.skipStylePresetDeleteConfirm) { remove(); return; }
+    let skipForSession = false;
+    appState.pushDialog({
+      type: 'confirm',
+      ...deleteConfirmText({ kind: 'style', name: ctx.preset.name, outcome: 'undoable' }),
+      confirmCheck: {
+        label: '이번 세션에서 다시 묻지 않음',
+        onChange: checked => { skipForSession = checked; },
+      },
+      callback: () => {
+        if (skipForSession) appState.skipStylePresetDeleteConfirm = true;
+        remove();
       },
     });
   };

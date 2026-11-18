@@ -225,6 +225,7 @@ export class AppState {
 
   // 이미지 삭제 확인 건너뛰기 (세션 스코프)
   @observable accessor skipImageDeleteConfirm: boolean = false;
+  @observable accessor skipStylePresetDeleteConfirm: boolean = false;
 
   // 가중치 숫자 태그 공백 보정(N1, models/promptWeightSpacingFlow.ts) — config.promptWeightSpacingFix 미러(없으면 true)와
   // 확인 창의 「이번 세션에는 보정 안 함」(세션 스코프, 저장 안 함). 둘 다 전송 단계 패딩 여부에도 쓴다.
