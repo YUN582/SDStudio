@@ -892,9 +892,19 @@ export const highlightPrompt = (
               if (inComment) {
                 result += `<span class="syntax-comment">${segment}</span>`;
               } else {
-                const weightClass = getWeightClass(absPos, wordStart + j);
+                // Keep separator padding outside the span, while retaining
+                // spaces that belong to an active weighted group.
+                let start = i;
+                let end = j;
+                while (start < end && /\s/.test(word[start]) &&
+                       !getWeightClass(wordStart + start, wordStart + start + 1)) start++;
+                while (end > start && /\s/.test(word[end - 1]) &&
+                       !getWeightClass(wordStart + end - 1, wordStart + end)) end--;
+                const weightClass = getWeightClass(wordStart + start, wordStart + end);
+                const contentStart = start - i;
+                const contentEnd = segment.length - (j - end);
                 result += weightClass
-                  ? `<span class="${weightClass}">${segment}</span>`
+                  ? `${segment.slice(0, contentStart)}<span class="${weightClass}">${segment.slice(contentStart, contentEnd)}</span>${segment.slice(contentEnd)}`
                   : segment;
               }
               i = j;

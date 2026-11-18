@@ -60,3 +60,18 @@ test('escapes visible prompt text beside a comment', () => {
   expect(root.querySelector('b')).toBeNull();
   expect(content(root, '.syntax-weight-emphasis')).toContain('tag & <b>literal</b>');
 });
+
+test.each([
+  ['##0.5::jaggy lines::,## 1.1::dithering::,', '1.1::dithering::'],
+  ['##left## 0.5::tag with spaces:: ##right##', '0.5::tag with spaces::'],
+  ['1.5::tag::  ##right##', '1.5::tag::'],
+  ['##left## \t1.5::tag:: \t##right##', '1.5::tag::'],
+])('keeps separator whitespace outside the highlight in %s', (text, weighted) => {
+  const root = render(text);
+  expect(content(root, '[class*=syntax-weight]')).toBe(weighted);
+});
+
+test('keeps whitespace inside an active weighted group highlighted around a comment', () => {
+  const root = render('1.5::left, ##hidden## right::');
+  expect(content(root, '.syntax-weight-emphasis')).toBe('1.5::left,  right::');
+});
