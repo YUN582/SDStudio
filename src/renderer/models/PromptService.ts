@@ -810,8 +810,11 @@ export const highlightPrompt = (
   const words = text
     .split('\n')
     .map((x) => {
-      const word = x
-        .split(/([,|])/)
+      const lineStart = offset;
+      const lineEnd = lineStart + x.length;
+      const tokens = x.split(/([,|])/);
+      let tokenOffset = lineStart;
+      const word = tokens
         .map((word: string, index) => {
           if (word === '\n') {
             return word;
@@ -965,6 +968,19 @@ export const highlightPrompt = (
           }
           offset += word.length;
           return res;
+        })
+        .map((html, index) => {
+          const start = tokenOffset;
+          const end = start + tokens[index].length;
+          tokenOffset = end;
+          if (start === end) return html;
+          const range = randomizers.find(range => range.start <= start && end <= range.end);
+          if (!range) return html;
+          // Keep existing syntax inside the subtle group background. Reopen on
+          // each line so wrapping never crosses a syntax-line or changes text.
+          const open = start === Math.max(range.start, lineStart);
+          const close = end === Math.min(range.end, lineEnd);
+          return (open ? '<span class="syntax-randomizer">' : '') + html + (close ? '</span>' : '');
         })
         .join('');
       offset += 1; // Newline between rendered lines.

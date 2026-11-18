@@ -91,3 +91,40 @@ test('weight highlighting does not spill across random alternatives', () => {
   expect(content('.syntax-weight-emphasis')).toBe('1.5::blue hair::');
   expect(content('.syntax-comment')).toBe('##green hair##');
 });
+
+test('groups the whole randomizer beneath weights and comments without changing text', () => {
+  const text = 'before, ||0.5::red hair::|1.5::blue hair::|##2::green hair::##||, after';
+  const root = document.createElement('div');root.innerHTML = highlightPrompt({} as any, text);
+  expect(root.textContent).toBe(text);
+  const groups = root.querySelectorAll('.syntax-randomizer');
+  expect(groups).toHaveLength(1);
+  expect(groups[0].textContent).toBe(text.slice(text.indexOf('||'), text.lastIndexOf('||') + 2));
+  expect(groups[0].querySelector('.syntax-weight-deemphasis')?.textContent).toBe('0.5::red hair::');
+  expect(groups[0].querySelector('.syntax-weight-emphasis')?.textContent).toBe('1.5::blue hair::');
+  expect(groups[0].querySelector('.syntax-comment')?.textContent).toBe('##2::green hair::##');
+  expect(root.querySelector('.syntax-comment [class*=syntax-weight]')).toBeNull();
+});
+
+test('preserves prompt-piece styling inside the randomizer background', () => {
+  const session = { library: new Map([['L', { pieces: [{ name: 'P', prompt: 'smile' }] }]]) };
+  const root = document.createElement('div');root.innerHTML = highlightPrompt(session as any, '||<L.P>|plain||');
+  expect(root.textContent).toBe('||<L.P>|plain||');
+  expect(root.querySelector('.syntax-randomizer .syntax-wildcard')?.textContent).toBe('<L.P>');
+});
+
+test('keeps multiline choice backgrounds inside each line with original offsets', () => {
+  const text = 'outside ||red,\n1.5::blue::|green|| after ||cat|dog||';
+  const root = document.createElement('div');root.innerHTML = highlightPrompt({} as any, text);
+  expect(root.textContent).toBe(text);
+  expect(Array.from(root.querySelectorAll('.syntax-randomizer')).map(e => e.textContent))
+    .toEqual(['||red,', '1.5::blue::|green||', '||cat|dog||']);
+  expect(root.querySelector('.syntax-randomizer .syntax-line')).toBeNull();
+  expect(root.querySelector('.syntax-randomizer .syntax-weight-emphasis')?.textContent).toBe('1.5::blue::');
+});
+
+test('does not add choice backgrounds to commented or incomplete syntax', () => {
+  const text = '##||a|b||##, |, ||unfinished|choice';
+  const root = document.createElement('div');root.innerHTML = highlightPrompt({} as any, text);
+  expect(root.textContent).toBe(text);
+  expect(root.querySelector('.syntax-randomizer')).toBeNull();
+});
