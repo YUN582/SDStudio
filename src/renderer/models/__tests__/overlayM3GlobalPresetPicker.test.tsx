@@ -19,6 +19,9 @@ const mockGps: { presets: any[]; loaded: boolean; load: jest.Mock; list: () => a
   fetchProfileImage: jest.fn(async () => null),
 };
 const mockStack: (() => void)[] = [];
+let mockPresetEditor: any;
+const mockSavePreset = jest.fn(async () => ({}));
+const mockFetchVibe = jest.fn(async () => 'data:image/png;base64,QUJD');
 
 jest.mock('../BackStackService', () => ({
   useBackLayer: () => {},
@@ -38,7 +41,7 @@ jest.mock('../index', () => ({
   isMobile: false,
   globalPresetService: mockGps,
   backend: {},
-  imageService: {},
+  imageService: { fetchVibeImage: mockFetchVibe },
   sessionService: {},
 }));
 const mockAppState: any = {
@@ -52,6 +55,7 @@ const mockAppState: any = {
 jest.mock('../AppService', () => ({ appState: mockAppState }));
 jest.mock('../GlobalPresetService', () => ({ SUPPORTED_GLOBAL_PRESET_TYPES: ['SDImageGen', 'SDImageGenEasy'] }));
 jest.mock('../PersistenceService', () => ({ persistService: {} }));
+jest.mock('../ImageService', () => ({ dataUriToBase64: (s: string) => s.split(',')[1] }));
 jest.mock('../presetUndo', () => ({ beginPresetListRecord: jest.fn() }));
 jest.mock('../undoService', () => ({ UNDO_TEXT: {} }));
 jest.mock('../globalLibraryUndo', () => ({
@@ -59,12 +63,12 @@ jest.mock('../globalLibraryUndo', () => ({
   setGlobalPresetDefaultRecorded: jest.fn(),
   setGlobalPresetsDefaultRecorded: jest.fn(),
 }));
-jest.mock('../../componenets/PresetEditModal', () => ({ PresetEditModal: () => null }));
+jest.mock('../../componenets/PresetEditModal', () => ({ PresetEditModal: (props: any) => { mockPresetEditor = props; return null; } }));
 jest.mock('../../componenets/ActionIcon', () => ({ ActionIcon: () => null }));
 
 import { filterSortGlobalPresets } from '../globalPresetListView';
 import { GlobalPresetPicker } from '../../componenets/GlobalPresetPicker';
-import { GlobalPresetPickerOverlay } from '../../componenets/GlobalPresetTab';
+import { GlobalPresetTab, GlobalPresetPickerOverlay } from '../../componenets/GlobalPresetTab';
 
 const SAMPLE = [
   { id: 'a', name: 'Tree 10', workflowType: 'SDImageGen', isDefault: false, updatedAt: 300 },
@@ -93,6 +97,36 @@ describe('filterSortGlobalPresets — 글로벌 프리셋 탭과 같은 검색·
     const l = [{ name: 'x' }, { name: 'y', updatedAt: 5 }];
     expect(filterSortGlobalPresets(l, '', 'default').map((p) => p.name)).toEqual(['y', 'x']);
   });
+});
+
+test.each(['SDImageGen', 'SDImageGenEasy'])('new global preset captures current %s settings and profile', async (type) => {
+  mockGps.presets = [];
+  (mockGps as any).addFromPresetAndImage = mockSavePreset;
+  mockSavePreset.mockClear();
+  const source = {
+    type, name: 'current', frontPrompt: 'current front', backPrompt: 'current back',
+    uc: 'current negative', steps: 36, sampling: 'k_euler', profile: 'current.png',
+    samplingProfiles: { v5: { steps: 36 } },
+  };
+  mockAppState.curSession = {
+    selectedWorkflow: { workflowType: type, presetName: 'current' },
+    getPreset: () => ({ type, toJSON: () => source }),
+  };
+  await act(async () => root.render(<GlobalPresetTab />));
+  const add = Array.from(container.querySelectorAll('button')).find(
+    button => button.textContent?.includes('새 글로벌 프리셋'),
+  )!;
+  await act(async () => { add.click(); });
+  expect(mockPresetEditor.preset.frontPrompt).toBe('current front');
+  expect(mockPresetEditor.preset).not.toBe(source);
+  source.frontPrompt = 'later change';
+  expect(await mockPresetEditor.adapter.fetchProfile()).toBe('data:image/png;base64,QUJD');
+  await act(async () => mockPresetEditor.adapter.save('saved', { steps: 40 }, null));
+  expect(mockSavePreset).toHaveBeenLastCalledWith(
+    expect.objectContaining({ type, name: 'saved', frontPrompt: 'current front', backPrompt: 'current back', uc: 'current negative', steps: 40, samplingProfiles: source.samplingProfiles }),
+    'QUJD', 'saved',
+  );
+  mockAppState.curSession = undefined;
 });
 
 let root: Root;

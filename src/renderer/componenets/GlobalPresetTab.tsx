@@ -15,7 +15,6 @@ import { ActionIcon } from './ActionIcon';
 import {
   backend,
   globalPresetService,
-  workFlowService,
   imageService,
   isMobile,
 } from '../models';
@@ -25,6 +24,7 @@ import {
   SUPPORTED_GLOBAL_PRESET_TYPES,
 } from '../models/GlobalPresetService';
 import { appState } from '../models/AppService';
+import { dataUriToBase64 } from '../models/ImageService';
 import { nameErrorMessage, promptName } from '../models/nameInput';
 import {
   batchResultLine,
@@ -439,7 +439,27 @@ export const GlobalPresetTab = observer(() => {
   const [editing, setEditing] = useState<IGlobalPresetEntry | null>(null);
 
   const [draft, setDraft] = useState<Record<string, any> | null>(null);
-  const newPreset = () => setDraft(workFlowService.buildPreset('SDImageGen').toJSON());
+  const [draftProfile, setDraftProfile] = useState<string | null>(null);
+  const newPreset = async () => {
+    const session = appState.curSession;
+    const selected = session?.selectedWorkflow;
+    const preset = selected?.presetName && session?.getPreset(selected.workflowType, selected.presetName);
+    if (!preset || !SUPPORTED_GLOBAL_PRESET_TYPES.includes(preset.type)) {
+      appState.pushMessage('저장할 이미지 생성 프리셋을 먼저 선택해주세요.', 'error');
+      return;
+    }
+    // Capture the selected settings before opening the editor; edits stay detached.
+    const snapshot = JSON.parse(JSON.stringify(preset.toJSON()));
+    try {
+      const profile = snapshot.profile
+        ? await imageService.fetchVibeImage(session!, snapshot.profile)
+        : null;
+      setDraftProfile(profile);
+      setDraft(snapshot);
+    } catch (error: any) {
+      appState.pushMessage(error.message || '현재 프리셋을 읽지 못했습니다.', 'error');
+    }
+  };
   const allPresets = globalPresetService.list();
 
   const toggleSelect = (id: string) => {
@@ -768,11 +788,15 @@ export const GlobalPresetTab = observer(() => {
       {draft && (
         <PresetEditModal title="새 글로벌 프리셋" initialName="" preset={draft}
           adapter={{
-            fetchProfile: async () => null,
+            fetchProfile: async () => draftProfile,
             save: async (name, patch, profile) => {
               if (globalPresetService.list().some(p => p.name === name))
                 throw new Error('이미 존재하는 이름입니다');
-              await globalPresetService.addFromPresetAndImage({ ...draft, ...patch, name, type: 'SDImageGen' }, profile, name);
+              await globalPresetService.addFromPresetAndImage(
+                { ...draft, ...patch, name },
+                profile || (draftProfile ? dataUriToBase64(draftProfile) : null),
+                name,
+              );
               setQuery('');
               exitMultiSelect();
             },
