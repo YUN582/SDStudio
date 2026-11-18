@@ -20,6 +20,7 @@ import { FloatView } from './FloatView';
 import { ResultDetailView } from './ResultViewer';
 import Tooltip from './Tooltip';
 import { toolbarDragUi } from './ToolbarDnd';
+import { useHistoryImageDrag } from './HistoryImageDrag';
 import {
   EDGE_SWIPE_ZONE,
   shouldIgnoreEdgeSwipeAt,
@@ -139,36 +140,19 @@ const HistoryImageCell = observer(
     }, [entry.path]);
 
     const isFav = !!scene && scene.mains.includes(entry.filename);
-    const finishFileDrag = () => {
-      delete document.documentElement.dataset.sdstudioHistoryFileDrag;
-    };
+    const fileDrag = useHistoryImageDrag(entry, onClick);
 
     return (
       <div
+        data-history-image-cell=""
         className={
           'flex flex-col select-none hover:brightness-95 active:brightness-90 ' +
+          (fileDrag.dragging ? 'opacity-30 ' : '') +
           (isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing')
         }
-        draggable={!isMobile}
-        onDragStart={(event) => {
-          if (isMobile) {
-            event.preventDefault();
-            return;
-          }
-          event.preventDefault();
-          document.documentElement.dataset.sdstudioHistoryFileDrag = 'true';
-          void backend
-            .startFileDrag(entry.path)
-            .catch(() =>
-              appState.pushMessage(
-                '이미지 파일을 드래그하지 못했습니다.',
-                'error',
-              ),
-            )
-            .finally(finishFileDrag);
-        }}
-        onDragEnd={finishFileDrag}
-        onClick={onClick}
+        draggable={false}
+        onMouseDown={fileDrag.start}
+        onClick={fileDrag.click}
         onContextMenu={(e) => {
           show({
             event: e,
@@ -176,6 +160,7 @@ const HistoryImageCell = observer(
           });
         }}
       >
+        {fileDrag.preview}
         <div
           className={
             'relative w-full rounded overflow-hidden bg-[var(--c-input-bg)] flex items-center justify-center' +

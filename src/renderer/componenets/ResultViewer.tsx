@@ -678,6 +678,7 @@ const Cell = memo(
         key={index.toString() + path + imageSize.toString()}
         data-image-index={index}
         data-image-card={path ? "" : undefined}
+        data-history-drop-path={path || undefined}
         style={style}
         className={
           'image-cell relative hover:brightness-95 active:brightness-90 bg-[var(--c-surface)] cursor-pointer ' +
@@ -1075,6 +1076,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
         ref={containerRef}
         tabIndex={0}
         aria-label="이미지 그리드"
+        data-history-drop-scene={!isHidden && activeView ? scene.name : undefined}
+        data-history-drop-type={scene.type}
         style={{ width: '100%', height: '100%' }}
         className={
           'flex justify-center relative select-none outline-none ' +

@@ -219,6 +219,19 @@ export class ImageHistoryService {
   }
 
   @action
+  relinkMovedImage(project: string, source: GenericScene, target: GenericScene,
+    oldFilename: string, filename: string, movedPaths: ReadonlyMap<string, string>) {
+    this.entries = this.entries.map(entry => {
+      const path = entry.sessionName === project ? movedPaths.get(entry.path) : undefined;
+      if (!path) return entry;
+      const movedRoot = entry.sceneType === source.type && entry.sceneName === source.name && entry.filename === oldFilename;
+      return { ...entry, id: path, path,
+        ...(movedRoot ? { sceneType: target.type, sceneName: target.name, filename } : {}) };
+    });
+    this.scheduleSave();
+  }
+
+  @action
   relinkMergedScenes(
     project: string,
     target: string,

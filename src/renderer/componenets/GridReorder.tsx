@@ -10,7 +10,7 @@ interface CardPreview {
 }
 export interface GridDrag<T> { preview: CardPreview; point: Point; items: T[]; target?: T }
 
-function captureCard(card: HTMLElement, event: React.MouseEvent): CardPreview | undefined {
+export function captureCard(card: HTMLElement, event: Pick<MouseEvent, 'clientX' | 'clientY'>): CardPreview | undefined {
   const bounds = card.getBoundingClientRect();
   if (!bounds.width || !bounds.height) return;
   const copy = card.cloneNode(true) as HTMLElement;
@@ -48,7 +48,7 @@ export function ReorderDragPreview<T>({ type, drag }: { type: string; drag: Grid
   );
 }
 
-function followScroll(viewport: HTMLElement, readPoint: () => Point | undefined, refresh: (point: Point) => void) {
+export function followScroll(viewport: HTMLElement, readPoint: () => Point | undefined, refresh: (point: Point) => void) {
   let request = 0, last = 0, left = viewport.scrollLeft, top = viewport.scrollTop, moved = false;
   const speed = (value: number, min: number, max: number) => {
     if (value < min || value >= max) return 0;

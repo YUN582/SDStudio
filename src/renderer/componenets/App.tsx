@@ -499,7 +499,7 @@ export const App = observer(() => {
       if (
         document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
       ) {
-        event.dataTransfer.dropEffect = 'none';
+        event.dataTransfer.dropEffect = 'move';
         return;
       }
       event.dataTransfer.dropEffect = 'move';
@@ -525,8 +525,10 @@ export const App = observer(() => {
       setDragOverlay(null);
       if (
         document.documentElement.dataset.sdstudioHistoryFileDrag === 'true'
-      )
+      ) {
+        window.dispatchEvent(new CustomEvent('history-native-drop', { detail: { x: event.clientX, y: event.clientY } }));
         return;
+      }
       // 모달 오버레이가 열려 있으면 메타데이터 처리도 차단
       if (appState.modalOverlayCount > 0) return;
       const file = event.dataTransfer.files[0];

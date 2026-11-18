@@ -1026,6 +1026,8 @@ export const SceneCell = observer(
       return (
         <div
           id={`scene-cell-${scene.type}-${scene.name}`}
+          data-history-drop-scene={scene.name}
+          data-history-drop-type={scene.type}
           className={`relative z-0 ${isMobile ? 'm-[5px]' : 'm-[10.5px]'} p-1 bg-[var(--c-surface-2)] border line-color ${
             (isDragging || isReordering) ? 'opacity-30 no-touch ' : ''
           }${(isOver || isDropTarget) ? ' outline outline-sky-500' : ''}${
@@ -1119,6 +1121,8 @@ export const SceneCell = observer(
     return (
       <div
         id={`scene-cell-${scene.type}-${scene.name}`}
+        data-history-drop-scene={scene.name}
+        data-history-drop-type={scene.type}
         className={`${disableHover ? '' : 'group '}relative z-0 ${isMobile ? 'm-[5px]' : 'm-[8.5px]'} p-1 rounded-lg bg-[var(--c-surface-2)] border-2 ${
           currentFavoriteCount > 0
             ? 'border-yellow-400 '
