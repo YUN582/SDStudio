@@ -1,5 +1,6 @@
 // 설정 화면 탭: 커스텀(key 'personal', 라벨 「커스텀」) — PersonalTab
 
+import { isMobile } from '../models';
 import { WEIGHT_SPACING_TEXT } from '../models/promptWeightSpacingFlow';
 
 /* ── 탭: 커스텀 (취향 토글, 2026-10-01 라벨 「개인 설정」→「커스텀」) ── */
@@ -15,6 +16,7 @@ const appFonts: { id: 'pretendard' | 'system'; name: string; family: string }[] 
 ];
 
 const PersonalTab = ({
+  webSearchEnabled, setWebSearchEnabled,
   classicSceneCard, setClassicSceneCard,
   fullWordAc, setFullWordAc,
   legacyProjectMode, setLegacyProjectMode,
@@ -54,6 +56,19 @@ const PersonalTab = ({
       </p>
     </div>
     <hr className="line-color" />
+    {!isMobile && (
+      <>
+        <div>
+          <label className="flex items-center gap-2 text-sm gray-label">
+            <input id="cfgWebSearch" type="checkbox" checked={webSearchEnabled}
+              onChange={e => setWebSearchEnabled(e.target.checked)} />
+            웹 검색 사용
+          </label>
+          <p className="text-xs text-muted mt-1 ml-6">웹 검색 탭을 열면 내장 브라우저를 시작합니다. 끄고 저장하면 열려 있는 웹 검색도 닫힙니다.</p>
+        </div>
+        <hr className="line-color" />
+      </>
+    )}
     <div className="flex items-center gap-2">
       <input type="checkbox" id="cfgClassicScene" checked={classicSceneCard}
         onChange={(e) => setClassicSceneCard(e.target.checked)} />

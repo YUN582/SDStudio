@@ -567,14 +567,14 @@ const ArtistCard = observer(({
                 <FaCopy size={18} />
               </button>
             </Tooltip>
-            <Tooltip content="Danbooru에서 검색">
+            {(isMobile || appState.webSearchEnabled) && <Tooltip content="Danbooru에서 검색">
               <button
                 className="p-2 max-md:inline-flex max-md:items-center max-md:justify-center max-md:min-w-9 max-md:min-h-9 rounded-lg text-muted hover:bg-sky-100 dark:hover:bg-sky-900/40 hover:text-sky-500 transition-colors"
                 onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('danbooru-search-request', { detail: { text: artist.name } })); }}
               >
                 <FaGlobe size={18} />
               </button>
-            </Tooltip>
+            </Tooltip>}
             <Tooltip content="즐겨찾기">
               <button
                 className="p-2 max-md:inline-flex max-md:items-center max-md:justify-center max-md:min-w-9 max-md:min-h-9 rounded-lg text-muted hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"

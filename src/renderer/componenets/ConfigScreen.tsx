@@ -835,6 +835,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   const [classicSceneCard, setClassicSceneCard] = useState(false);
   const [legacyProjectMode, setLegacyProjectMode] = useState(false);
   const [legacySceneEditor, setLegacySceneEditor] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [legacyWorkflowMode, setLegacyWorkflowMode] = useState(false);
   const [sceneToolbarLegacyText, setSceneToolbarLegacyText] = useState(false);
   const [storageWriteGuard, setStorageWriteGuard] = useState(true);
@@ -917,6 +918,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     setClassicSceneCard(config.classicSceneCard ?? false);
     setLegacyProjectMode(config.legacyProjectMode ?? false);
     setLegacySceneEditor(config.legacySceneEditor ?? false);
+    setWebSearchEnabled(config.webSearchEnabled ?? true);
     setLegacyWorkflowMode(config.legacyWorkflowMode ?? false);
     setSceneToolbarLegacyText(config.sceneToolbarLegacyText ?? false);
     setStorageWriteGuard(config.storageWriteGuard ?? true);
@@ -1125,6 +1127,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       classicSceneCard: classicSceneCard,
       legacyProjectMode: legacyProjectMode,
       legacySceneEditor: legacySceneEditor,
+      webSearchEnabled,
       legacyWorkflowMode: legacyWorkflowMode,
       sceneToolbarLegacyText: sceneToolbarLegacyText,
       storageWriteGuard: storageWriteGuard,
@@ -1194,6 +1197,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     appState.classicSceneCard = classicSceneCard;
     appState.legacyProjectMode = legacyProjectMode;
     appState.legacySceneEditor = legacySceneEditor;
+    appState.webSearchEnabled = webSearchEnabled;
     appState.legacyWorkflowMode = legacyWorkflowMode;
     appState.sceneToolbarLegacyText = sceneToolbarLegacyText;
     appState.uiToolbar = uiToolbar;
@@ -1277,7 +1281,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       case 'drive':
         return <DriveSettingsTab active={activeTab === tabIdx} dirty={!!dirty} reloadConfig={loadConfig} syncFolder={syncFolder} setSyncFolder={setSyncFolder} selectSyncFolder={selectSyncFolder} />;
       case 'personal':
-        return <PersonalTab {...{ classicSceneCard, setClassicSceneCard, fullWordAc, setFullWordAc, legacyProjectMode, setLegacyProjectMode, legacySceneEditor, setLegacySceneEditor, legacyWorkflowMode, setLegacyWorkflowMode, sceneToolbarLegacyText, setSceneToolbarLegacyText, uiFont, setUiFont, uiClassicFinish, setUiClassicFinish, uiPillButtons, setUiPillButtons, allowDuplicateProjectOpen, setAllowDuplicateProjectOpen, promptWeightSpacingFix, setPromptWeightSpacingFix }} />;
+        return <PersonalTab {...{ webSearchEnabled, setWebSearchEnabled, classicSceneCard, setClassicSceneCard, fullWordAc, setFullWordAc, legacyProjectMode, setLegacyProjectMode, legacySceneEditor, setLegacySceneEditor, legacyWorkflowMode, setLegacyWorkflowMode, sceneToolbarLegacyText, setSceneToolbarLegacyText, uiFont, setUiFont, uiClassicFinish, setUiClassicFinish, uiPillButtons, setUiPillButtons, allowDuplicateProjectOpen, setAllowDuplicateProjectOpen, promptWeightSpacingFix, setPromptWeightSpacingFix }} />;
       case 'customization':
         return <CustomizationTab {...{ uiTheme, setUiTheme, whiteMode, setWhiteMode, trueDark, setTrueDark, uiThemePresets, setUiThemePresets }} />;
       case 'toolbar':
@@ -1314,6 +1318,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       classicSceneCard !== (savedCfg.classicSceneCard ?? false) ||
       legacyProjectMode !== (savedCfg.legacyProjectMode ?? false) ||
       legacySceneEditor !== (savedCfg.legacySceneEditor ?? false) ||
+      webSearchEnabled !== (savedCfg.webSearchEnabled ?? true) ||
       legacyWorkflowMode !== (savedCfg.legacyWorkflowMode ?? false) ||
       sceneToolbarLegacyText !== (savedCfg.sceneToolbarLegacyText ?? false) ||
       storageWriteGuard !== (savedCfg.storageWriteGuard ?? true) ||

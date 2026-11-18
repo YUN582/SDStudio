@@ -293,6 +293,7 @@ export const App = observer(() => {
       appState.classicSceneCard = conf.classicSceneCard ?? false;
       appState.legacyProjectMode = conf.legacyProjectMode ?? false;
       appState.legacySceneEditor = conf.legacySceneEditor ?? false;
+      appState.webSearchEnabled = conf.webSearchEnabled ?? true;
       appState.legacyWorkflowMode = conf.legacyWorkflowMode ?? false;
       appState.sceneToolbarLegacyText = conf.sceneToolbarLegacyText ?? false;
       appState.quickMenu = conf.quickMenu;
@@ -559,6 +560,11 @@ export const App = observer(() => {
 
   // onClick: 퀵 메뉴 export 계열의 탭 문맥 추적(appState.curMainTab, D3) —
   // 단축키 탭 전환(tab-N)도 TabComponent 가 onClick 을 호출하므로 함께 갱신된다.
+  const [browserPage, setBrowserPage] = useState<{ url?: string } | null>(null);
+  useEffect(() => {
+    setBrowserPage(null);
+  }, [appState.webSearchEnabled, appState.curSession?.name]);
+
   const tabs = [
     {
       label: '이미지생성',
@@ -604,12 +610,13 @@ export const App = observer(() => {
         appState.curMainTab = 'other';
       },
     },
-    ...(!isMobile ? [{
+    ...(!isMobile && appState.webSearchEnabled ? [{
       label: '웹 검색',
-      content: <EmbeddedBrowser />,
+      content: browserPage && <EmbeddedBrowser requestedPage={browserPage} />,
       emoji: <FaGlobe />,
       banToggle: true,
       onClick: () => {
+        setBrowserPage(page => page ?? {});
         appState.curMainTab = 'other';
       },
     }] : []),
@@ -631,9 +638,8 @@ export const App = observer(() => {
         return;
       }
       // PC: 앱 내 웹 검색 탭으로 전환 후 danbooru 검색 페이지로 이동
-      window.dispatchEvent(
-        new CustomEvent('danbooru-navigate', { detail: { url } }),
-      );
+      if (!appState.webSearchEnabled) return;
+      setBrowserPage({ url });
       window.dispatchEvent(
         new CustomEvent('shortcut-action', {
           detail: { action: `tab-${tabs.length}` },

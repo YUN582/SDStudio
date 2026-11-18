@@ -199,7 +199,14 @@ export const TabComponent: React.FC<TabComponentProps> = ({
   mobileTabs,
   mobileTabsHidden,
 }) => {
-  const [activeTab, setActiveTab] = useState(defaultActiveTab);
+  const [selectedTab, setActiveTab] = useState(defaultActiveTab);
+  const activeTab = selectedTab < tabs.length ? selectedTab : 0;
+  useEffect(() => {
+    if (selectedTab >= tabs.length) {
+      setActiveTab(0);
+      tabs[0]?.onClick?.();
+    }
+  }, [selectedTab, tabs]);
   const [toggleViewOpen, setToggleViewOpen] = useState(false);
 
   const handleTabClick = (index: number) => {

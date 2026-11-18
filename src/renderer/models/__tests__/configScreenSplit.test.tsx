@@ -206,6 +206,7 @@ const INITIAL_CONFIG = {
 // 아무것도 바꾸지 않고 「저장」했을 때 setConfig 인자(현재 HEAD 동작 그대로).
 const BASE_SAVE = {
   ...INITIAL_CONFIG,
+  webSearchEnabled: true,
   modelType: 'quality',
   ...withRequestDelaySettings({}, 2000, 500),
   requestDelayWarningDismissed: undefined,
@@ -564,6 +565,8 @@ type Case = {
   after?: () => void;
 };
 const PC_CASES: [string, Case][] = [
+  ['커스텀 — 웹 검색 끄기', { tab: '커스텀', change: () => click(input('cfgWebSearch')), expected: { webSearchEnabled: false },
+    after: () => expect(appState.webSearchEnabled).toBe(false) }],
   ['로그인 — 자동 순회', { tab: '로그인', change: () => click(input('cfgMultiTokenAutoRotate')), expected: { multiTokenAutoRotate: true } }],
   [
     '로그인 — 부스트(경고 창 생략: 다시 보지 않음 저장됨)',

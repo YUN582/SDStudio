@@ -159,10 +159,10 @@ export const BookmarkDialog: React.FC<BookmarkDialogProps> = ({ mode, initialLab
 // 빈 문자열 attribute 형태를 유지하기 위해 아래 캐스트를 공용으로 쓴다.
 export const WEBVIEW_ALLOWPOPUPS = { allowpopups: '' } as unknown as { allowpopups?: boolean };
 
-const DesktopBrowser: React.FC = () => {
+const DesktopBrowser = ({ requestedPage }: { requestedPage: { url?: string } }) => {
   const webviewRef = useRef<any>(null);
-  const [url, setUrl] = useState('about:blank');
-  const [inputUrl, setInputUrl] = useState('about:blank');
+  const [url, setUrl] = useState(requestedPage.url ?? 'about:blank');
+  const [inputUrl, setInputUrl] = useState(requestedPage.url ?? 'about:blank');
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -280,15 +280,12 @@ const DesktopBrowser: React.FC = () => {
     };
   }, [updateNavState]);
 
-  // 외부(텍스트 드래그 → Danbooru로 검색)에서 navigate 요청 수신
   useEffect(() => {
-    const handler = (e: Event) => {
-      const url = (e as CustomEvent).detail?.url;
-      if (url) navigate(url);
-    };
-    window.addEventListener('danbooru-navigate', handler);
-    return () => window.removeEventListener('danbooru-navigate', handler);
-  }, []);
+    if (requestedPage.url) {
+      setUrl(requestedPage.url);
+      setInputUrl(requestedPage.url);
+    }
+  }, [requestedPage]);
 
   // 컨텍스트 메뉴 외부 클릭 시 닫기
   useEffect(() => {

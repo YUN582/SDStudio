@@ -2158,6 +2158,7 @@ const createWindow = async (opts?: {
       const bw = browserWindow as BrowserWindow;
       // 텍스트 드래그 선택 시: danbooru 태그 검색 (앱 내 웹 검색 탭으로 전달)
       if (
+        config.webSearchEnabled !== false &&
         params.selectionText &&
         params.selectionText.trim() &&
         params.mediaType !== 'image'
