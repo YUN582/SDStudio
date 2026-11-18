@@ -104,6 +104,7 @@ import UndoRedoBar, {
 import {
   UndoBarSlot,
   UndoCornerSlot,
+  UndoInlineSlot,
   UndoSlotTone,
   UNDO_SHEET_ATTR,
   V2_ROW_SELECT_TINT,
@@ -743,7 +744,7 @@ describe('설계 E — 시트 호스트 우선(항상 맨 위 호스트 위)', (
 
 describe('설계 E — 클래식 모바일 프롬프트 편집 창 구석 예외', () => {
   const hosts: { root: Root; host: HTMLElement }[] = [];
-  const mountCorner = () => {
+  const mountCorner = (inline = false) => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const r = createRoot(host);
@@ -754,7 +755,7 @@ describe('설계 E — 클래식 모바일 프롬프트 편집 창 구석 예외
           <button type="button" aria-label="뒤로">
             x
           </button>
-          <UndoCornerSlot />
+          {inline ? <UndoInlineSlot /> : <UndoCornerSlot />}
         </div>,
       ),
     );
@@ -775,6 +776,17 @@ describe('설계 E — 클래식 모바일 프롬프트 편집 창 구석 예외
     const corner = mountCorner();
     for (const c of ['absolute', 'right-2', 'top-1/2', '-translate-y-1/2', 'z-[var(--z-widget)]'])
       expect(corner.className.split(' ')).toContain(c);
+  });
+
+  test('inline generation slot keeps both buttons in the count row without a floating frame or grip', () => {
+    mountAnchor(window.innerHeight - 52, 52, 'bar');
+    const slot = mountCorner(true);
+    render();
+    expect(bar()!.parentElement).toBe(slot);
+    expect(bar()!.className).not.toContain('border');
+    expect(bar()!.className).not.toContain('fixed');
+    expect(bar()!.querySelector('[data-undo-bar-grip]')).toBeNull();
+    expect(bar()!.querySelectorAll('button')).toHaveLength(2);
   });
 
   test('구석 자리가 보이면 하단 막대보다 우선 — 그 안에 포털, 끌기 손잡이 없음, 사방 테두리, 토스트 변수 없음', () => {

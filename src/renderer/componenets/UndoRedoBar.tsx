@@ -551,6 +551,7 @@ const UndoRedoBar = observer(({ suppressed }: { suppressed?: boolean }) => {
     pick && (pick.kind === 'sheet' || (pick.slot && pick.slot.isConnected)) ? pick : null;
   const kind: 'slot' | 'sheet' | 'corner' | 'screen' = attached ? attached.kind : 'screen';
   const tone: UndoBarTone = attached ? attached.tone : 'screen';
+  const inline = kind === 'corner' && attached?.slot?.getAttribute(UNDO_CORNER_ATTR) === 'inline';
   // 구석 예외에서는 끌기 없음
   const draggable = kind !== 'corner';
 
@@ -704,7 +705,7 @@ const UndoRedoBar = observer(({ suppressed }: { suppressed?: boolean }) => {
       data-edge-swipe-ignore=""
       role="toolbar"
       aria-label={UNDO_BAR_LABEL}
-      className={`titlebar-no-drag h-9 w-max flex items-center px-1 select-none touch-none line-color whitespace-nowrap ${shapeClass} ${UNDO_BAR_TONE_CLASS[tone]}${placeClass}${
+      className={inline ? 'titlebar-no-drag h-8 w-max flex items-center select-none whitespace-nowrap' : `titlebar-no-drag h-9 w-max flex items-center px-1 select-none touch-none line-color whitespace-nowrap ${shapeClass} ${UNDO_BAR_TONE_CLASS[tone]}${placeClass}${
         barDragging ? ' cursor-grabbing' : ''
       }`}
       style={style}

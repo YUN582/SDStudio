@@ -15,6 +15,7 @@ import { addScenesToQueue } from '../models/sceneQueueActions';
 import { REQUEST_DELAY_TEXT } from '../models/requestTiming';
 import { generationControlState } from '../models/generationControl';
 import { BOOST_TEXT } from '../models/boostMode';
+import { UndoInlineSlot } from './UndoBarSlot';
 
 interface ProgressBarProps {
   duration: number;
@@ -406,7 +407,7 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
           </span>
         </div>
       )}
-      <div className="whitespace-nowrap">
+      <div className="flex items-center whitespace-nowrap">
         <span className="sr-only md:not-sr-only whitespace-nowrap text-default">개수:</span>
         <input
           aria-label="생성 개수"
@@ -424,6 +425,7 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
               : 1;
           }}
         />
+        <UndoInlineSlot />
       </div>
       <div
         className={`relative cursor-pointer hover:brightness-95 active:brightness-90${v2 ? ' flex-1 min-w-[3.5rem]' : ''}`}
