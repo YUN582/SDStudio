@@ -1,6 +1,5 @@
 import { observer } from 'mobx-react-lite';
 import { StackFixed } from './LayoutComponents';
-import SessionSelect from './SessionSelect';
 import TaskQueueControl from './TaskQueueControl';
 import { isV2, V2_QUICK_BAR_SLOT_ID } from '../models/mobileV2';
 import { GenControlHandle } from './GenControlWidget';
@@ -9,19 +8,17 @@ import { isMobile } from '../models';
 import { BottomBarPlacement } from '../models/layoutTemplates';
 import { UndoBarSlot } from './UndoBarSlot';
 
-// 메인 화면 하단 바: 세션 선택(PC 전용) + 실행/중지 컨트롤.
-// 레이아웃 템플릿(배치 변경) 대비로 App.tsx 인라인에서 분리 — 기본(bottom) 모양·클래스는 기존과 동일.
+// 메인 화면 하단 바: 실행/중지 컨트롤. 프로젝트 도구는 ProjectTopBar 가 담당한다.
 // 컴팩트 템플릿(bottomBar:'none')에서는 App.tsx 가 이 컴포넌트를 아예 렌더하지 않는다.
 // appState.genWidget.detached 를 구독하므로 observer 로 감싼다.
 const BottomBar = observer(
   ({
     placement,
     genControl,
-    projectSidebar,
   }: {
     placement?: BottomBarPlacement;
     genControl?: 'docked' | 'floating';
-    // 'sidebar' 템플릿이면 프로젝트 툴바(SessionSelect)는 좌측 사이드 바가 담당 → 하단바엔 미렌더.
+    // Legacy caller compatibility; project placement is resolved by ProjectTopBar.
     projectSidebar?: boolean;
   }) => {
   // 분리 상태(PC 전용)이거나 슬롯이 floating 이면 하단바 쪽 컨트롤을 렌더하지 않는다.
@@ -52,11 +49,6 @@ const BottomBar = observer(
           paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
         }}
       >
-        {!projectSidebar && (
-          <div className="hidden md:block flex-1">
-            <SessionSelect />
-          </div>
-        )}
         {/* 모바일 V2: 퀵 생성 탭이 [생성][해상도]를 포털로 넣는 자리. 그동안 큐용 컨트롤은 숨긴다(mobileV2QuickBar). */}
         {v2 && (
           <div

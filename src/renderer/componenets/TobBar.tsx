@@ -22,10 +22,8 @@ import { normalizeTokenRotateWarning } from '../models/tokenAutoRotation';
 import ModelFamilySwitch from './ModelFamilySwitch';
 
 const TobBar = observer(() => {
-  // 컴팩트 템플릿(PC)은 하단바가 없어 세션(프로젝트) 선택을 상단바로 올린다.
-  // 모바일은 resolveLayout 이 항상 classic 강제 → 기존 인라인 표시(md:hidden) 동작 무변화.
+  // PC project tools use ProjectTopBar. Mobile retains its title-row selector.
   const resolved = resolveLayout(appState.uiLayoutTemplate, isMobile);
-  const sessionSelectTop = resolved.sessionSelectTop;
   // 'sidebar' 템플릿이면 프로젝트 선택기는 좌측 사이드 바가 담당 → 상단바엔 미렌더.
   // 'modern' 템플릿(projectStrip)은 프로젝트 툴바 완전 제거 — 좌측 스트립+드로어가 담당.
   const projectSidebar = resolved.projectSidebar || resolved.projectStrip;
@@ -157,14 +155,7 @@ const TobBar = observer(() => {
       <div className="titlebar-no-drag gap-3 hidden lg:flex text-sky-500 font-bold dark:text-white">
         SDStudio
       </div>
-      {/* 컴팩트(sessionSelectTop): 세션 선택이 flex-1로 가운데를 차지하므로,
-          Anlas·환경설정은 order-1, 창 컨트롤은 order-2로 우측 배치를 유지한다. */}
-      <div
-        className={
-          'ml-auto hidden md:flex items-center gap-2 flex-none titlebar-no-drag' +
-          (sessionSelectTop ? ' order-1' : '')
-        }
-      >
+      <div className="ml-auto hidden md:flex items-center gap-2 flex-none titlebar-no-drag">
         <ModelFamilySwitch />
         <div className="flex items-center gap-2" role="group" aria-label="계정 상태 및 환경설정">
         {!loggedIn ? (
@@ -184,15 +175,14 @@ const TobBar = observer(() => {
           </>
         )}
         <button
-          className="btn account-status-control back-sky text-sm"
+          className="round-button icon-only back-sky h-8 w-8 flex-none"
           aria-label="환경설정"
+          title="환경설정"
           onClick={() => {
             setSettings(true);
           }}
         >
-          {/* 좁은 창(<lg)에서는 톱니 아이콘으로 축약 */}
-          <FaCog size={16} className="lg:hidden" />
-          <span className="hidden lg:inline">환경설정</span>
+          <FaCog size={16} />
         </button>
         </div>
       </div>
@@ -220,17 +210,12 @@ const TobBar = observer(() => {
           {mobileAccountBadge}
         </div>
       )}
-      {/* 세션(프로젝트) 선택: 'sidebar' 템플릿이 아닐 때만. 모바일은 항상 인라인(md:hidden),
-          컴팩트(PC)면 PC에서도 표시(block). sidebar 템플릿은 좌측 사이드 바가 담당. */}
+      {/* Mobile keeps its project selector beside the title-row controls. */}
       {/* 통짜 no-drag 를 주지 않는다 — SessionSelect 내부의 상호작용 요소만 no-drag 라,
           채워지지 않은 여백·버튼 사이 빈 공간은 drag 로 남아 창 이동 핸들이 된다. */}
-      {!projectSidebar && (
+      {isMobile && !projectSidebar && (
         <div
-          className={
-            (sessionSelectTop ? '' : 'ml-auto ') +
-            'flex-1 min-w-0 ' +
-            (sessionSelectTop ? 'block' : 'block md:hidden')
-          }
+          className="ml-auto flex-1 min-w-0 block md:hidden"
         >
           <SessionSelect
             mobileLead={
@@ -245,12 +230,7 @@ const TobBar = observer(() => {
 
       {/* 윈도우 컨트롤 버튼 (PC only) */}
       {!isMobile && (
-        <div
-          className={
-            'titlebar-no-drag hidden md:flex items-center ml-2 -mr-1' +
-            (sessionSelectTop ? ' order-2' : '')
-          }
-        >
+        <div className="titlebar-no-drag hidden md:flex items-center ml-2 -mr-1">
           <button
             className="window-control-btn"
             onClick={handleMinimize}

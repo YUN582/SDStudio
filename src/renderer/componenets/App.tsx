@@ -22,6 +22,7 @@ import { SceneTrashView } from './TrashViews';
 import ArtistTagModal from './ArtistTagModal';
 import { QuickMenu } from './QuickMenu';
 import BottomBar from './BottomBar';
+import ProjectTopBar from './ProjectTopBar';
 import { GenControlFloating } from './GenControlWidget';
 import EditModeShell from './EditModeShell';
 import { resolveLayout, dockOrder, DOCK_RANK, defaultLayoutTemplateId } from '../models/layoutTemplates';
@@ -832,6 +833,7 @@ export const App = observer(() => {
                 <TobBar />
               </StackFixed>
             )}
+            {!isMobile && <ProjectTopBar />}
             {/* 저장 경로 변경 보류 안내(PC, 2026-11-04) — 재시작 전까지 이전 위치에 저장 중임을 한 줄로 */}
             {!isMobile && appState.saveLocationPending && (
               <StackFixed>

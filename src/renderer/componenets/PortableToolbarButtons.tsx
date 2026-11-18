@@ -52,7 +52,7 @@ const iconButton = (
     <button
       className={
         variant === 'project'
-          ? 'icon-button touch-hit relative mx-1' + (label?.shown ? LABELED_BUTTON_CLASS : '')
+          ? 'icon-button touch-hit relative mx-1 h-8' + (label?.shown ? LABELED_BUTTON_CLASS : '')
           : variant === 'companion'
             ? 'round-button icon-only back-gray h-8'
             : 'round-button icon-only back-gray'
@@ -284,7 +284,7 @@ export function portableToolbarButtons(
               ? `round-button icon-only ${appState.appliedCharacterPresetNames.length > 0 ? 'back-green' : 'back-gray'}`
               : variant === 'companion'
                 ? `round-button icon-only h-8 ${appState.appliedCharacterPresetNames.length > 0 ? 'back-green' : 'back-gray'}`
-                : `icon-button touch-hit relative mx-1 ${appState.appliedCharacterPresetNames.length > 0 ? 'back-green' : ''}${lab('character-presets')?.shown ? LABELED_BUTTON_CLASS : ''}`
+                : `icon-button touch-hit relative mx-1 h-8 ${appState.appliedCharacterPresetNames.length > 0 ? 'back-green' : ''}${lab('character-presets')?.shown ? LABELED_BUTTON_CLASS : ''}`
           }
           onClick={() => appState.openCharacterPresets()}
         >
@@ -306,7 +306,7 @@ export function portableToolbarButtons(
             // project(무배경 행 — 사전세팅선택·사전세팅 위·사이드바) 적응: 배경형 녹색
             // 원이 무배경 이웃과 어긋나던 것을 무배경+녹색 전경으로 통일(② A 피드백 3).
             variant === 'project'
-              ? 'icon-button touch-hit relative back-green mx-1'
+              ? 'icon-button touch-hit relative back-green mx-1 h-8'
               : 'round-button icon-only back-green' +
                 (variant === 'companion' ? ' h-8' : '')
           }
@@ -318,14 +318,16 @@ export function portableToolbarButtons(
     ) : (
       <button
         className={
-          'round-button back-green flex items-center gap-1' +
-          (variant === 'project' ? ' ml-1' : '')
+          variant === 'project'
+            ? 'icon-button touch-hit relative mx-1 h-8 back-green' + (lab('piece-editor')?.shown ? LABELED_BUTTON_CLASS : '')
+            : 'round-button back-green h-8 flex items-center gap-1'
         }
         onClick={() => appState.openPieceEditor()}
       >
         <ActionIcon id="piece-editor" size={18} />
-        {/* 라벨 도입 전부터 글자 버튼 — 단계와 무관하게 같은 모습(글자 = 레지스트리 label 단일 출처) */}
-        <span className="hidden md:inline">{toolbarLabelOf('piece-editor') ?? '프롬프트조각'}</span>
+        {variant === 'project'
+          ? lab('piece-editor')?.node
+          : <span className="hidden md:inline">{toolbarLabelOf('piece-editor') ?? '프롬프트조각'}</span>}
       </button>
     ),
   };

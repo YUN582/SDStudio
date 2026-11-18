@@ -50,7 +50,7 @@ export const layoutTemplates: LayoutTemplateMeta[] = [
   {
     id: 'classic',
     name: '클래식',
-    description: '하단 가로 바 — 계층화 이전과 동일한 기본 배치.',
+    description: '프로젝트 도구는 상단에, 생성 컨트롤은 하단에 배치합니다.',
     bottomBar: 'bottom',
     genControl: 'docked',
     mobileAllowed: true,

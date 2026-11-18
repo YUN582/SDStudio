@@ -241,20 +241,20 @@ describe('렌더: 프로젝트 바 버튼 라벨', () => {
     expect(scene.container.querySelector('[data-pb-label]')).toBeNull();
   });
 
-  test('프롬프트조각은 단계와 무관하게 종전 글자 버튼(글자 = 레지스트리 label)', () => {
+  test('프롬프트조각도 다른 프로젝트 버튼과 같은 높이·라벨 단계를 쓴다', () => {
     renderIds(['piece-editor'], { mobileIcon: false, variant: 'project', labels: 'measure' });
     const span = screen.getByText('프롬프트조각');
-    expect(span.hasAttribute('data-pb-label')).toBe(false);
-    expect(span.className).toBe('hidden md:inline');
+    expect(span.hasAttribute('data-pb-label')).toBe(true);
+    expect(span.className).toContain('invisible');
+    expect(span.closest('button')?.className).toContain('h-8');
+    expect(span.closest('button')?.className).toContain('icon-button');
   });
 });
 
-describe('PC 프로젝트 바 버튼 바닥 선(App.css .pb-lines)', () => {
-  test('같은 색 개별 선 규칙이 있고 영역 토큰은 없다', () => {
+describe('PC 프로젝트 바 버튼 바닥 선 제거', () => {
+  test('버튼 아래 장식 선을 그리지 않는다', () => {
     const css = fs.readFileSync(path.join(__dirname, '../../componenets/App.css'), 'utf-8');
-    expect(css).toContain('.pb-lines > *::after {');
-    expect(css).toMatch(/\.pb-lines > \*::after \{[^}]*background-color: var\(--c-line-strong\);/);
-    expect(css).toContain('.pb-lines > *:has(> .round-button)::after {');
+    expect(css).not.toContain('.pb-lines');
     expect(css).not.toContain('barzone');
     expect(css).not.toContain('pb-zone');
   });
