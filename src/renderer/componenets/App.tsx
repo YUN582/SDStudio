@@ -36,7 +36,7 @@ import UndoRedoBar from './UndoRedoBar';
 import { toggleFavoriteRecorded } from '../models/projectFolderUndo';
 import { DropdownSelect, TabComponent } from './UtilComponents';
 import PieceEditor, { PieceCell } from './PieceEditor';
-import { CharacterPresetFloatEditor } from './CharacterPresetEditor';
+import { CharacterPresetTab } from './CharacterPresetEditor';
 import SceneTemplateManager from './SceneTemplateManager';
 import { DriveBackupManagerHost } from './DriveBackupManager';
 import { ConfigImportPreviewHost } from './ConfigSyncSection';
@@ -629,6 +629,13 @@ export const App = observer(() => {
     },
     {
       // NAI풍 즉시 생성 화면. banToggle 미설정 → 모바일에서 공용 "프롬프트 열기" 사용
+      label: '캐릭터 프리셋',
+      content: (isActive: boolean) => <CharacterPresetTab isActive={isActive} />,
+      emoji: <ActionIcon id="character-presets" />,
+      banToggle: true,
+      onClick: () => { appState.curMainTab = 'other'; },
+    },
+    {
       label: '퀵 생성',
       // isActive: 모바일 V2 에서 활성일 때만 하단 바 자리를 [생성][해상도]로 쓴다
       content: (isActive: boolean) => <QuickModeTab isActive={isActive} />,
@@ -1076,14 +1083,6 @@ export const App = observer(() => {
         )}
         {/* 퀵 메뉴 — 플로팅 진입 버튼 + 오버레이 (트랙2 ① P3) */}
         <QuickMenu />
-        {appState.characterPresetsOpen && appState.curSession && (
-          <CharacterPresetFloatEditor
-            onClose={() => appState.closeCharacterPresets()}
-            onApplyPreset={(preset, mode) =>
-              appState.applyCharacterPreset(preset, mode)
-            }
-          />
-        )}
         {/* 씬 템플릿 관리 (씬 템플릿 개편 — 숨김 템플릿의 유일한 관리 지점) */}
         {appState.sceneTemplateManagerOpen && (
           <SceneTemplateManager

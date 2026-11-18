@@ -575,38 +575,8 @@ export class AppState {
       this.pushMessage('프로젝트를 먼저 선택해주세요');
       return;
     }
-    // 모바일 + 프리셋 적용 중: 해제/관리 선택 (W4 다중 적용 — 프리셋별 개별 해제)
-    const appliedNames = this.appliedCharacterPresetNames;
-    if (isMobile && appliedNames.length > 0) {
-      this.pushDialog({
-        type: 'select',
-        text:
-          appliedNames.length === 1
-            ? `"${appliedNames[0]}" 프리셋이 적용 중입니다.`
-            : `캐릭터 프리셋 ${appliedNames.length}개가 적용 중입니다.`,
-        items: [
-          ...appliedNames.map((n) => ({
-            text: `"${n}" 해제`,
-            value: 'clear:' + n,
-          })),
-          ...(appliedNames.length > 1
-            ? [{ text: '모두 해제', value: 'clear-all' }]
-            : []),
-          { text: '프리셋 관리 열기', value: 'manage' },
-        ],
-        callback: (value?: string) => {
-          if (value?.startsWith('clear:')) {
-            this.removeAppliedCharacterPreset(value.slice('clear:'.length));
-          } else if (value === 'clear-all') {
-            this.clearAppliedCharacterPreset();
-          } else if (value === 'manage') {
-            this.characterPresetsOpen = true;
-          }
-        },
-      });
-      return;
-    }
-    this.characterPresetsOpen = true;
+    this.characterPresetsOpen = false;
+    window.dispatchEvent(new CustomEvent('shortcut-action', { detail: { action: 'tab-5' } }));
   }
 
   @action

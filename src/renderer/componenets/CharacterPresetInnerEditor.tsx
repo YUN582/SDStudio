@@ -7,12 +7,10 @@ import {
   FaToggleOff,
   FaToggleOn,
   FaTrash,
-  FaUserAlt,
+  FaPlus,
 } from 'react-icons/fa';
-import Tooltip from './Tooltip';
 import { CharacterPreset, ReferenceItem, VibeItem } from '../models/types';
 import { appState } from '../models/AppService';
-import { FileUploadBase64 } from './UtilComponents';
 import PromptEditTextArea from './PromptEditTextArea';
 import { getRefDefaults } from './CharacterReferenceEditor';
 import { EditableSliderValue } from './VibeEditor';
@@ -20,6 +18,50 @@ import { PresetImageBackend, VibeImage } from './CharacterPresetCards';
 import { useBackLayer } from '../models/BackStackService';
 import { useGuardedClose } from './backdropClose';
 import { OverlayFooterBar } from './ModalOverlay';
+
+function PresetMediaPanel({ title, onUpload, multiple = false, children, footer }: {
+  title: string; onUpload: (base64: string) => Promise<void>; multiple?: boolean; children?: React.ReactNode; footer?: React.ReactNode;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const upload = async (files: FileList | null) => {
+    if (!files) return;
+    try {
+      for (const file of Array.from(files).filter(file => file.type.startsWith('image/')).slice(0, multiple ? undefined : 1)) {
+        const data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]);
+          reader.onerror = reject; reader.readAsDataURL(file);
+        });
+        await onUpload(data);
+      }
+    } catch { appState.pushMessage('이미지를 추가하지 못했습니다. 파일을 확인해주세요.', 'error'); }
+  };
+  return <section data-preset-media={title} className={'relative min-w-0 rounded-lg border p-3 bg-[var(--c-surface-2)] ' + (dragging ? 'border-sky-500 ring-2 ring-sky-500' : 'line-color')}
+    onDragEnter={event => { event.preventDefault(); event.stopPropagation(); setDragging(true); }}
+    onDragOver={event => { event.preventDefault(); event.stopPropagation(); setDragging(true); }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
+    onDrop={event => { event.preventDefault(); event.stopPropagation(); setDragging(false); void upload(event.dataTransfer.files); }}>
+    <header className="flex items-center justify-between gap-2 mb-3">
+      <h3 className="text-sm font-medium text-default">{title}</h3>
+      <button type="button" aria-label={`${title} 이미지 추가`} title="이미지 추가" className="back-sky rounded-full h-8 w-8 flex-none flex items-center justify-center hover:brightness-110 active:brightness-90" onClick={() => input.current?.click()}><FaPlus size={14} /></button>
+      <input ref={input} type="file" accept="image/*" multiple={multiple} className="hidden" aria-label={`${title} 파일 선택`}
+        onChange={event => { void upload(event.target.files); event.target.value = ''; }} />
+    </header>
+    {children || <button type="button" className="w-full min-h-72 border-2 border-dashed line-color rounded-lg flex flex-col items-center justify-center gap-2 text-muted hover:text-sky-500 hover:border-sky-500" onClick={() => input.current?.click()}>
+      <FaPlus size={22} /><span className="text-sm">드래그하거나 클릭하여 이미지 추가</span>
+    </button>}
+    {footer}
+  </section>;
+}
+
+function RemovablePresetImage({ path, label, onRemove, imageClass = 'h-44' }: {
+  path: string; label: string; onRemove: () => void; imageClass?: string;
+}) {
+  return <button type="button" aria-label={`${label} 제거`} title="클릭하여 이미지 제거" className="group/media relative block w-full overflow-hidden rounded-lg bg-[var(--c-surface)] focus-visible:ring-2 focus-visible:ring-red-400" onClick={onRemove}>
+    <VibeImage path={path} className={`w-full object-contain ${imageClass}`} />
+    <span className="absolute inset-0 flex items-center justify-center gap-2 bg-black/65 text-red-200 opacity-0 group-hover/media:opacity-100 group-focus-visible/media:opacity-100 transition-opacity"><FaTrash size={16} /><span className="text-sm">클릭하여 제거</span></span>
+  </button>;
+}
 
 // CharacterPresetEditor.tsx 에서 분리된 프리셋 편집 폼.
 // ─── 편집 폼 ─────────────────────────────────────────────────
@@ -42,6 +84,7 @@ interface CharacterPresetInnerEditorProps {
    * 돌아가기 줄 → 두 열(열마다 스크롤) → 표시 전용 바닥줄 [프리셋 저장/추가][취소].
    */
   layout?: 'inline' | 'frame';
+  active?: boolean;
 }
 
 export const CharacterPresetInnerEditor = observer(({
@@ -52,6 +95,7 @@ export const CharacterPresetInnerEditor = observer(({
   imageBackend,
   dirtyRef,
   layout = 'inline',
+  active = true,
 }: CharacterPresetInnerEditorProps) => {
   const [name, setName] = useState(preset.name);
   const [characterPrompt, setCharacterPrompt] = useState(preset.characterPrompt);
@@ -59,17 +103,11 @@ export const CharacterPresetInnerEditor = observer(({
   const [backgroundPrompt] = useState(preset.backgroundPrompt);
   const [vibes, setVibes] = useState<VibeItem[]>([...preset.vibes]);
   const [characterReferences, setCharacterReferences] = useState<ReferenceItem[]>([...preset.characterReferences]);
-  const [isDraggingVibe, setIsDraggingVibe] = useState(false);
-  const [isDraggingRef, setIsDraggingRef] = useState(false);
   const [representativeImage, setRepresentativeImage] = useState(preset.representativeImage || '');
   // 파일명 옵션
   const [filenamePrefix, setFilenamePrefix] = useState(preset.filenamePrefix || '');
   const [filenameSuffix, setFilenameSuffix] = useState(preset.filenameSuffix || '');
-  const [showFilenameOptions, setShowFilenameOptions] = useState(
-    !!(preset.filenamePrefix || preset.filenameSuffix)
-  );
-  // 대표 이미지 선택 모드
-  const [showRepImagePicker, setShowRepImagePicker] = useState(false);
+  const [showFilenameOptions, setShowFilenameOptions] = useState(true);
 
   // ── 미저장 가드(2026-10-03 E2-3·E2-4) ──
   // 저장 대상 필드의 처음 값과 비교한다(바이브·레퍼런스는 toJSON 으로 비교).
@@ -98,7 +136,7 @@ export const CharacterPresetInnerEditor = observer(({
   // 변경이 있으면 「버리고 닫을까요?」 확인 뒤 목록으로. 이름 칸 등 data-esc-cancel 입력칸의 Esc 는 그 칸이 처리한다.
   const guarded = !!dirtyRef;
   const requestBackToList = useGuardedClose(guarded ? isDirty : undefined, onCancel);
-  useBackLayer(guarded, requestBackToList);
+  useBackLayer(guarded && active, requestBackToList);
 
   // 바이브 이미지 추가
   const handleVibeChange = async (vibe: string) => {
@@ -121,46 +159,6 @@ export const CharacterPresetInnerEditor = observer(({
       referenceType: defaults.referenceType,
     }) as ReferenceItem;
     setCharacterReferences((prev) => [...prev, newRef]);
-  };
-
-  // 드래그 핸들러 (바이브)
-  const handleVibeDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVibe(true); };
-  const handleVibeDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVibe(false); };
-  const handleVibeDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingVibe(true); };
-  const handleVibeDrop = async (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDraggingVibe(false);
-    const files = e.dataTransfer.files;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          const base64 = (event.target?.result as string)?.split(',')[1];
-          if (base64) await handleVibeChange(base64);
-        };
-        reader.readAsDataURL(file);
-      }
-    }
-  };
-
-  // 드래그 핸들러 (레퍼런스)
-  const handleRefDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); };
-  const handleRefDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false); };
-  const handleRefDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); };
-  const handleRefDrop = async (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false);
-    const files = e.dataTransfer.files;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          const base64 = (event.target?.result as string)?.split(',')[1];
-          if (base64) await handleReferenceChange(base64);
-        };
-        reader.readAsDataURL(file);
-      }
-    }
   };
 
   // 대표 이미지 업로드
@@ -259,347 +257,80 @@ export const CharacterPresetInnerEditor = observer(({
       </div>
   );
 
-  // 대표 이미지
   const repImageSection = (
-      <div className="mb-4 p-3 border line-color rounded-lg">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">대표 이미지</div>
-        <div className="flex items-start gap-3">
-          {representativeImage ? (
-            <VibeImage
-              path={imageBackend.vibePath(representativeImage)}
-              className="w-20 h-20 object-cover rounded-lg flex-none"
-            />
-          ) : (
-            <div className="w-20 h-20 flex items-center justify-center bg-[var(--c-surface)] rounded-lg flex-none border border-dashed line-color">
-              <FaUserAlt className="text-faint" />
-            </div>
-          )}
-          <div className="flex flex-col gap-1.5">
-            <FileUploadBase64
-              notext
-              disabled={false}
-              onFileSelect={handleRepImageUpload}
-            />
-            {selectableImages.length > 0 && (
-              <button
-                className="text-xs text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300 text-left"
-                onClick={() => setShowRepImagePicker(!showRepImagePicker)}
-              >
-                {showRepImagePicker ? '선택 닫기 ▲' : '바이브/레퍼런스에서 선택 ▼'}
-              </button>
-            )}
-            {representativeImage && (
-              <button
-                className="text-xs text-red-500 hover:text-red-600 text-left"
-                onClick={() => setRepresentativeImage('')}
-              >
-                삭제
-              </button>
-            )}
-          </div>
-        </div>
-        {/* 바이브/레퍼런스 이미지 선택기 */}
-        {showRepImagePicker && selectableImages.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2 p-2 bg-[var(--c-surface)] rounded-lg">
-            {selectableImages.map((item, i) => (
-              <div
-                key={item.path + i}
-                className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-colors ${
-                  representativeImage === item.path
-                    ? 'border-sky-500'
-                    : 'border-transparent hover:border-gray-400'
-                }`}
-                onClick={() => { setRepresentativeImage(item.path); setShowRepImagePicker(false); }}
-              >
-                <VibeImage
-                  path={
-                    item.type === 'vibe'
-                      ? imageBackend.vibePath(item.path)
-                      : imageBackend.referencePath(item.path)
-                  }
-                  className="w-14 h-14 object-cover"
-                />
-                {representativeImage === item.path && (
-                  <div className="absolute inset-0 bg-sky-500/30 flex items-center justify-center">
-                    <FaCheck className="text-white drop-shadow" />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <PresetMediaPanel title="대표 이미지" onUpload={handleRepImageUpload}
+      footer={selectableImages.length > 0 && <details className="mt-3 text-sm text-muted">
+        <summary className="cursor-pointer">바이브·레퍼런스에서 선택</summary>
+        <div className="flex flex-wrap gap-2 mt-2">{selectableImages.map((item, index) => <button type="button" key={item.path + index} aria-label={`대표 이미지로 선택 ${index + 1}`} className="rounded overflow-hidden border line-color hover:border-sky-500" onClick={event => { setRepresentativeImage(item.path); event.currentTarget.closest('details')?.removeAttribute('open'); }}>
+          <VibeImage path={item.type === 'vibe' ? imageBackend.vibePath(item.path) : imageBackend.referencePath(item.path)} className="w-14 h-14 object-cover" />
+        </button>)}</div>
+      </details>}>
+      {representativeImage ? <RemovablePresetImage path={imageBackend.vibePath(representativeImage)} label="대표 이미지" imageClass="h-72" onRemove={() => setRepresentativeImage('')} /> : null}
+    </PresetMediaPanel>
   );
-
-  // 캐릭터 프롬프트
   const promptSection = (
-      <div className="mb-4">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">캐릭터 프롬프트</div>
-        {/* 프롬프트 칸 높이 규칙(2026-11-15 사용자 실기 피드백 2건): flex 열 min-h-20·max-h-40 + 편집기 flex-1 min-h-0 —
-            비어 있어도 3줄(80px, 조각 칸 h-20 기준)로 클릭이 쉽고, 길어도 약 6줄(160px)까지만 자란 뒤 칸 안에서
-            스크롤해 창 열의 스크롤이 밀리지 않는다(SPEC 높이 규칙 우선순위 (3) 입력칸 고정 높이 허용). */}
-        <div className="flex flex-col min-h-20 max-h-40" data-preset-prompt-box="prompt">
-          <PromptEditTextArea
-            className="flex-1 min-h-0"
-            value={characterPrompt}
-            onChange={setCharacterPrompt}
-            disabled={false}
-          />
-        </div>
+    <div className="mb-4 min-w-0">
+      <div className="text-sm font-medium text-default mb-1">캐릭터 프롬프트</div>
+      <div className={layout === 'frame' ? 'flex flex-col h-52 min-h-40' : 'flex flex-col min-h-20 max-h-40'} data-preset-prompt-box="prompt">
+        <PromptEditTextArea className="flex-1 min-h-0" value={characterPrompt} onChange={setCharacterPrompt} disabled={false} />
       </div>
+    </div>
   );
-
-  // 캐릭터 네거티브 프롬프트
   const ucSection = (
-      <div className="mb-4">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">캐릭터 네거티브 프롬프트</div>
-        <div className="flex flex-col min-h-20 max-h-40" data-preset-prompt-box="uc">
-          <PromptEditTextArea
-            className="flex-1 min-h-0"
-            value={characterUC}
-            onChange={setCharacterUC}
-            disabled={false}
-          />
-        </div>
+    <div className="mb-4 min-w-0">
+      <div className="text-sm font-medium text-default mb-1">캐릭터 네거티브 프롬프트</div>
+      <div className="flex flex-col min-h-20 max-h-40" data-preset-prompt-box="uc">
+        <PromptEditTextArea className="flex-1 min-h-0" value={characterUC} onChange={setCharacterUC} disabled={false} />
       </div>
+    </div>
   );
-
-  // 배경 프롬프트 - 레거시 (읽기 전용)
-  const legacyBgSection = (
-    <>
-      {backgroundPrompt && (
-        <div className="mb-4 p-3 border rounded-lg border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20">
-          <div className="text-sm font-medium text-amber-600 dark:text-amber-400 mb-1">
-            Legacy: 배경 프롬프트
-          </div>
-          <div className="text-sm text-muted bg-[var(--c-surface)] p-2 rounded font-mono whitespace-pre-wrap break-all">
-            {backgroundPrompt}
-          </div>
-          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-            이 필드는 더 이상 편집할 수 없습니다. 이지모드 적용 시에만 기존 값이 사용됩니다.
-          </div>
-        </div>
-      )}
-    </>
-  );
-
-  // 바이브 트랜스퍼
+  const legacyBgSection = backgroundPrompt && <div className="mb-4 border line-color rounded-lg p-3 text-sm text-muted">
+    <div className="mb-1 font-medium">Legacy: 배경 프롬프트</div><div className="whitespace-pre-wrap break-words">{backgroundPrompt}</div>
+  </div>;
   const vibeSection = (
-      <div
-        className={`mb-4 p-3 border rounded-lg transition-colors ${isDraggingVibe ? 'ring-2 ring-sky-500 bg-sky-50 dark:bg-sky-900/20 border-sky-400' : 'line-color'}`}
-        onDragEnter={handleVibeDragEnter}
-        onDragLeave={handleVibeDragLeave}
-        onDragOver={handleVibeDragOver}
-        onDrop={handleVibeDrop}
-      >
-        <div className="mb-2">
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">바이브 트랜스퍼</div>
-          <FileUploadBase64
-            notext
-            disabled={false}
-            onFileSelect={handleVibeChange}
-          />
-        </div>
-        {vibes.length === 0 && (
-          <div className="text-center py-4 text-sm text-faint">
-            드래그하거나 클릭하여 이미지 추가
-          </div>
-        )}
-        {vibes.map((vibe, index) => (
-          <div key={vibe.path + index} className="border line-color mt-2 p-2 flex md:flex-row flex-col gap-2 items-start rounded-lg">
-            <VibeImage
-              path={imageBackend.vibePath(vibe.path)}
-              className="flex-none w-28 h-28 object-cover rounded"
-            />
-            <div className="flex flex-col gap-2 w-full min-w-0">
-              <div className="flex w-full items-center md:flex-row flex-col">
-                <div className="whitespace-nowrap flex-none mr-auto md:mr-2 gray-label">정보 추출률 (IS):</div>
-                <div className="flex flex-1 md:w-auto w-full gap-1">
-                  <input className="flex-1 min-w-0" type="range" step="0.01" min="0" max="1"
-                    value={vibe.info}
-                    onChange={(e) => updateVibeField(index, 'info', parseFloat(e.target.value))}
-                  />
-                  <EditableSliderValue value={vibe.info} min={0} max={1} onChange={(v) => updateVibeField(index, 'info', v)} />
-                </div>
-              </div>
-              <div className="flex w-full items-center md:flex-row flex-col">
-                <div className="whitespace-nowrap flex-none mr-auto md:mr-2 gray-label">레퍼런스 강도 (RS):</div>
-                <div className="flex flex-1 md:w-auto w-full gap-1">
-                  <input className="flex-1 min-w-0" type="range" step="0.01" min="0" max="1"
-                    value={vibe.strength}
-                    onChange={(e) => updateVibeField(index, 'strength', parseFloat(e.target.value))}
-                  />
-                  <EditableSliderValue value={vibe.strength} min={0} max={1} onChange={(v) => updateVibeField(index, 'strength', v)} />
-                </div>
-              </div>
-              <div className="flex justify-end mt-auto">
-                <Tooltip content="바이브 삭제">
-                  <button
-                    className="round-button icon-only h-8 back-red"
-                    onClick={() => {
-                      if (representativeImage === vibe.path) setRepresentativeImage('');
-                      setVibes(vibes.filter((_, i) => i !== index));
-                    }}
-                  >
-                    <FaTrash />
-                  </button>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+    <PresetMediaPanel title="바이브 트랜스퍼" onUpload={handleVibeChange} multiple>
+      {vibes.length ? <div className="space-y-3">{vibes.map((vibe, index) => <div key={vibe.path + index} className="min-w-0 space-y-2">
+        <RemovablePresetImage path={imageBackend.vibePath(vibe.path)} label={`바이브 ${index + 1}`} onRemove={() => {
+          if (representativeImage === vibe.path) setRepresentativeImage('');
+          setVibes(previous => previous.filter((_, i) => i !== index));
+        }} />
+        <div className="text-xs text-muted">정보 추출률 (IS)</div>
+        <div className="flex items-center gap-2"><input className="flex-1 min-w-0" type="range" min="0" max="1" step="0.01" value={vibe.info} aria-label={`바이브 ${index + 1} 정보 추출률`} onChange={e => updateVibeField(index, 'info', Number(e.target.value))} /><EditableSliderValue value={vibe.info} min={0} max={1} onChange={value => updateVibeField(index, 'info', value)} /></div>
+        <div className="text-xs text-muted">레퍼런스 강도 (RS)</div>
+        <div className="flex items-center gap-2"><input className="flex-1 min-w-0" type="range" min="0" max="1" step="0.01" value={vibe.strength} aria-label={`바이브 ${index + 1} 강도`} onChange={e => updateVibeField(index, 'strength', Number(e.target.value))} /><EditableSliderValue value={vibe.strength} min={0} max={1} onChange={value => updateVibeField(index, 'strength', value)} /></div>
+      </div>)}</div> : null}
+    </PresetMediaPanel>
   );
-
-  // 캐릭터 레퍼런스
   const refSection = (
-      <div
-        className={`mb-4 p-3 border rounded-lg transition-colors ${isDraggingRef ? 'ring-2 ring-sky-500 bg-sky-50 dark:bg-sky-900/20 border-sky-400' : 'line-color'}`}
-        onDragEnter={handleRefDragEnter}
-        onDragLeave={handleRefDragLeave}
-        onDragOver={handleRefDragOver}
-        onDrop={handleRefDrop}
-      >
-        <div className="mb-2">
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">캐릭터 레퍼런스</div>
-          <FileUploadBase64
-            notext
-            disabled={false}
-            onFileSelect={handleReferenceChange}
-          />
-        </div>
-        {characterReferences.length === 0 && (
-          <div className="text-center py-4 text-sm text-faint">
-            드래그하거나 클릭하여 이미지 추가
-          </div>
-        )}
-        {characterReferences.map((ref, index) => (
-          <div
-            key={ref.path + index}
-            className={`mt-2 p-2 flex md:flex-row flex-col gap-2 items-start rounded-lg ${
-              ref.enabled !== false
-                ? 'border border-sky-500 bg-[var(--c-surface-2)]'
-                : 'border line-color opacity-60'
-            }`}
-          >
-            <VibeImage
-              path={imageBackend.referencePath(ref.path)}
-              className="flex-none w-28 h-28 object-cover rounded"
-            />
-            <div className="flex flex-col gap-2 w-full min-w-0">
-              {/* 활성화 토글 + 삭제 */}
-              <div className="flex items-center justify-between">
-                <button
-                  className={`text-sm px-3 py-1 rounded flex items-center gap-1 transition-colors ${
-                    ref.enabled !== false
-                      ? 'bg-sky-600 text-white dark:bg-sky-500'
-                      : 'bg-gray-200 dark:bg-slate-600 text-muted'
-                  }`}
-                  onClick={() => updateRefField(index, 'enabled', ref.enabled === false)}
-                >
-                  {ref.enabled !== false ? <FaToggleOn size={13} /> : <FaToggleOff size={13} />}
-                  {ref.enabled !== false ? '활성화됨' : '비활성화됨'}
-                </button>
-                <Tooltip content="레퍼런스 삭제">
-                  <button
-                    className="round-button icon-only h-8 back-red"
-                    onClick={() => {
-                      if (representativeImage === ref.path) setRepresentativeImage('');
-                      setCharacterReferences(characterReferences.filter((_, i) => i !== index));
-                    }}
-                  >
-                    <FaTrash />
-                  </button>
-                </Tooltip>
-              </div>
-              {/* Strength */}
-              <div className="flex w-full items-center md:flex-row flex-col">
-                <div className="whitespace-nowrap flex-none mr-auto md:mr-2 gray-label">Strength:</div>
-                <div className="flex flex-1 md:w-auto w-full gap-1">
-                  <input className="flex-1 min-w-0" type="range" step="0.01" min="0" max="2"
-                    value={ref.strength}
-                    onChange={(e) => updateRefField(index, 'strength', parseFloat(e.target.value))}
-                  />
-                  <EditableSliderValue value={ref.strength} min={0} max={2} onChange={(v) => updateRefField(index, 'strength', v)} />
-                </div>
-              </div>
-              {/* Fidelity */}
-              <div className="flex w-full items-center md:flex-row flex-col">
-                <div className="whitespace-nowrap flex-none mr-auto md:mr-2 gray-label">Fidelity:</div>
-                <div className="flex flex-1 md:w-auto w-full gap-1">
-                  <input className="flex-1 min-w-0" type="range" step="0.01" min="0" max="2"
-                    value={ref.fidelity}
-                    onChange={(e) => updateRefField(index, 'fidelity', parseFloat(e.target.value))}
-                  />
-                  <EditableSliderValue value={ref.fidelity} min={0} max={2} onChange={(v) => updateRefField(index, 'fidelity', v)} />
-                </div>
-              </div>
-              {/* 레퍼런스 타입 */}
-              <div className="flex items-center gap-4 flex-wrap">
-                {(['character', 'style', 'character&style'] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-1 cursor-pointer">
-                    <input
-                      type="radio"
-                      name={`refType-edit-${index}`}
-                      checked={ref.referenceType === t}
-                      onChange={() => updateRefField(index, 'referenceType', t)}
-                      className="accent-sky-500"
-                    />
-                    <span className="gray-label">
-                      {t === 'character' ? '캐릭터' : t === 'style' ? '스타일' : '캐릭터+스타일'}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+    <PresetMediaPanel title="캐릭터 레퍼런스" onUpload={handleReferenceChange} multiple>
+      {characterReferences.length ? <div className="space-y-3">{characterReferences.map((ref, index) => <div key={ref.path + index} className="min-w-0 space-y-2">
+        <RemovablePresetImage path={imageBackend.referencePath(ref.path)} label={`캐릭터 레퍼런스 ${index + 1}`} onRemove={() => {
+          if (representativeImage === ref.path) setRepresentativeImage('');
+          setCharacterReferences(previous => previous.filter((_, i) => i !== index));
+        }} />
+        <button type="button" className={'round-button h-8 px-3 text-xs ' + (ref.enabled !== false ? 'back-sky' : 'back-gray')} aria-pressed={ref.enabled !== false} onClick={() => updateRefField(index, 'enabled', ref.enabled === false)}>
+          {ref.enabled !== false ? <FaToggleOn /> : <FaToggleOff />}<span className="ml-1">{ref.enabled !== false ? '활성화됨' : '비활성화됨'}</span>
+        </button>
+        {(['strength', 'fidelity'] as const).map(field => <div key={field}>
+          <div className="text-xs text-muted mb-1">{field === 'strength' ? 'Strength' : 'Fidelity'}</div>
+          <div className="flex items-center gap-2"><input className="flex-1 min-w-0" type="range" min="0" max="2" step="0.01" value={ref[field]} aria-label={`레퍼런스 ${index + 1} ${field}`} onChange={e => updateRefField(index, field, Number(e.target.value))} /><EditableSliderValue value={ref[field]} min={0} max={2} onChange={value => updateRefField(index, field, value)} /></div>
+        </div>)}
+        <div className="flex items-center gap-2 flex-wrap">{(['character', 'style', 'character&style'] as const).map(type => <label key={type} className="flex items-center gap-1 cursor-pointer text-xs text-default">
+          <input type="radio" name={`refType-edit-${index}`} checked={ref.referenceType === type} onChange={() => updateRefField(index, 'referenceType', type)} />
+          {type === 'character' ? '캐릭터' : type === 'style' ? '스타일' : '캐릭터+스타일'}
+        </label>)}</div>
+      </div>)}</div> : null}
+    </PresetMediaPanel>
   );
-
-  // 파일명 옵션 (옵셔널 섹션)
   const filenameSection = (
-      <div className="mb-4 p-3 border line-color rounded-lg">
-        <div
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => setShowFilenameOptions(!showFilenameOptions)}
-        >
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">파일명 옵션 (선택사항)</div>
-          <span className="text-sm text-muted">
-            {showFilenameOptions ? '▼' : '▶'}
-          </span>
-        </div>
-        {showFilenameOptions && (
-          <div className="mt-3 space-y-3">
-            <div>
-              <label className="text-sm text-muted mb-1 block">파일명 접두사:</label>
-              <input
-                type="text"
-                className="w-full px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
-                value={filenamePrefix}
-                onChange={(e) => setFilenamePrefix(e.target.value)}
-                placeholder="예: 캐릭터이름"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-muted mb-1 block">파일명 접미사:</label>
-              <input
-                type="text"
-                className="w-full px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
-                value={filenameSuffix}
-                onChange={(e) => setFilenameSuffix(e.target.value)}
-                placeholder="예: 표정"
-              />
-            </div>
-            <div className="text-xs text-muted bg-[var(--c-surface)] p-2 rounded">
-              <div className="font-medium mb-1">파일명 미리보기:</div>
-              <code className="text-sky-600 dark:text-sky-400">
-                {getFilenamePreview()}
-              </code>
-            </div>
-          </div>
-        )}
-      </div>
+    <section className="min-w-0 border line-color rounded-lg p-3 text-default" data-preset-filename-options="">
+      <button type="button" className="w-full flex items-center justify-between gap-2 text-sm font-medium" aria-expanded={showFilenameOptions} onClick={() => setShowFilenameOptions(value => !value)}>파일명 옵션 <span>{showFilenameOptions ? '−' : '+'}</span></button>
+      {showFilenameOptions && <div className="space-y-3 mt-3">
+        <label className="block text-xs text-muted">파일명 접두사<input aria-label="파일명 접두사" className="gray-input w-full min-w-0 mt-1 px-2 py-1.5 text-sm" value={filenamePrefix} onChange={e => setFilenamePrefix(e.target.value)} /></label>
+        <label className="block text-xs text-muted">파일명 접미사<input aria-label="파일명 접미사" className="gray-input w-full min-w-0 mt-1 px-2 py-1.5 text-sm" value={filenameSuffix} onChange={e => setFilenameSuffix(e.target.value)} /></label>
+        <div className="text-xs text-muted break-all"><div className="mb-1">파일명 미리보기</div><code>{getFilenamePreview()}</code></div>
+      </div>}
+    </section>
   );
 
   // 하단 저장 버튼
@@ -638,26 +369,20 @@ export const CharacterPresetInnerEditor = observer(({
     );
   }
 
-  // frame(2026-11-15 C-3): 창 본문을 채우는 h-full 세로 배치 = [돌아가기 줄(고정)] → [두 열, 열마다 스크롤 하나:
-  // 왼쪽 이름·대표 이미지·프롬프트·네거티브(·레거시 배경), 오른쪽 바이브·레퍼런스·파일명 옵션] → [바닥줄(고정) 저장·취소].
-  // 바닥줄은 래퍼 바닥줄과 같은 모양의 표시 전용 OverlayFooterBar(상태는 이 편집기 안에 그대로).
+  // Frame: one scrolling body, wide prompts, compact filename options and three media cards.
   return (
     <div className="h-full min-h-0 flex flex-col text-default" data-preset-editor-layout="frame">
       <div className="flex-none flex items-center px-5 py-3 border-b line-color">
         {backButton}
       </div>
-      <div className="flex-1 min-h-0 flex gap-5 px-5" data-preset-editor-columns="">
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto py-4" data-preset-editor-col="left">
-          {nameSection}
-          {repImageSection}
-          {promptSection}
-          {ucSection}
-          {legacyBgSection}
+      <div className="flex-1 min-h-0 overflow-y-auto p-4" data-preset-editor-columns="">
+        {nameSection}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px] gap-5">
+          <div className="min-w-0" data-preset-editor-col="left">{promptSection}{ucSection}{legacyBgSection}</div>
+          <div className="min-w-0" data-preset-editor-col="right">{filenameSection}</div>
         </div>
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto py-4" data-preset-editor-col="right">
-          {vibeSection}
-          {refSection}
-          {filenameSection}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start mt-2" data-preset-media-row="">
+          {repImageSection}{vibeSection}{refSection}
         </div>
       </div>
       <OverlayFooterBar>

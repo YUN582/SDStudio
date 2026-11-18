@@ -144,11 +144,12 @@ describe('하드코딩 bg-{색}-500 잔존 = 제외 목록', () => {
 describe('R2 잔여 — 캐릭터 프리셋 카드 위 원형 버튼 아이콘 14', () => {
   test('w-8 h-8 원형 버튼 안 아이콘은 모두 size 14', () => {
     const src = read('CharacterPresetCards.tsx');
-    const buttons = src.match(/className="w-8 h-8 rounded-full btn-solid-[a-z]+[^"]*"[\s\S]*?<\/button>/g) ?? [];
+    const buttons = src.match(/className=(?:"w-8 h-8 rounded-full btn-solid-[a-z]+[^"]*"|\{`w-8 h-8 rounded-full [^`]*`\})[\s\S]*?<\/button>/g) ?? [];
     expect(buttons.length).toBe(11);
     for (const b of buttons) {
       const sizes = [...b.matchAll(/size=\{(\d+)\}/g)].map((m) => Number(m[1]));
-      expect(sizes).toEqual([14]);
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(sizes.every(size => size === 14)).toBe(true);
     }
   });
 });

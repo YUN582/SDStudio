@@ -35,6 +35,7 @@ jest.mock('../index', () => ({
   },
 }));
 const mockAppState: any = {
+  dialogs: [],
   curSession: mockSession,
   appliedCharacterPresetNames: [],
   pushMessage: jest.fn(),
@@ -42,6 +43,8 @@ const mockAppState: any = {
   confirmAsync: jest.fn(async () => true),
   incrementModalOverlay: jest.fn(),
   decrementModalOverlay: jest.fn(),
+  applyCharacterPreset: jest.fn(),
+  removeAppliedCharacterPreset: jest.fn(),
 };
 jest.mock('../AppService', () => ({ appState: mockAppState }));
 jest.mock('../../componenets/UtilComponents', () => ({ FileUploadBase64: () => null }));
@@ -105,6 +108,10 @@ jest.mock('../../componenets/CharacterPresetCards', () => {
       data-name={props.preset?.name ?? props.entry?.name}
       data-index={props.index}
       data-locked={String(!!props.reorderLocked)}
+      data-character-preset-id={props.entry?.id}
+      data-library-selected={props.selected ? 'true' : 'false'}
+      data-applied={props.applied ? 'true' : 'false'}
+      onClick={props.onToggleApply}
     />
   );
   return {
@@ -133,9 +140,12 @@ jest.mock('react-dnd-html5-backend', () => ({ getEmptyImage: jest.fn() }));
 import {
   CharacterPresetEditor,
   CharacterPresetModalEditor,
+  CharacterPresetTab,
 } from '../../componenets/CharacterPresetEditor';
 import { CharacterPresetInnerEditor } from '../../componenets/CharacterPresetInnerEditor';
 import { setGlobalCharacterFolderRecorded } from '../globalLibraryUndo';
+import { instantiateGlobalCharacterPresetsRecorded } from '../presetUndo';
+import { fireEvent, waitFor } from '@testing-library/react';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -145,6 +155,8 @@ beforeAll(() => {
 });
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAppState.dialogs = [];
+  mockAppState.appliedCharacterPresetNames = [];
   mockEnv.mobile = false;
   mockAppState.confirmAsync = jest.fn(async () => true);
   mockGlobalChars.entries = [
@@ -321,6 +333,71 @@ describe('C-3 캐릭터 프리셋 관리 — 등급·슬롯(PC)', () => {
   });
 });
 
+describe('character workspace', () => {
+  test('shows the global library as a tab and supports modifier selection without applying', async () => {
+    await act(async () => root.render(<CharacterPresetTab />));
+    expect(q('[data-character-workspace]')).not.toBeNull();
+    expect(q('[data-character-view-toggle]')).toBeNull();
+    expect(q('[data-character-local-row]')).toBeNull();
+    expect(q('input[aria-label="캐릭터 프리셋 이름 검색"]')).not.toBeNull();
+    const cards = () => Array.from(container.querySelectorAll<HTMLElement>('[data-character-preset-id]'));
+    await act(async () => fireEvent.click(cards()[0], { ctrlKey: true }));
+    await act(async () => fireEvent.click(cards()[2], { shiftKey: true }));
+    expect(cards().filter(card => card.dataset.librarySelected === 'true')).toHaveLength(3);
+    expect(mockAppState.applyCharacterPreset).not.toHaveBeenCalled();
+    await pressEscape();
+    expect(cards().filter(card => card.dataset.librarySelected === 'true')).toHaveLength(0);
+  });
+
+  test('applied global ID resolves the linked local name even when names differ', async () => {
+    mockSession.getCharacterPresets = () => [{ name: 'Alice (글로벌)', fromGlobalId: 'g1' }];
+    mockAppState.appliedCharacterPresetNames = ['Alice (글로벌)'];
+    await act(async () => root.render(<CharacterPresetTab />));
+    const card = q('[data-character-preset-id="g1"]')!;
+    expect(card.getAttribute('data-applied')).toBe('true');
+    await click(card);
+    expect(mockAppState.removeAppliedCharacterPreset).toHaveBeenCalledWith('Alice (글로벌)');
+    expect(instantiateGlobalCharacterPresetsRecorded).not.toHaveBeenCalled();
+  });
+
+  test('unapplied cards reuse the recorded global-to-project application path', async () => {
+    const local = { name: 'Alice (글로벌)', fromGlobalId: 'g1' };
+    (instantiateGlobalCharacterPresetsRecorded as jest.Mock).mockImplementation(async (_session, _entries, _load, _label, apply) => {
+      apply([local]); return { presets: [local], failures: [] };
+    });
+    await act(async () => root.render(<CharacterPresetTab />));
+    await click(q('[data-character-preset-id="g1"]')!);
+    expect(instantiateGlobalCharacterPresetsRecorded).toHaveBeenCalledWith(mockSession, [mockGlobalChars.entries[0]], expect.any(Function), expect.anything(), expect.any(Function));
+    expect(mockAppState.applyCharacterPreset).toHaveBeenCalledWith(local, 'character');
+  });
+
+  test('media uploads support multiple attachments, click removal and save without mutating the source', async () => {
+    const preset: any = { name: 'Media', characterPrompt: 'prompt', characterUC: 'negative', vibes: [], characterReferences: [], representativeImage: 'old.png', filenamePrefix: '', filenameSuffix: '' };
+    const save = jest.fn();
+    const imageBackend = { storeVibe: jest.fn(async () => 'vibe.png'), storeReference: jest.fn(async () => 'ref.png'), vibePath: (path: string) => path, referencePath: (path: string) => path };
+    await act(async () => root.render(<CharacterPresetInnerEditor preset={preset} onSave={save} onCancel={jest.fn()} isNew={false} imageBackend={imageBackend} layout="frame" />));
+    expect(q('input[aria-label="파일명 접두사"]')).not.toBeNull();
+    const first = new File(['a'], 'first.png', { type: 'image/png' }), second = new File(['b'], 'second.png', { type: 'image/png' });
+    await act(async () => fireEvent.change(q('input[aria-label="바이브 트랜스퍼 파일 선택"]')!, { target: { files: [first, second] } }));
+    await waitFor(() => expect(imageBackend.storeVibe).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(q('[aria-label="바이브 2 제거"]')).not.toBeNull());
+    const globalDrag = jest.fn(); window.addEventListener('dragenter', globalDrag);
+    try {
+      await act(async () => fireEvent.dragEnter(q('[data-preset-media="캐릭터 레퍼런스"]')!, { dataTransfer: { files: [first, second] } }));
+      expect(globalDrag).not.toHaveBeenCalled();
+      await act(async () => fireEvent.drop(q('[data-preset-media="캐릭터 레퍼런스"]')!, { dataTransfer: { files: [first, second] } }));
+      await waitFor(() => expect(imageBackend.storeReference).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(q('[aria-label="캐릭터 레퍼런스 2 제거"]')).not.toBeNull());
+    } finally { window.removeEventListener('dragenter', globalDrag); }
+    await click(q('[aria-label="대표 이미지 제거"]')!);
+    await click(q('[aria-label="바이브 1 제거"]')!);
+    await click(q('[aria-label="캐릭터 레퍼런스 1 제거"]')!);
+    await click(buttonByText('프리셋 저장'));
+    expect(save.mock.calls[0][0]).toMatchObject({ representativeImage: '', vibes: [{ path: 'vibe.png' }], characterReferences: [{ path: 'ref.png' }] });
+    expect(preset).toMatchObject({ representativeImage: 'old.png', vibes: [], characterReferences: [] });
+  });
+});
+
 describe('C-3 안쪽 편집 — layout="frame"(PC)', () => {
   test('편집 중 = 도구줄·aside·래퍼 바닥줄 없음, 본문 여백 없음, 두 열 + 자체 바닥줄', async () => {
     await openWindow();
@@ -333,15 +410,15 @@ describe('C-3 안쪽 편집 — layout="frame"(PC)', () => {
     expect(frame.className).toContain('h-full');
     const left = q('[data-preset-editor-col="left"]', frame)!;
     const right = q('[data-preset-editor-col="right"]', frame)!;
-    for (const col of [left, right]) {
-      expect(col.className).toContain('flex-1 min-w-0 min-h-0 overflow-y-auto');
-    }
-    expect(left.textContent).toContain('프리셋 이름');
-    expect(left.textContent).toContain('대표 이미지');
+    expect(q('[data-preset-editor-columns]', frame)!.className).toContain('overflow-y-auto');
+    expect(left.className).not.toContain('overflow-y-auto');
+    expect(right.className).not.toContain('overflow-y-auto');
+    expect(frame.textContent).toContain('프리셋 이름');
+    expect(q('[data-preset-media-row]', frame)!.querySelectorAll('[data-preset-media]')).toHaveLength(3);
     expect(left.textContent).toContain('캐릭터 프롬프트');
     expect(left.textContent).toContain('캐릭터 네거티브 프롬프트');
-    expect(right.textContent).toContain('바이브 트랜스퍼');
-    expect(right.textContent).toContain('캐릭터 레퍼런스');
+    expect(right.textContent).toContain('파일명 옵션');
+    expect(q('[aria-label="파일명 접두사"]', right)).not.toBeNull();
     expect(left.textContent).not.toContain('바이브 트랜스퍼');
     const bar = q('[data-overlay-footer-bar]', frame)!;
     expect(bar.className).toBe('flex-none flex items-center gap-2 px-5 py-3 border-t line-color');
@@ -373,7 +450,7 @@ describe('C-3 안쪽 편집 — layout="frame"(PC)', () => {
   test('변경 뒤 ✕ = 미저장 확인 1회 → 확인하면 창 닫기', async () => {
     await openWindow();
     await enterNewGlobal();
-    const nameInput = q('[data-preset-editor-col="left"] input[type="text"]') as HTMLInputElement;
+    const nameInput = q('[data-preset-editor-layout="frame"] input[placeholder="캐릭터 프리셋 이름"]') as HTMLInputElement;
     await typeIn(nameInput, '바뀐 이름');
     mockAppState.confirmAsync = jest.fn(async () => false);
     await click(q('button[aria-label="닫기"]')!);
@@ -459,7 +536,7 @@ describe('C-3 인라인 사용·안쪽 편집기 inline 배치', () => {
       '캐릭터 네거티브 프롬프트',
       '바이브 트랜스퍼',
       '캐릭터 레퍼런스',
-      '파일명 옵션 (선택사항)',
+      '파일명 옵션',
       '프리셋 저장',
       '취소',
     ];

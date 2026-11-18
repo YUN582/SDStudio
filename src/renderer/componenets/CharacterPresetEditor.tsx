@@ -65,6 +65,11 @@ import {
 } from '../models/presetUndo';
 import { recordSceneTemplateImport } from '../models/sceneImportUndo';
 import { UNDO_TEXT } from '../models/undoService';
+import { useLibraryGridSelection } from './LibraryGridSelection';
+import { focusGridSurface } from '../models/gridSelection';
+import { GridSearchBar, LibraryAction, LibraryToolbar } from './GridToolbar';
+import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
+import { contextMenuBackLayer } from './contextMenuBack';
 import {
   createGlobalCharacterFolderRecorded,
   deleteGlobalCharacterFolderRecorded,
@@ -444,6 +449,8 @@ const GlobalFolderRow = observer(
 
 // ─── 메인 프리셋 매니저 (목록/편집 전환) ───────────────────────
 interface CharacterPresetEditorProps {
+  workspace?: boolean;
+  isActive?: boolean;
   onApplyPreset?: (preset: CharacterPreset, mode: 'easy' | 'character') => void;
   /** 안쪽 편집 폼의 미저장 판정을 바깥 창에 넘기는 자리(2026-10-03 E2-4, CharacterPresetInnerEditor.dirtyRef) */
   editDirtyRef?: React.MutableRefObject<(() => boolean) | null>;
@@ -466,6 +473,8 @@ export interface CharacterPresetPanel {
 export function useCharacterPresetPanel({
   onApplyPreset,
   editDirtyRef,
+  workspace = false,
+  isActive = true,
 }: CharacterPresetEditorProps): CharacterPresetPanel {
   const { curSession } = appState;
   const [editingPreset, setEditingPreset] = useState<CharacterPreset | null>(null);
@@ -498,7 +507,6 @@ export function useCharacterPresetPanel({
   // 순차 생성 모드
   const [cyclingMode, setCyclingMode] = useState(false);
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
-  const [selectedGlobalIds, setSelectedGlobalIds] = useState<Set<string>>(new Set());
   const [selectedScenes, setSelectedScenes] = useState<Set<string>>(new Set());
   const [cyclingSamples, setCyclingSamples] = useState(10);
   const [sceneFilter, setSceneFilter] = useState('');
@@ -542,6 +550,25 @@ export function useCharacterPresetPanel({
     const q = sceneFilter.toLowerCase();
     return scenes.filter((s) => s.name.toLowerCase().includes(q));
   }, [scenes, sceneFilter]);
+
+  const globalEntries = globalCharacterPresetService.list();
+  const globalFolders = globalCharacterPresetService.listFolders();
+  const effectiveFolderFilter = folderFilter === '__all__' || folderFilter === '__unfiled__' || globalFolders.includes(folderFilter) ? folderFilter : '__all__';
+  const visibleGlobalEntries = effectiveFolderFilter === '__all__' ? globalEntries : globalEntries.filter(e => effectiveFolderFilter === '__unfiled__' ? !e.folder : e.folder === effectiveFolderFilter);
+  const listSearching = hasQuery(listQuery);
+  const shownGlobalEntries = visibleGlobalEntries.filter(e => matchesQuery(e.name, listQuery));
+  const viewport = useRef<HTMLDivElement>(null);
+  const suppressClick = useRef(false);
+  const selection = useLibraryGridSelection({
+    desktop: workspace && !isMobile && !cyclingMode && !editingPreset,
+    active: isActive, scope: listQuery + '/' + folderFilter,
+    ids: (workspace && !cyclingMode ? shownGlobalEntries : globalEntries).map(e => e.id),
+    viewport, suppressClick, cardSelector: '[data-character-preset-id]', idOf: card => card.dataset.characterPresetId,
+  });
+  const { selectedIds: selectedGlobalIds, setSelectedIds: setSelectedGlobalIds } = selection;
+  const [contextId, setContextId] = useState<string>();
+  const { show: showContextMenu } = useContextMenu({ id: 'character-workspace-menu' });
+  const applying = useRef(new Set<string>());
 
   if (!curSession) {
     return {
@@ -995,6 +1022,17 @@ export function useCharacterPresetPanel({
     }
   };
 
+  const isGlobalApplied = (id: string) => curSession.getCharacterPresets().some(p =>
+    p.fromGlobalId === id && appState.appliedCharacterPresetNames.includes(p.name));
+  const toggleGlobalApplied = async (entry: IGlobalCharacterPresetEntry) => {
+    if (applying.current.has(entry.id)) return;
+    const local = curSession.getCharacterPresets().find(p => p.fromGlobalId === entry.id);
+    if (local && isGlobalApplied(entry.id)) { appState.removeAppliedCharacterPreset(local.name); return; }
+    applying.current.add(entry.id);
+    try { await handleApplyGlobal(entry, 'character'); }
+    finally { applying.current.delete(entry.id); }
+  };
+
   // ─── 글로벌 폴더 (1단계 평면, 좌측 패널) ───
 
   // 폴더 선택 다이얼로그 (단건 이동·일괄 이동 공용).
@@ -1118,28 +1156,6 @@ export function useCharacterPresetPanel({
     });
   };
 
-  const globalEntries = globalCharacterPresetService.list();
-  const globalFolders = globalCharacterPresetService.listFolders();
-  // 필터 대상 폴더가 소멸(항목 전부 이동)했으면 전체로 폴백
-  const effectiveFolderFilter =
-    folderFilter === '__all__' ||
-    folderFilter === '__unfiled__' ||
-    globalFolders.includes(folderFilter)
-      ? folderFilter
-      : '__all__';
-  const visibleGlobalEntries =
-    effectiveFolderFilter === '__all__'
-      ? globalEntries
-      : globalEntries.filter((e) =>
-          effectiveFolderFilter === '__unfiled__'
-            ? !e.folder
-            : e.folder === effectiveFolderFilter,
-        );
-  // 검색 적용(2026-11-14 M4) — 「전체 선택」·순차 생성 개수도 이 보이는 목록 기준
-  const listSearching = hasQuery(listQuery);
-  const shownGlobalEntries = visibleGlobalEntries.filter((e) =>
-    matchesQuery(e.name, listQuery),
-  );
   const shownPresets = presets.filter((p) => matchesQuery(p.name, listQuery));
   // 「전체 선택/해제」 = 보이는 항목만 토글 — 폴더 필터·검색으로 숨은 항목의 선택은 유지
   const allShownSelected = globalView
@@ -1200,6 +1216,7 @@ export function useCharacterPresetPanel({
           isNew={isNew}
           dirtyRef={editDirtyRef}
           layout={wide ? 'frame' : 'inline'}
+          active={!workspace || isActive}
           imageBackend={
             editTarget === 'global'
               ? globalImageBackend
@@ -1282,7 +1299,7 @@ export function useCharacterPresetPanel({
   // ─── 카드 그리드 모드 — 조각 ───
 
   // 로컬/글로벌 전환 토글(모바일 — 종전 한 버튼, 누르면 반대 보기)
-  const mobileViewToggle = (
+  const mobileViewToggle = workspace ? null : (
     <button
       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
         globalView
@@ -1297,7 +1314,7 @@ export function useCharacterPresetPanel({
   );
 
   // 로컬/글로벌 분할 버튼(PC aside 맨 위 — 선례 프롬프트조각 aside 의 로컬/전역 전환)
-  const asideViewToggle = (
+  const asideViewToggle = workspace ? null : (
     <div className="flex gap-1" role="group" aria-label="프리셋 보기" data-character-view-toggle="">
       <button
         aria-pressed={!globalView}
@@ -1339,7 +1356,7 @@ export function useCharacterPresetPanel({
         </button>
       )}
       {/* 일괄 선택 → 일괄 적용(양 뷰) / 폴더 이동(글로벌) — 순차 생성과 배타 */}
-      {(globalView ? globalEntries.length > 0 : presets.length > 0) && (
+      {(!workspace || isMobile) && (globalView ? globalEntries.length > 0 : presets.length > 0) && (
         <button
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
             selectMode
@@ -1643,12 +1660,21 @@ export function useCharacterPresetPanel({
         <GlobalCharacterPresetCard
           key={entry.id}
           entry={entry}
+          workspace={workspace}
+          applied={workspace ? isGlobalApplied(entry.id) : undefined}
+          selectionMode={workspace && selectedGlobalIds.size > 0}
+          onToggleApply={workspace ? () => toggleGlobalApplied(entry) : undefined}
+          onContextMenu={workspace ? event => {
+            event.preventDefault(); event.stopPropagation();
+            if (!selectedGlobalIds.has(entry.id)) setSelectedGlobalIds(new Set([entry.id]));
+            setContextId(entry.id); showContextMenu({ event });
+          } : undefined}
           // 드래그 정렬·폴더 드롭은 전체 목록 기준 인덱스로 동작해야
           // 한다 (폴더 필터로 걸러진 화면 인덱스와 다름)
           index={globalEntries.indexOf(entry)}
           isEasyMode={isEasyMode}
           // 선택 모드도 순차 생성과 같은 체크 오버레이 UI 를 재사용
-          cyclingMode={cyclingMode || selectMode}
+          cyclingMode={cyclingMode || ((!workspace || isMobile) && selectMode)}
           selected={selectedGlobalIds.has(entry.id)}
           onToggleSelect={() => toggleGlobalSelection(entry.id)}
           onApplyEasy={() => handleApplyGlobal(entry, 'easy')}
@@ -1972,7 +1998,7 @@ export function useCharacterPresetPanel({
   // 폴더 행은 같은 React 트리라 카드 → 폴더 끌어 놓기(폴더로 이동)가 그대로 동작한다(검색 중에도 허용 — M4).
   const aside = (
     <div className="flex flex-col h-full min-h-0" data-character-preset-aside="">
-      <div className="flex-none p-3 border-b line-color">{asideViewToggle}</div>
+      {!workspace && <div className="flex-none p-3 border-b line-color">{asideViewToggle}</div>}
       <div
         className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-1.5"
         data-character-aside-list={globalView ? 'global' : 'local'}
@@ -2001,7 +2027,17 @@ export function useCharacterPresetPanel({
 
   // toolbar: 왼쪽 [순차 생성 모드][선택] + 이름 검색(스크롤해도 남게), 오른쪽 파일 버튼·도움말. 선택 모드면 둘째 줄 = 선택 바.
   const showSearch = globalView ? globalEntries.length > 0 : presets.length > 0;
-  const toolbar = (
+  const toolbar = workspace ? (
+    <div>
+      <GridSearchBar label="캐릭터 프리셋 이름 검색" query={listQuery} onChange={setListQuery} />
+      <LibraryToolbar view={null}>
+        <LibraryAction label="새 캐릭터 프리셋" tone="sky" icon={<FaPlus />} onClick={handleAddNewGlobal} />
+        {modeButtons}{fileButtons}
+        {selectedGlobalIds.size > 0 && !cyclingMode && <LibraryAction label={`선택 해제 (${selectedGlobalIds.size})`} icon={<FaTimes />} onClick={selection.clear} />}
+      </LibraryToolbar>
+      {selectedGlobalIds.size > 0 && !cyclingMode && selectionBar('flex items-center gap-2 flex-wrap')}
+    </div>
+  ) : (
     <div className="w-full flex flex-col gap-2" data-character-preset-toolbar="">
       <div className="flex items-center gap-2 flex-wrap min-w-0">
         {modeButtons}
@@ -2031,7 +2067,24 @@ export function useCharacterPresetPanel({
       aside,
       bodyPadding: 'normal',
       // 본문 = 카드 그리드만(창의 유일한 세로 스크롤)
-      body: <div className="text-default" data-character-preset-body="">{cardsArea}</div>,
+      body: <div ref={workspace ? viewport : undefined} tabIndex={workspace ? 0 : undefined}
+        aria-label={workspace ? '캐릭터 프리셋 목록' : undefined}
+        className={workspace ? 'text-default relative h-full overflow-auto select-none outline-none p-1' : 'text-default'} data-character-preset-body=""
+        onMouseDownCapture={workspace ? event => { focusGridSurface(event); selection.onMouseDownCapture(event); } : undefined}
+        onClickCapture={workspace ? selection.onClickCapture : undefined}>
+        {workspace && selection.overlay}{cardsArea}
+        {workspace && <Menu id="character-workspace-menu" onVisibilityChange={contextMenuBackLayer('character-workspace-menu')}>
+          <Item onClick={() => { const entry = globalCharacterPresetService.get(contextId!); if (entry) void toggleGlobalApplied(entry); }} disabled={selectedGlobalIds.size !== 1}>
+            {contextId && isGlobalApplied(contextId) ? '적용 해제' : '캐릭터 적용'}
+          </Item>
+          <Item onClick={bulkApplyCharacter}>선택한 캐릭터 적용</Item>
+          <Separator />
+          <Item disabled={selectedGlobalIds.size !== 1} onClick={() => { const entry = globalCharacterPresetService.get(contextId!); if (entry) handleEditGlobal(entry); }}>수정</Item>
+          <Item disabled={selectedGlobalIds.size !== 1} onClick={() => { const entry = globalCharacterPresetService.get(contextId!); if (entry) handleDuplicateGlobal(entry); }}>복제</Item>
+          <Item onClick={bulkMoveToFolder}>폴더로 이동</Item>
+          <Item onClick={handleDeleteSelected}>선택 삭제</Item>
+        </Menu>}
+      </div>,
     };
   }
 
@@ -2096,6 +2149,20 @@ export const CharacterPresetEditor = observer((props: CharacterPresetEditorProps
 });
 
 // ─── ModalOverlay 래퍼 (FloatView 대체) ──────────────────────
+export const CharacterPresetTab = observer(({ isActive = true }: { isActive?: boolean }) => {
+  const editDirtyRef = useRef<(() => boolean) | null>(null);
+  const panel = useCharacterPresetPanel({ workspace: true, isActive, editDirtyRef,
+    onApplyPreset: (preset, mode) => appState.applyCharacterPreset(preset, mode) });
+  return <div className="h-full min-h-0 flex flex-col text-default" data-character-workspace="">
+    {panel.toolbar}
+    <div className="flex flex-1 min-h-0 gap-3">
+      {panel.aside && <aside className="w-52 flex-none min-h-0 hidden md:flex flex-col">{panel.aside}</aside>}
+      <div className="flex-1 min-w-0 min-h-0">{panel.body}</div>
+    </div>
+    {(panel.footer || panel.footerStart) && <div className="flex items-center justify-between gap-3 pt-2">{panel.footerStart}{panel.footer}</div>}
+  </div>;
+});
+
 interface CharacterPresetFloatEditorProps {
   onClose: () => void;
   onApplyPreset?: (preset: CharacterPreset, mode: 'easy' | 'character') => void;

@@ -429,6 +429,11 @@ export const GlobalCharacterPresetCard = observer(({
   selected = false,
   onToggleSelect,
   reorderLocked = false,
+  workspace = false,
+  applied,
+  selectionMode = false,
+  onToggleApply,
+  onContextMenu,
 }: {
   entry: IGlobalCharacterPresetEntry;
   index: number;
@@ -447,6 +452,11 @@ export const GlobalCharacterPresetCard = observer(({
   onToggleSelect?: () => void;
   // 목록 검색 중(2026-11-14 M4) — 카드끼리 순서 바꾸기만 막는다. 끌어서 폴더 행에 놓는 폴더 이동은 그대로
   reorderLocked?: boolean;
+  workspace?: boolean;
+  applied?: boolean;
+  selectionMode?: boolean;
+  onToggleApply?: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
 }) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const [{ isDragging }, drag] = useDrag(
@@ -479,26 +489,33 @@ export const GlobalCharacterPresetCard = observer(({
   return (
     <div
       ref={ref}
+      data-character-preset-id={entry.id}
+      data-library-selected={selected ? 'true' : 'false'}
+      data-character-applied={applied ? 'true' : 'false'}
+      onContextMenu={onContextMenu}
       className={
         'group relative rounded-lg bg-[var(--c-surface-2)] border-2 overflow-hidden transition-all hover:shadow-lg ' +
         (isDragging ? 'opacity-30 ' : '') +
-        (isOver
+        (workspace && selected ? 'border-sky-500 ring-2 ring-inset ring-sky-500 ' : workspace && applied ? 'border-green-500 ring-2 ring-inset ring-green-500 ' : isOver
           ? 'border-purple-400 ring-2 ring-purple-400 '
           : 'border-purple-300 dark:border-purple-600 ')
       }
     >
       <div
-        className="relative overflow-hidden aspect-[3/4]"
+        className="relative overflow-hidden aspect-[3/4] cursor-pointer"
+        title={workspace ? `${entry.name} · 클릭하여 ${applied ? '적용 해제' : '적용'}` : undefined}
         onClick={() => {
           if (cyclingMode) onToggleSelect?.();
+          else if (onToggleApply) onToggleApply();
           else onEdit();
         }}
       >
         <GlobalCardImage entry={entry} className="w-full h-full object-cover" />
+        {workspace && applied && <span className="absolute top-2 left-2 z-10 rounded-full back-green px-2 py-1 text-xs font-medium flex items-center gap-1 pointer-events-none"><FaCheck size={10} />적용 중</span>}
         <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
         {/* "글로벌" 코너 배지 제거 — 글로벌이 기본 화면이 되면서(주종 역전,
             2026-07-16) 더 이상 구분 표기가 불필요. */}
-        {cyclingMode && (
+        {(cyclingMode || selectionMode) && (
           <div
             className="absolute top-2 right-2 z-30 cursor-pointer"
             onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
@@ -513,7 +530,7 @@ export const GlobalCharacterPresetCard = observer(({
           </div>
         )}
         {/* 편집 힌트: 카드 탭/클릭 = 편집. 매우 흐릿한 편집 아이콘 (장식용, 순차 생성 모드 제외) */}
-        {!cyclingMode && (
+        {!cyclingMode && !workspace && (
           <FaEdit
             size={30}
             className="absolute left-1/2 bottom-14 -translate-x-1/2 text-white/30 drop-shadow pointer-events-none z-10"
@@ -524,18 +541,18 @@ export const GlobalCharacterPresetCard = observer(({
             {entry.name}
           </div>
           <div className="text-xs text-white/70 drop-shadow truncate">
-            {appState.appliedCharacterPresetNames.includes(entry.name) && (
+            {(applied ?? appState.appliedCharacterPresetNames.includes(entry.name)) && (
               <span className="text-green-300 font-semibold mr-1">✓ 적용됨</span>
             )}
             {vcount > 0 && `V:${vcount}`}
             {vcount > 0 && rcount > 0 && ' '}
             {rcount > 0 && `R:${rcount}`}
-            {vcount === 0 && rcount === 0 && '이미지 없음'}
+            {vcount === 0 && rcount === 0 && (workspace ? '참조 이미지 없음' : '이미지 없음')}
             {entry.folder && ` · 📁${entry.folder}`}
           </div>
         </div>
         <div className={`absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 ${cyclingMode ? 'hidden' : ''}`}>
-          {isEasyMode && (
+          {isEasyMode && !workspace && (
             <Tooltip content="프로젝트로 복사해 이지모드 적용">
               <button
                 className="w-8 h-8 rounded-full btn-solid-sky flex items-center justify-center shadow-lg transition-colors"
@@ -545,22 +562,23 @@ export const GlobalCharacterPresetCard = observer(({
               </button>
             </Tooltip>
           )}
-          <Tooltip content="프로젝트로 복사해 캐릭터 프롬프트 적용">
+          <Tooltip content={workspace ? '캐릭터 프리셋 수정' : '프로젝트로 복사해 캐릭터 프롬프트 적용'}>
             <button
-              className="w-8 h-8 rounded-full btn-solid-yellow flex items-center justify-center shadow-lg transition-colors"
-              onClick={(e) => { e.stopPropagation(); onApplyCharacter(); }}
+              className={`w-8 h-8 rounded-full ${workspace ? 'btn-solid-indigo' : 'btn-solid-yellow'} flex items-center justify-center shadow-lg transition-colors`}
+              aria-label={workspace ? '캐릭터 프리셋 수정' : '캐릭터 프롬프트 적용'}
+              onClick={(e) => { e.stopPropagation(); if (workspace) onEdit(); else onApplyCharacter(); }}
             >
-              <FaUserAlt size={14} />
+              {workspace ? <FaEdit size={14} /> : <FaUserAlt size={14} />}
             </button>
           </Tooltip>
-          <Tooltip content="프로젝트로 복사">
+          {!workspace && <Tooltip content="프로젝트로 복사">
             <button
               className="w-8 h-8 rounded-full btn-solid-purple flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onLoad(); }}
             >
               <ActionIcon id="copy-to-project" size={14} />
             </button>
-          </Tooltip>
+          </Tooltip>}
           <Tooltip content="복제">
             <button
               className="w-8 h-8 rounded-full btn-solid-orange flex items-center justify-center shadow-lg transition-colors"

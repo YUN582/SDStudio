@@ -108,7 +108,7 @@ export const projectToolbarRegistry: ToolbarButtonMeta[] = [
   // 선두 배치 = 기존 위치(프로젝트 선택기 옆) 근사 유지.
   { id: 'project-browser', name: '프로젝트 탐색', label: '탐색', tier: 'primary', portable: true },
   { id: 'add-session', name: '신규 프로젝트', label: '새 프로젝트', tier: 'primary', portable: true },
-  { id: 'character-presets', name: '캐릭터 프리셋 관리', label: '캐릭터 프리셋', tier: 'primary', portable: true },
+    { id: 'character-presets', name: '캐릭터 프리셋 관리', label: '캐릭터 프리셋', tier: 'overflow', portable: true },
   // 씬 툴바 overflow 에서 이동(씬 템플릿 개편 2026-07-18) — 숨김 템플릿 관리 모달의
   // 주 진입점으로 승격. 프로젝트 바 관례(전부 primary 인라인)를 따른다(§6 overflow
   // 기본 규칙은 "신규 버튼 증식" 차단용 — 이 건은 기존 버튼의 영역 이동+승격 확정).
