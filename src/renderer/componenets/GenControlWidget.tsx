@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { FaGripVertical } from 'react-icons/fa';
+import { FaGripVertical, FaArrowDown } from 'react-icons/fa';
 import { observer } from 'mobx-react-lite';
 import { backend, isMobile } from '../models';
 import { appState } from '../models/AppService';
@@ -32,12 +32,18 @@ function clampToViewport(x: number, y: number, w: number, h: number) {
 // ToolbarDnd.tsx 의 applyToolbarPlacement 패턴(getConfig→병합→setConfig) 복제.
 async function applyGenWidget(next: NonNullable<Config['genWidget']>) {
   appState.genWidget = next;
+  const slots = next.detached === false ? { ...appState.uiLayoutSlots, genControl: 'docked' as const } : undefined;
+  if (slots) appState.uiLayoutSlots = slots;
   try {
     const config = await backend.getConfig();
-    await backend.setConfig({ ...config, genWidget: next });
+    await backend.setConfig({ ...config, genWidget: next, ...(slots ? { uiLayoutSlots: slots } : {}) });
   } catch (e) {
     console.error('생성 컨트롤 위젯 배치 저장 실패:', e);
   }
+}
+
+export function dockGenControl() {
+  return applyGenWidget({ ...appState.genWidget, detached: false });
 }
 
 // 하단바 도크 영역(data-gen-dock) 위에 좌표가 있는지 히트테스트.
@@ -171,9 +177,9 @@ export const GenControlFloating = observer(() => {
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointermove', onPointerMove);
         target.releasePointerCapture?.(ev.pointerId);
-        if (isOverDock(ev.clientX, ev.clientY)) {
+        if (canDock && isOverDock(ev.clientX, ev.clientY)) {
           // 하단바 도크 위에서 놓음 → 재부착.
-          applyGenWidget({ detached: false, x: appState.genWidget.x, y: appState.genWidget.y });
+          dockGenControl();
         } else {
           // 현재 위치로 저장.
           applyGenWidget({ ...appState.genWidget, detached: true });
@@ -181,7 +187,7 @@ export const GenControlFloating = observer(() => {
       };
       window.addEventListener('pointerup', onUp);
     },
-    [onPointerMove],
+    [onPointerMove, canDock],
   );
 
   return (
@@ -207,6 +213,9 @@ export const GenControlFloating = observer(() => {
         </div>
       </Tooltip>
       <TaskQueueControl />
+      {canDock && <Tooltip content="하단 바에 부착">
+        <button type="button" className="round-button icon-only back-gray h-8" aria-label="하단 바에 부착" onClick={() => { void dockGenControl(); }}><FaArrowDown size={16} /></button>
+      </Tooltip>}
     </div>
   );
 });

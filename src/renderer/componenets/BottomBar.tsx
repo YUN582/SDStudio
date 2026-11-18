@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { StackFixed } from './LayoutComponents';
 import TaskQueueControl from './TaskQueueControl';
 import { isV2, V2_QUICK_BAR_SLOT_ID } from '../models/mobileV2';
-import { GenControlHandle } from './GenControlWidget';
+import { GenControlHandle, dockGenControl } from './GenControlWidget';
 import { appState } from '../models/AppService';
 import { isMobile } from '../models';
 import { BottomBarPlacement } from '../models/layoutTemplates';
@@ -33,6 +33,8 @@ const BottomBar = observer(
       appState.genControlOverlayCount > 0);
 
   const v2 = isV2('main');
+  const showDockTarget = !isMobile && appState.genControlOverlayCount === 0 &&
+    (appState.genWidget.detached === true || genControl === 'floating');
 
   // 기본(bottom): 기존 하단 가로바. data-gen-dock = 플로팅 위젯 재부착 히트 영역.
   const bar = (
@@ -42,7 +44,7 @@ const BottomBar = observer(
       <div
         data-gen-dock
         data-undo-anchor=""
-        className="zone-bar relative px-3 pt-2 border-t flex gap-3 items-center line-color"
+        className={'zone-bar relative px-3 pt-2 border-t flex gap-3 items-center line-color' + (!isMobile ? ' min-h-14' : '')}
         style={{
           // 제스처바가 있는 기기에서 실행/중지 버튼이 바에 가리지 않도록
           // 기존 하단 여백(0.5rem)에 safe-area 를 더한다(inset 0이면 기존과 동일).
@@ -77,6 +79,11 @@ const BottomBar = observer(
               <TaskQueueControl />
             </div>
           )}
+          {showDockTarget && <button type="button" data-gen-dock-target=""
+            className="h-8 px-4 rounded-lg border border-dashed line-color text-muted text-sm hover:text-sky-500 hover:border-sky-500"
+            onClick={() => { void dockGenControl(); }}>
+            생성 컨트롤을 여기에 놓아 부착
+          </button>}
         </div>
         <UndoBarSlot tone="bar" />
       </div>
