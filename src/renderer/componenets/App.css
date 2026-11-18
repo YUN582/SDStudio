@@ -935,8 +935,8 @@ html:not(.finish-classic) .tab-seg > .tab-seg-off:hover {
 
 .prompt-expanded {
   width: min(1600px, 94vw);
-  height: 90vh;
-  height: 90dvh;
+  height: 80vh;
+  height: 80dvh;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
