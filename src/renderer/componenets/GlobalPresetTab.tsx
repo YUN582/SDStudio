@@ -17,6 +17,7 @@ import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from '
 import { ActionIcon } from './ActionIcon';
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
+import { exportGlobalPresetPngs } from '../models/globalPresetPngExport';
 import {
   backend,
   globalPresetService,
@@ -416,6 +417,30 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     await appState.exportGlobalPresetToPng(entry);
   };
 
+  const handleExportSelected = async () => {
+    const entries = allPresets.filter(entry => selectedIds.has(entry.id)).map(({ id, name }) => ({ id, name }));
+    if (!entries.length) return;
+    if (entries.length === 1) {
+      const entry = globalPresetService.get(entries[0].id);
+      if (entry) await handleExport(entry);
+      return;
+    }
+    try {
+      const folder = await backend.selectDir();
+      if (!folder) return;
+      appState.setProgressDialog({ text: '프리셋 PNG 저장 중...', done: 0, total: entries.length });
+      const result = await exportGlobalPresetPngs(entries, folder, (done, total) =>
+        appState.setProgressDialog({ text: '프리셋 PNG 저장 중...', done, total }));
+      appState.pushMessage(result.failed.length
+        ? `프리셋 PNG ${result.saved}개 저장, ${result.failed.length}개 실패: ${failedNamesLine(result.failed)}`
+        : `프리셋 PNG ${result.saved}개를 저장했습니다.`, result.failed.length ? 'error' : 'success');
+    } catch (error: any) {
+      appState.pushMessage('프리셋 PNG 내보내기 실패: ' + (error?.message || error), 'error');
+    } finally {
+      appState.setProgressDialog(undefined);
+    }
+  };
+
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
     appState.pushDialog({
@@ -636,9 +661,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
         <Item disabled={selectedIds.size !== 1} onClick={() => {
           const entry = contextId && globalPresetService.get(contextId); if (entry) setEditing(entry);
         }}>수정</Item>
-        <Item disabled={selectedIds.size !== 1} onClick={() => {
-          const entry = contextId && globalPresetService.get(contextId); if (entry) void handleExport(entry);
-        }}>PNG로 내보내기</Item>
+        <Item onClick={() => { void handleExportSelected(); }}>PNG로 내보내기{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
         <Separator />
         <Item onClick={handleBulkDelete}>삭제{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
       </Menu>

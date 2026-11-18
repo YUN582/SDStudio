@@ -756,7 +756,7 @@ export class GlobalPresetService extends EventTarget {
     return preset;
   }
 
-  async exportToPng(id: string, outPath: string): Promise<void> {
+  async buildExportPng(id: string): Promise<string> {
     const entry = this.get(id);
     if (!entry) throw new Error('프리셋을 찾을 수 없습니다');
 
@@ -789,7 +789,10 @@ export class GlobalPresetService extends EventTarget {
       'global',
       entry.name,
     );
-    const newPng = embedJSONInPNG(decoratedPng, jsonForPng);
-    await backend.writeDataFile(outPath, newPng);
+    return embedJSONInPNG(decoratedPng, jsonForPng);
+  }
+
+  async exportToPng(id: string, outPath: string): Promise<void> {
+    await backend.writeDataFile(outPath, await this.buildExportPng(id));
   }
 }
