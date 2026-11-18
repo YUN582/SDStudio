@@ -207,6 +207,7 @@ const INITIAL_CONFIG = {
 const BASE_SAVE = {
   ...INITIAL_CONFIG,
   webSearchEnabled: true,
+  showShortcutHelpOnStartup: false,
   modelType: 'quality',
   ...withRequestDelaySettings({}, 2000, 500),
   requestDelayWarningDismissed: undefined,
@@ -319,6 +320,20 @@ async function save() {
 }
 
 // ─── 1. 탭 라벨 ───
+
+test('startup shortcut help defaults off, saves opt-in, and does not change the currently open help', async () => {
+  await open(false);
+  const label = Array.from(container.querySelectorAll('label')).find(el => el.textContent?.trim() === '시작 시 단축키 도움말 표시');
+  const checkbox = label?.querySelector<HTMLInputElement>('input')!;
+  expect(checkbox.checked).toBe(false);
+  appState.showSceneCheatsheet = true;
+  await click(checkbox);
+  expect(dirty()).toBe(true);
+  const saved = await save();
+  expect(saved.showShortcutHelpOnStartup).toBe(true);
+  expect(appState.showShortcutHelpOnStartup).toBe(true);
+  expect(appState.showSceneCheatsheet).toBe(true);
+});
 
 test('1-PC: 탭 라벨 순서가 PC 8탭(저장경로·단축키 포함, 툴바·복구 없음)이다', async () => {
   await open(false);

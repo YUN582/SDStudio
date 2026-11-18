@@ -281,6 +281,7 @@ export const App = observer(() => {
   }, []);
 
   const [darkMode, setDarkMode] = useState(false);
+  const startupHelpInitialised = useRef(false);
   const [trueDark, setTrueDark] = useState(false);
   const [themeOverrides, setThemeOverrides] = useState<Record<string, string>>(
     {},
@@ -297,6 +298,11 @@ export const App = observer(() => {
       appState.webSearchEnabled = conf.webSearchEnabled ?? true;
       appState.legacyWorkflowMode = conf.legacyWorkflowMode ?? false;
       appState.sceneToolbarLegacyText = conf.sceneToolbarLegacyText ?? false;
+      appState.showShortcutHelpOnStartup = conf.showShortcutHelpOnStartup ?? false;
+      if (!startupHelpInitialised.current) {
+        startupHelpInitialised.current = true;
+        appState.showSceneCheatsheet = appState.showShortcutHelpOnStartup;
+      }
       appState.quickMenu = conf.quickMenu;
       appState.quickMenuButton = conf.quickMenuButton ?? false;
       // 조합 에디터 뷰: 미설정 시 데스크톱=카드·모바일=목록(모바일 편집 편의).

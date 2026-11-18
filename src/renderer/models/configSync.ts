@@ -80,6 +80,7 @@ export const CONFIG_GROUP_FIELDS = {
     'legacySceneEditor',
     'legacyWorkflowMode',
     'sceneToolbarLegacyText',
+    'showShortcutHelpOnStartup',
     'promptWeightSpacingFix',
   ] as const,
 };
@@ -175,6 +176,7 @@ const FIELD_KIND: Partial<Record<keyof Config, FieldKind>> = {
   legacySceneEditor: 'boolean',
   legacyWorkflowMode: 'boolean',
   sceneToolbarLegacyText: 'boolean',
+  showShortcutHelpOnStartup: 'boolean',
   promptWeightSpacingFix: 'boolean',
 };
 
@@ -518,6 +520,7 @@ export const CONFIG_FIELD_LABEL: Partial<Record<keyof Config, string>> = {
   webSearchEnabled: '웹 검색 사용',
   legacyWorkflowMode: '예전 작업 모드',
   sceneToolbarLegacyText: '씬 툴바 글자 표시',
+  showShortcutHelpOnStartup: '시작 시 단축키 도움말 표시',
   promptWeightSpacingFix: '가중치 숫자 태그 공백 보정',
 };
 

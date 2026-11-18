@@ -838,6 +838,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [legacyWorkflowMode, setLegacyWorkflowMode] = useState(false);
   const [sceneToolbarLegacyText, setSceneToolbarLegacyText] = useState(false);
+  const [showShortcutHelpOnStartup, setShowShortcutHelpOnStartup] = useState(false);
   const [storageWriteGuard, setStorageWriteGuard] = useState(true);
   const [fullWordAc, setFullWordAc] = useState(appState.fullWordAutoComplete);
   const [trueDark, setTrueDark] = useState(false);
@@ -921,6 +922,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     setWebSearchEnabled(config.webSearchEnabled ?? true);
     setLegacyWorkflowMode(config.legacyWorkflowMode ?? false);
     setSceneToolbarLegacyText(config.sceneToolbarLegacyText ?? false);
+    setShowShortcutHelpOnStartup(config.showShortcutHelpOnStartup ?? false);
     setStorageWriteGuard(config.storageWriteGuard ?? true);
     setTrueDark(config.trueDark ?? false);
     setExportConcurrency(config.exportConcurrency ?? (isMobile ? 2 : 4));
@@ -1130,6 +1132,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       webSearchEnabled,
       legacyWorkflowMode: legacyWorkflowMode,
       sceneToolbarLegacyText: sceneToolbarLegacyText,
+      showShortcutHelpOnStartup,
       storageWriteGuard: storageWriteGuard,
       exportConcurrency: exportConcurrency,
       defaultExportFolder: defaultExportFolder || undefined,
@@ -1200,6 +1203,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     appState.webSearchEnabled = webSearchEnabled;
     appState.legacyWorkflowMode = legacyWorkflowMode;
     appState.sceneToolbarLegacyText = sceneToolbarLegacyText;
+    appState.showShortcutHelpOnStartup = showShortcutHelpOnStartup;
     appState.uiToolbar = uiToolbar;
     appState.quickMenu = quickMenuCfg;
     appState.quickMenuButton = quickMenuButton;
@@ -1281,7 +1285,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       case 'drive':
         return <DriveSettingsTab active={activeTab === tabIdx} dirty={!!dirty} reloadConfig={loadConfig} syncFolder={syncFolder} setSyncFolder={setSyncFolder} selectSyncFolder={selectSyncFolder} />;
       case 'personal':
-        return <PersonalTab {...{ webSearchEnabled, setWebSearchEnabled, classicSceneCard, setClassicSceneCard, fullWordAc, setFullWordAc, legacyProjectMode, setLegacyProjectMode, legacySceneEditor, setLegacySceneEditor, legacyWorkflowMode, setLegacyWorkflowMode, sceneToolbarLegacyText, setSceneToolbarLegacyText, uiFont, setUiFont, uiClassicFinish, setUiClassicFinish, uiPillButtons, setUiPillButtons, allowDuplicateProjectOpen, setAllowDuplicateProjectOpen, promptWeightSpacingFix, setPromptWeightSpacingFix }} />;
+        return <PersonalTab {...{ webSearchEnabled, setWebSearchEnabled, classicSceneCard, setClassicSceneCard, fullWordAc, setFullWordAc, legacyProjectMode, setLegacyProjectMode, legacySceneEditor, setLegacySceneEditor, legacyWorkflowMode, setLegacyWorkflowMode, sceneToolbarLegacyText, setSceneToolbarLegacyText, showShortcutHelpOnStartup, setShowShortcutHelpOnStartup, uiFont, setUiFont, uiClassicFinish, setUiClassicFinish, uiPillButtons, setUiPillButtons, allowDuplicateProjectOpen, setAllowDuplicateProjectOpen, promptWeightSpacingFix, setPromptWeightSpacingFix }} />;
       case 'customization':
         return <CustomizationTab {...{ uiTheme, setUiTheme, whiteMode, setWhiteMode, trueDark, setTrueDark, uiThemePresets, setUiThemePresets }} />;
       case 'toolbar':
@@ -1321,6 +1325,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       webSearchEnabled !== (savedCfg.webSearchEnabled ?? true) ||
       legacyWorkflowMode !== (savedCfg.legacyWorkflowMode ?? false) ||
       sceneToolbarLegacyText !== (savedCfg.sceneToolbarLegacyText ?? false) ||
+      showShortcutHelpOnStartup !== (savedCfg.showShortcutHelpOnStartup ?? false) ||
       storageWriteGuard !== (savedCfg.storageWriteGuard ?? true) ||
       exportConcurrency !== (savedCfg.exportConcurrency ?? (isMobile ? 2 : 4)) ||
       (defaultExportFolder || '') !== (savedCfg.defaultExportFolder ?? '') ||

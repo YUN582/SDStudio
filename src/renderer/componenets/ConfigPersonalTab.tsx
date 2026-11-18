@@ -23,6 +23,7 @@ const PersonalTab = ({
   legacySceneEditor, setLegacySceneEditor,
   legacyWorkflowMode, setLegacyWorkflowMode,
   sceneToolbarLegacyText, setSceneToolbarLegacyText,
+  showShortcutHelpOnStartup, setShowShortcutHelpOnStartup,
   uiFont, setUiFont,
   uiClassicFinish, setUiClassicFinish,
   uiPillButtons, setUiPillButtons,
@@ -166,6 +167,17 @@ const PersonalTab = ({
       </div>
       <p className="text-xs text-faint mt-1 ml-6">
         켜면 PC 씬 툴바 버튼을 예전처럼 텍스트로 표시합니다. 끄면(기본) 아이콘으로 표시되고 이름은 마우스를 올리면 뜹니다. 모바일에는 영향이 없습니다.
+      </p>
+    </div>
+    <hr className="line-color" />
+    <div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={showShortcutHelpOnStartup ?? false}
+          onChange={(e) => setShowShortcutHelpOnStartup(e.target.checked)} />
+        <span className="text-sm gray-label">시작 시 단축키 도움말 표시</span>
+      </label>
+      <p className="text-xs text-faint mt-1 ml-6">
+        다음 실행부터 적용됩니다. 꺼두어도 도구줄의 단축키 도움말 버튼으로 언제든 열 수 있습니다.
       </p>
     </div>
     <hr className="line-color" />
