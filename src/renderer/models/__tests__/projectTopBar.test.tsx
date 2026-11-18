@@ -6,6 +6,7 @@ jest.mock('..', () => ({ get isMobile() { return mobile; } }));
 jest.mock('../AppService', () => ({ appState }));
 jest.mock('../mobileV2', () => ({ isV2: () => false, V2_QUICK_BAR_SLOT_ID: 'quick' }));
 jest.mock('../../componenets/SessionSelect', () => ({ __esModule: true, default: () => <div data-testid="project-selector" /> }));
+jest.mock('../../componenets/TobBar', () => ({ AppToolbarControls: () => <div data-testid="app-controls" /> }));
 jest.mock('../../componenets/TaskQueueControl', () => ({ __esModule: true, default: () => <div data-testid="generation-controls" /> }));
 jest.mock('../../componenets/GenControlWidget', () => ({ GenControlHandle: () => null }));
 jest.mock('../../componenets/UndoBarSlot', () => ({ UndoBarSlot: () => null }));
@@ -21,11 +22,13 @@ test.each(['classic', 'compact'])('%s desktop places project selection above and
   expect(screen.getAllByTestId('generation-controls')).toHaveLength(1);
   expect(ui.container.querySelector('[data-project-top-bar]')?.contains(screen.getByTestId('project-selector'))).toBe(true);
   expect(ui.container.querySelector('[data-gen-dock]')?.contains(screen.getByTestId('project-selector'))).toBe(false);
+  expect(ui.container.querySelector('[data-project-top-bar]')?.contains(screen.getByTestId('app-controls'))).toBe(true);
 });
 test.each(['sidebar', 'modern'])('%s keeps the dedicated project surface without a duplicate top selector', layout => {
   appState.uiLayoutTemplate = layout;
   render(<ProjectTopBar />);
   expect(screen.queryByTestId('project-selector')).toBeNull();
+  expect(screen.getByTestId('app-controls')).not.toBeNull();
 });
 test('mobile keeps its own project placement', () => {
   mobile = true;

@@ -1,8 +1,6 @@
-import { useContext, useEffect, useState } from 'react';
-import { FloatView } from './FloatView';
+import { useEffect, useState } from 'react';
 import ConfigScreen from './ConfigScreen';
 import SessionSelect from './SessionSelect';
-import { Session } from '../models/types';
 import {
   loginService,
   backend,
@@ -21,8 +19,8 @@ import OpusUsageBadge from './OpusUsageBadge';
 import { normalizeTokenRotateWarning } from '../models/tokenAutoRotation';
 import ModelFamilySwitch from './ModelFamilySwitch';
 
-const TobBar = observer(() => {
-  // PC project tools use ProjectTopBar. Mobile retains its title-row selector.
+export const AppToolbarControls = observer(() => {
+  // Desktop uses the project command row; mobile keeps the title-row controls.
   const resolved = resolveLayout(appState.uiLayoutTemplate, isMobile);
   // 'sidebar' 템플릿이면 프로젝트 선택기는 좌측 사이드 바가 담당 → 상단바엔 미렌더.
   // 'modern' 템플릿(projectStrip)은 프로젝트 툴바 완전 제거 — 좌측 스트립+드로어가 담당.
@@ -30,7 +28,6 @@ const TobBar = observer(() => {
   const [loggedIn, setLoggedIn] = useState(false);
   const [credits, setCredits] = useState(0);
   const [warningPercent, setWarningPercent] = useState(10);
-  const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,20 +85,6 @@ const TobBar = observer(() => {
     };
   }, []);
 
-  useEffect(() => {
-    if (isMobile || !window.electron) return;
-    const checkMaximized = async () => {
-      try {
-        const max = await window.electron.ipcRenderer.invoke('window-is-maximized');
-        setIsMaximized(max);
-      } catch (e) {}
-    };
-    checkMaximized();
-    const onResize = () => checkMaximized();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
   const [settings, setSettings] = useState(false);
 
   // 단축키에서 환경설정 열기 이벤트 수신
@@ -115,18 +98,6 @@ const TobBar = observer(() => {
     window.addEventListener('shortcut-action', handler);
     return () => window.removeEventListener('shortcut-action', handler);
   }, []);
-
-  const handleMinimize = () => {
-    window.electron?.ipcRenderer.invoke('window-minimize');
-  };
-  const handleMaximize = () => {
-    window.electron?.ipcRenderer.invoke('window-maximize').then(() => {
-      window.electron?.ipcRenderer.invoke('window-is-maximized').then(setIsMaximized);
-    });
-  };
-  const handleClose = () => {
-    window.electron?.ipcRenderer.invoke('window-close');
-  };
 
   // 모바일 기본 툴바의 환경설정 버튼·계정 표기. 모바일은 SessionSelect 의 2줄 배치 슬롯
   // (1줄째 맨 앞=환경설정·계정 표기, 그 뒤 프로젝트 선택)으로, 좁은 PC 창은 기존 인라인 묶음으로 렌더.
@@ -148,14 +119,8 @@ const TobBar = observer(() => {
   );
 
   return (
-    // zone-bar: 구역 카드화 마감 — PC 새 마감에선 캔버스 프레임에 통합(App.css)
-    <div className="zone-bar titlebar-drag flex border-b line-color px-3 py-2 items-center select-none gap-2">
-      {/* 좁은 창(768~1024) 다이어트: 장식성 요소는 lg(1024) 미만에서 숨긴다 —
-          두 창 나란히(960px) 배치 시 공간 확보. md 미만(모바일) 동작은 무변화. */}
-      <div className="titlebar-no-drag gap-3 hidden lg:flex text-sky-500 font-bold dark:text-white">
-        SDStudio
-      </div>
-      <div className="ml-auto hidden md:flex items-center gap-2 flex-none titlebar-no-drag">
+    <>
+      {!isMobile && <div data-app-toolbar-controls="" className="flex items-center gap-2 flex-none titlebar-no-drag">
         <ModelFamilySwitch />
         <div className="flex items-center gap-2" role="group" aria-label="계정 상태 및 환경설정">
         {!loggedIn ? (
@@ -185,9 +150,9 @@ const TobBar = observer(() => {
           <FaCog size={16} />
         </button>
         </div>
-      </div>
+      </div>}
       {/* Mobile: 기본 = ⚙ 아이콘+크레딧 인라인(1줄 다이어트) / 클래식 툴바 = 기존 세로 배치 */}
-      {appState.uiToolbar.classic ? (
+      {isMobile && appState.uiToolbar.classic && (
         <div className="md:hidden flex flex-col items-center gap-1 titlebar-no-drag flex-none">
           <button
             className="round-button back-sky text-sm px-3 py-1 min-w-0 min-h-0"
@@ -202,12 +167,6 @@ const TobBar = observer(() => {
           ) : (
             <OpusUsageBadge credits={credits} warningPercent={warningPercent} />
           )}
-        </div>
-      ) : isMobile ? null : (
-        // 좁은 PC 창(md 미만): 기존 인라인 배치 유지. 모바일은 SessionSelect 의 2줄 배치 슬롯으로 넘긴다.
-        <div className="md:hidden flex items-center gap-1.5 titlebar-no-drag flex-none">
-          {mobileSettingsButton}
-          {mobileAccountBadge}
         </div>
       )}
       {/* Mobile keeps its project selector beside the title-row controls. */}
@@ -228,30 +187,6 @@ const TobBar = observer(() => {
         </div>
       )}
 
-      {/* 윈도우 컨트롤 버튼 (PC only) */}
-      {!isMobile && (
-        <div className="titlebar-no-drag hidden md:flex items-center ml-2 -mr-1">
-          <button
-            className="window-control-btn"
-            onClick={handleMinimize}
-          >
-            <VscChromeMinimize size={16} />
-          </button>
-          <button
-            className="window-control-btn"
-            onClick={handleMaximize}
-          >
-            {isMaximized ? <VscChromeRestore size={16} /> : <VscChromeMaximize size={16} />}
-          </button>
-          <button
-            className="window-control-btn window-control-close"
-            onClick={handleClose}
-          >
-            <VscChromeClose size={16} />
-          </button>
-        </div>
-      )}
-
       {settings && (
         <ConfigScreen
           onSave={() => {
@@ -262,6 +197,34 @@ const TobBar = observer(() => {
           }}
         />
       )}
+    </>
+  );
+});
+
+const TobBar = observer(() => {
+  const [isMaximized, setIsMaximized] = useState(false);
+  useEffect(() => {
+    if (isMobile || !window.electron) return;
+    const checkMaximized = async () => {
+      try { setIsMaximized(await window.electron.ipcRenderer.invoke('window-is-maximized')); } catch {}
+    };
+    checkMaximized();
+    window.addEventListener('resize', checkMaximized);
+    return () => window.removeEventListener('resize', checkMaximized);
+  }, []);
+
+  return (
+    <div data-app-titlebar="" className={'zone-bar titlebar-drag flex border-b line-color px-3 items-center select-none gap-2 ' + (isMobile ? 'py-2' : 'h-8 flex-none')}>
+      <div className="titlebar-no-drag hidden lg:flex text-sm text-sky-500 font-bold dark:text-white">SDStudio</div>
+      {isMobile && <AppToolbarControls />}
+      {!isMobile && <div className="titlebar-no-drag flex items-center ml-auto -mr-1">
+        <button className="window-control-btn" aria-label="최소화" onClick={() => window.electron?.ipcRenderer.invoke('window-minimize')}><VscChromeMinimize size={16} /></button>
+        <button className="window-control-btn" aria-label={isMaximized ? '이전 크기로' : '최대화'} onClick={async () => {
+          await window.electron?.ipcRenderer.invoke('window-maximize');
+          setIsMaximized(await window.electron?.ipcRenderer.invoke('window-is-maximized'));
+        }}>{isMaximized ? <VscChromeRestore size={16} /> : <VscChromeMaximize size={16} />}</button>
+        <button className="window-control-btn window-control-close" aria-label="창 닫기" onClick={() => window.electron?.ipcRenderer.invoke('window-close')}><VscChromeClose size={16} /></button>
+      </div>}
     </div>
   );
 });
