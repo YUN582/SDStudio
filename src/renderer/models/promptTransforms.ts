@@ -52,7 +52,7 @@ function caretSegmentOf(text: string, selectionStart: number): CaretSegment {
   return { segmentStart, segmentEnd, segment, leading, trailing, core };
 }
 
-/** Comments delimit active prompt segments; a caret inside a comment has no weight. */
+/** Scope weight edits to either active text or one comment's contents, keeping its markers intact. */
 function weightSegmentOf(text: string, selectionStart: number): CaretSegment | undefined {
   const caret = clamp(selectionStart, 0, text.length);
   let left = 0;
@@ -62,7 +62,12 @@ function weightSegmentOf(text: string, selectionStart: number): CaretSegment | u
       left = comment.end;
       continue;
     }
-    if (comment.start <= caret) return undefined;
+    if (comment.start <= caret) {
+      left = comment.start + 2;
+      right = comment.end - 2;
+      if (caret < left || caret > right) return undefined;
+      break;
+    }
     right = comment.start;
     break;
   }

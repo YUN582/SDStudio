@@ -5,14 +5,39 @@ jest.mock('../AppService', () => ({ appState: { incrementModalOverlay: jest.fn()
 jest.mock('../sceneFieldUndo', () => ({ holdSceneFieldEdit: () => () => {} }));
 jest.mock('@capacitor/app', () => ({ App: {} }));
 import PromptEditTextArea from '../../componenets/PromptEditTextArea';
-function Fixture() {
-  const [text, setText] = useState('alpha, beta, ALPHA');
+function Fixture({ initial = 'alpha, beta, ALPHA' }: { initial?: string }) {
+  const [text, setText] = useState(initial);
   return <PromptEditTextArea value={text} onChange={setText} />;
 }
 
 beforeEach(() => {
   const createRange = document.createRange.bind(document);
   jest.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), { getBoundingClientRect: () => ({ bottom: 0 }) }));
+});
+
+test('commented prompt weights respond to Ctrl+arrows and Ctrl+wheel with undo', async () => {
+  render(<Fixture initial="before, ##1.2::blue hair::,## after" />);
+  const editor = document.querySelector('[contenteditable=true]') as HTMLElement;
+  editor.focus();
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent?.includes('blue hair')) continue;
+    const range = document.createRange();
+    range.setStart(node, node.textContent.indexOf('blue hair'));
+    range.collapse(true);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    break;
+  }
+  fireEvent.keyDown(editor, { key: 'ArrowUp', ctrlKey: true });
+  await waitFor(() => expect(editor.textContent).toBe('before, ##1.25::blue hair::,## after'));
+  fireEvent.wheel(editor, { ctrlKey: true, deltaY: 100 });
+  await waitFor(() => expect(editor.textContent).toBe('before, ##1.2::blue hair::,## after'));
+  fireEvent.keyDown(editor, { key: 'z', ctrlKey: true });
+  await waitFor(() => expect(editor.textContent).toBe('before, ##1.25::blue hair::,## after'));
+  fireEvent.keyDown(editor, { key: 'ArrowDown', ctrlKey: true });
+  await waitFor(() => expect(editor.textContent).toBe('before, ##1.2::blue hair::,## after'));
 });
 afterEach(() => { window.getSelection()?.removeAllRanges(); jest.restoreAllMocks(); });
 
