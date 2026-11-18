@@ -779,6 +779,13 @@ export const highlightPrompt = (
   }
   const overlapsComment = (wordStart: number, wordEnd: number): boolean =>
     commentRanges.some(([s, e]) => s < wordEnd && e > wordStart);
+  // Preserve offsets while excluding commented syntax from active weights and
+  // bracket validation. A commented opening marker must not consume active text.
+  const activeText = commentRanges.length === 0
+    ? text
+    : text.split('').map((c, i) =>
+        commentRanges.some(([s, e]) => i >= s && i < e) ? ' ' : c,
+      ).join('');
 
   // ── 가중치 하이라이트용: 각 문자 위치의 bracket depth 계산 ──
   // {}: +1 depth, []: -1 depth per pair
@@ -787,7 +794,7 @@ export const highlightPrompt = (
     let curly = 0;  // {} depth
     let square = 0; // [] depth
     for (let i = 0; i < text.length; i++) {
-      const c = text[i];
+      const c = activeText[i];
       if (c === '{') curly++;
       else if (c === '}') curly = Math.max(0, curly - 1);
       else if (c === '[') square++;
@@ -800,7 +807,7 @@ export const highlightPrompt = (
   // 숫자 표기는 promptWeightSyntax 단일 출처 — .6:: 도 0.6(1 미만 색)으로 본다(2026-10-02 I2, 예전엔 6 으로 읽어 강조 색).
   const ewRegex = makeExplicitWeightRangeRegex();
   let ewMatch: RegExpExecArray | null;
-  while ((ewMatch = ewRegex.exec(text)) !== null) {
+  while ((ewMatch = ewRegex.exec(activeText)) !== null) {
     explicitWeightRanges.push({
       start: ewMatch.index,
       end: ewMatch.index + ewMatch[0].length,
@@ -837,14 +844,7 @@ export const highlightPrompt = (
     return null;
   };
 
-  // 괄호 검사는 주석 영역을 공백으로 대체한 텍스트에서 수행
-  // (주석 내부 괄호가 오류로 집계되지 않도록)
-  const parenCheckText = commentRanges.length === 0
-    ? text
-    : text.split('').map((c, i) =>
-        commentRanges.some(([s, e]) => i >= s && i < e) ? ' ' : c,
-      ).join('');
-  let [parenFine, lastPos] = parenCheck(parenCheckText);
+  let [parenFine, lastPos] = parenCheck(activeText);
   let offset = 0;
   const words = text
     .split('\n')
@@ -856,14 +856,15 @@ export const highlightPrompt = (
             return word;
           }
           if (word === ',') {
+            const commaStart = offset;
+            offset += 1;
             // 콤마가 주석 영역 내부면 주석 스타일
-            const isInComment = overlapsComment(offset, offset + 1);
-            offset += 0; // 기존 로직과 맞춤 (콤마는 offset 증가 안 함 — 다음 단어의 +1에 포함)
+            const isInComment = overlapsComment(commaStart, commaStart + 1);
             if (isInComment) {
               return '<span class="syntax-comment">,</span>';
             }
             // 콤마가 가중치 영역 내부면 가중치 배경 적용
-            const commaWeight = getWeightClass(offset, offset + 1);
+            const commaWeight = getWeightClass(commaStart, commaStart + 1);
             if (commaWeight) {
               return `<span class="${commaWeight}">,</span>`;
             }
@@ -891,11 +892,14 @@ export const highlightPrompt = (
               if (inComment) {
                 result += `<span class="syntax-comment">${segment}</span>`;
               } else {
-                result += segment;
+                const weightClass = getWeightClass(absPos, wordStart + j);
+                result += weightClass
+                  ? `<span class="${weightClass}">${segment}</span>`
+                  : segment;
               }
               i = j;
             }
-            offset += word.length + 1;
+            offset += word.length;
             return result;
           }
           const classNames = [];
@@ -910,7 +914,7 @@ export const highlightPrompt = (
           if (leftTrimPos > rightTrimPos) {
             let res = ``;
             res += ' '.repeat(word.length) + '';
-            offset += word.length + 1;
+            offset += word.length;
             return res;
           }
           if (
@@ -933,7 +937,7 @@ export const highlightPrompt = (
             word = `${left}<span class="syntax-error">${mid}</span>${right}`;
             let res = `<span class="syntax-word">`;
             res += word + '</span>';
-            offset += originalWordLength + 1;
+            offset += originalWordLength;
             return res;
           }
           let js = '';
@@ -988,10 +992,11 @@ export const highlightPrompt = (
           } else {
             res = `${leading}<span ${js} class="${classNames.join(' ')}">${pword}</span>${trailing}`;
           }
-          offset += word.length + 1;
+          offset += word.length;
           return res;
         })
         .join('');
+      offset += 1; // Newline between rendered lines.
       return '<span class="syntax-line">' + word + '</span>';
     })
     .join('\n');
