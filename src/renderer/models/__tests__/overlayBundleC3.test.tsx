@@ -368,10 +368,13 @@ describe('character workspace', () => {
     (instantiateGlobalCharacterPresetsRecorded as jest.Mock).mockImplementation(async (_session, _entries, _load, _label, apply) => {
       apply([local]); return { presets: [local], failures: [] };
     });
+    mockAppState.applyCharacterPreset.mockImplementationOnce(() => mockAppState.pushMessage('캐릭터 프롬프트로 적용되었습니다'));
     await act(async () => root.render(<CharacterPresetTab />));
     await click(q('[data-character-preset-id="g1"]')!);
     expect(instantiateGlobalCharacterPresetsRecorded).toHaveBeenCalledWith(mockSession, [mockGlobalChars.entries[0]], expect.any(Function), expect.anything(), expect.any(Function));
     expect(mockAppState.applyCharacterPreset).toHaveBeenCalledWith(local, 'character');
+    expect(mockAppState.pushMessage).toHaveBeenCalledTimes(1);
+    expect(mockAppState.pushMessage).toHaveBeenCalledWith('캐릭터 프롬프트로 적용되었습니다');
   });
 
   test('media uploads support multiple attachments, click removal and save without mutating the source', async () => {

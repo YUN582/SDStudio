@@ -1013,7 +1013,7 @@ export function useCharacterPresetPanel({
         },
       );
       if (presets.length > 0) {
-        appState.pushMessage(`"${presets[0].name}"을(를) 프로젝트로 복사해 적용했습니다`);
+        if (!onApplyPreset) appState.pushMessage(`"${presets[0].name}"을(를) 프로젝트로 복사해 적용했습니다`);
       } else {
         appState.pushMessage(failures[0]?.error?.message || '적용에 실패했습니다');
       }
