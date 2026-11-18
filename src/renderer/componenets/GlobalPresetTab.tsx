@@ -8,6 +8,7 @@ import {
   FaSquare,
   FaFileArchive,
   FaFileImport,
+  FaTimes,
 } from 'react-icons/fa';
 import { ReorderDragPreview, useGridReorder } from './GridReorder';
 import { useLibraryGridSelection } from './LibraryGridSelection';
@@ -27,7 +28,6 @@ import {
 } from '../models/GlobalPresetService';
 import { appState } from '../models/AppService';
 import { dataUriToBase64 } from '../models/ImageService';
-import { nameErrorMessage, promptName } from '../models/nameInput';
 import {
   batchResultLine,
   deleteConfirmText,
@@ -40,7 +40,6 @@ import { GlobalPresetPicker } from './GlobalPresetPicker';
 import { beginPresetListRecord } from '../models/presetUndo';
 import { UNDO_TEXT } from '../models/undoService';
 import {
-  renameGlobalPresetRecorded,
   setGlobalPresetDefaultRecorded,
   setGlobalPresetsDefaultRecorded,
 } from '../models/globalLibraryUndo';
@@ -105,218 +104,50 @@ interface EasyCardProps {
   onToggleSelect: () => void;
   onImportToSession: () => void;
   onToggleDefault: () => void;
-  onRename: () => void;
   onEdit: () => void;
   onExport: () => void;
   onDelete: () => void;
 }
 
-const EasyCard = observer(
-  ({
-    entry,
-    reorderClass,
-    selected,
-    multiSelectMode,
-    onToggleSelect,
-    onImportToSession,
-    onToggleDefault,
-    onRename,
-    onEdit,
-    onExport,
-    onDelete,
-  }: EasyCardProps) => {
-    // 모바일에선 호버가 없으므로:
-    //  - 이미지 탭 시 자동 불러오기 금지 (대신 아래 "불러오기" 버튼)
-    //  - 액션 버튼은 항상 표시
-    // 데스크탑에선 기존대로 이미지 탭 = 불러오기, 호버 시 버튼 노출
-    return (
-      <div
-        data-global-preset-id={entry.id}
-        data-library-selected={selected ? 'true' : 'false'}
-        className={
-          (reorderClass || '') +
-          // 테두리 폭은 항상 border-2 로 고정(선택 시 크기 변화 방지).
-          // 선택 강조는 레이아웃에 영향 없는 안쪽 ring(ring-inset)으로 표현.
-          // 모바일은 한 줄에 2개(50%-half gap), 데스크톱은 고정폭.
-          'relative flex-none w-[calc(50%-8px)] md:w-64 group rounded-lg overflow-hidden flex flex-col border-2 ' +
-          (selected
-            ? 'border-sky-500 ring-2 ring-inset ring-sky-500'
-            : 'line-color')
-        }
-      >
-        <div
-          className={
-            'relative ' +
-            (multiSelectMode
-              ? 'cursor-pointer hover:brightness-95 active:brightness-90'
-              : '')
-          }
-          onClick={() => {
-            // 실수 클릭 임포트 방지 — 임포트는 호버 시 나타나는 중앙 버튼으로만.
-            if (isMobile && multiSelectMode) onToggleSelect();
-          }}
-        >
-          <GlobalVibeImage
-            profile={entry.profile}
-            className="w-full aspect-[3/4] md:aspect-auto md:h-96 object-cover"
-          />
-          {/* 이름 배지 */}
-          <div
-            className="absolute bottom-0 right-0 bg-gray-700/80 text-base text-white px-2 py-1 rounded-xl m-2 truncate select-none"
-            style={{ maxWidth: '90%' }}
-          >
-            {entry.name}
-          </div>
-          {/* 기본 표시 */}
-          {entry.isDefault && (
-            <div
-              className="absolute top-2 left-2 bg-orange-500 text-white rounded-full p-2 shadow-lg"
-              title="기본으로 지정됨"
-            >
-              <ActionIcon id="pin-default" size={16} />
-            </div>
-          )}
-          {/* 멀티선택 체크박스 */}
-          {multiSelectMode && (
-            <div className="absolute top-2 right-2 bg-[var(--c-surface-2)] rounded p-2 shadow-lg">
-              {selected ? (
-                <FaCheckSquare className="text-sky-500" size={22} />
-              ) : (
-                <FaSquare className="text-faint" size={22} />
-              )}
-            </div>
-          )}
-          {/* PC: 호버 시 어두워지는 레이어 (버튼 클릭을 막지 않도록 pointer-events-none) */}
-          {!isMobile && (
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 z-10 pointer-events-none" />
-          )}
-          {/* PC: 중앙 큰 불러오기 버튼 (솔리드 — 어둠 레이어와 무관하게 선명) */}
-          {!isMobile && (
-            <button
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-lg btn-solid-sky text-base font-semibold shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-              onClick={(e) => {
-                e.stopPropagation();
-                onImportToSession();
-              }}
-            >
-              <ActionIcon id="copy-to-project" size={16} />
-              프로젝트로 복사
-            </button>
-          )}
-          {/* PC: 하단 액션 바 (솔리드 색·확대·균등 배치 — 씬 카드 스타일) */}
-          {!isMobile && (
-            <div className="absolute bottom-0 left-0 right-0 z-20 flex justify-center items-center gap-2 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <Tooltip content={entry.isDefault ? '기본 해제' : '기본으로 지정'}>
-                <button
-                  className="icon-button btn-solid-orange p-3 !rounded-lg shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleDefault();
-                  }}
-                >
-                  <ActionIcon id="pin-default" size={18} className={entry.isDefault ? undefined : 'opacity-50'} />
-                </button>
-              </Tooltip>
-              <Tooltip content="이름 변경">
-                <button
-                  className="icon-button btn-solid-green p-3 !rounded-lg shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRename();
-                  }}
-                >
-                  <ActionIcon id="rename" size={18} />
-                </button>
-              </Tooltip>
-              <Tooltip content="편집 (프롬프트·설정·대표 이미지)">
-                <button
-                  className="icon-button btn-solid-indigo p-3 !rounded-lg shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit();
-                  }}
-                >
-                  <ActionIcon id="edit" size={18} />
-                </button>
-              </Tooltip>
-              <Tooltip content="PNG로 내보내기">
-                <button
-                  className="icon-button btn-solid-sky p-3 !rounded-lg shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onExport();
-                  }}
-                >
-                  <ActionIcon id="export" size={18} />
-                </button>
-              </Tooltip>
-              <Tooltip content="삭제">
-                <button
-                  className="icon-button btn-solid-red p-3 !rounded-lg shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete();
-                  }}
-                >
-                  <FaTrash size={18} />
-                </button>
-              </Tooltip>
-            </div>
-          )}
-        </div>
-
-        {/* 모바일 전용 액션 바 (항상 노출, 좁은 카드라 다단 배치 + 큰 터치 타깃) */}
-        {!multiSelectMode && isMobile && (
-          <div className="flex flex-col gap-1.5 p-2 bg-[var(--c-surface)] border-t line-color">
-            <button
-              className="w-full round-button back-sky text-sm py-2.5 font-medium"
-              onClick={onImportToSession}
-            >
-              프로젝트로 복사
-            </button>
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                className="icon-button btn-solid-orange py-2.5 flex items-center justify-center"
-                onClick={onToggleDefault}
-                title={entry.isDefault ? '기본 해제' : '기본으로 지정'}
-              >
-                <ActionIcon id="pin-default" size={18} className={entry.isDefault ? undefined : 'opacity-50'} />
-              </button>
-              <button
-                className="icon-button btn-solid-green py-2.5 flex items-center justify-center"
-                onClick={onRename}
-                title="이름 변경"
-              >
-                <ActionIcon id="rename" size={18} />
-              </button>
-              <button
-                className="icon-button btn-solid-indigo py-2.5 flex items-center justify-center"
-                onClick={onEdit}
-                title="편집"
-              >
-                <ActionIcon id="edit" size={18} />
-              </button>
-              <button
-                className="icon-button btn-solid-sky py-2.5 flex items-center justify-center"
-                onClick={onExport}
-                title="내보내기"
-              >
-                <ActionIcon id="export" size={18} />
-              </button>
-              <button
-                className="icon-button btn-solid-red py-2.5 flex items-center justify-center"
-                onClick={onDelete}
-                title="삭제"
-              >
-                <FaTrash size={18} />
-              </button>
-            </div>
-          </div>
-        )}
+const EasyCard = observer(({
+  entry, reorderClass, selected, multiSelectMode, onToggleSelect,
+  onImportToSession, onToggleDefault, onEdit, onExport, onDelete,
+}: EasyCardProps) => (
+  <div data-global-preset-id={entry.id} data-library-selected={selected ? 'true' : 'false'}
+    className={(reorderClass || '') + 'relative flex-none w-[calc(50%-8px)] md:w-64 group rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
+      (selected ? 'border-sky-500 ring-2 ring-inset ring-sky-500' : 'line-color')}>
+    <div className="relative cursor-pointer" title={entry.name + ' · 프로젝트에 추가'}
+      onClick={() => { if (isMobile && multiSelectMode) onToggleSelect(); else onImportToSession(); }}>
+      <GlobalVibeImage profile={entry.profile} className="w-full aspect-[3/4] md:aspect-auto md:h-96 object-cover" />
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 pt-6 pb-2 pointer-events-none">
+        <div className="text-sm text-white font-medium drop-shadow truncate">{entry.name}</div>
       </div>
-    );
-  },
-);
+      {entry.isDefault && <div className="absolute top-2 left-2 bg-orange-500 text-white rounded-full p-2 shadow-lg pointer-events-none" title="기본으로 지정됨">
+        <ActionIcon id="pin-default" size={16} />
+      </div>}
+      {multiSelectMode && <button type="button" aria-label={selected ? '선택 해제' : '선택'}
+        className="absolute top-2 right-2 z-30 w-6 h-6 rounded bg-[var(--c-surface-2)] flex items-center justify-center"
+        onClick={event => { event.stopPropagation(); onToggleSelect(); }}>
+        {selected ? <FaCheckSquare className="text-sky-500" size={22} /> : <FaSquare className="text-faint" size={22} />}
+      </button>}
+      <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+      <div data-library-card-actions="" className={'absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200' + (isMobile && multiSelectMode ? ' hidden' : '')}>
+        {[
+          { label: '수정', tone: 'indigo', icon: <ActionIcon id="edit" size={14} />, run: onEdit },
+          { label: entry.isDefault ? '기본 해제' : '기본으로 지정', tone: 'orange', icon: <ActionIcon id="pin-default" size={14} />, run: onToggleDefault },
+          { label: 'PNG로 내보내기', tone: 'sky', icon: <ActionIcon id="export" size={14} />, run: onExport },
+          { label: '삭제', tone: 'red', icon: <FaTrash size={14} />, run: onDelete },
+        ].map(action => <Tooltip key={action.label} content={action.label}>
+          <button type="button" aria-label={action.label} title={action.label}
+            className={'w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-colors btn-solid-' + action.tone}
+            onClick={event => { event.stopPropagation(); action.run(); }}>
+            {action.icon}
+          </button>
+        </Tooltip>)}
+      </div>
+    </div>
+  </div>
+));
 
 interface GenRowProps {
   entry: IGlobalPresetEntry;
@@ -528,27 +359,6 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     }
   };
 
-  const handleRename = async (entry: IGlobalPresetEntry) => {
-    // 현재 이름을 채워 연다 — 같은 종류(워크플로우)의 다른 프리셋과 겹치면 창 안에서 거부(D2)
-    const newName = await promptName({
-      title: `새 이름을 입력하세요 (현재: ${entry.name})`,
-      kind: 'globalPreset',
-      current: entry.name,
-      existing: (n) => {
-        const other = globalPresetService.getByName(entry.workflowType, n);
-        return !!other && other.id !== entry.id;
-      },
-    });
-    if (!newName) return;
-    try {
-      await renameGlobalPresetRecorded(entry.id, newName);
-    } catch (e: any) {
-      appState.pushMessage(
-        nameErrorMessage(e, 'globalPreset', newName, '이름 변경 실패'),
-        'error',
-      );
-    }
-  };
 
   const handleDelete = (entry: IGlobalPresetEntry) => {
     appState.pushDialog({
@@ -634,6 +444,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     });
   };
 
+
   const handleBulkImportToSession = async () => {
     if (selectedIds.size === 0) return;
     if (!appState.curSession) {
@@ -642,7 +453,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     }
     const session = appState.curSession;
     appState.setProgressDialog({
-      text: '프로젝트로 복사하는 중...',
+      text: '프로젝트에 추가하는 중...',
       done: 0,
       total: selectedIds.size,
     });
@@ -659,7 +470,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
       }
       done++;
       appState.setProgressDialog({
-        text: '프로젝트로 복사하는 중...',
+        text: '프로젝트에 추가하는 중...',
         done,
         total: selectedIds.size,
       });
@@ -667,7 +478,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     appState.setProgressDialog(undefined);
     undoRec.commit(UNDO_TEXT.presetFromGlobal(done - fail));
     appState.pushMessage(
-      `${done - fail}개 프로젝트로 복사 완료${fail > 0 ? ` (${fail}개 실패)` : ''}`,
+      `${done - fail}개 프로젝트에 추가 완료${fail > 0 ? ` (${fail}개 실패)` : ''}`,
     );
     exitMultiSelect();
   };
@@ -708,7 +519,21 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
     <div className="flex flex-col h-full w-full overflow-hidden bg-[var(--c-surface)]">
       <div className="flex-none" data-gp-mobile-toolbar={isMobile ? '' : undefined}>
         <GridSearchBar label="프리셋 이름 검색" query={query} onChange={setQuery} />
-        <LibraryToolbar view={<>
+        <LibraryToolbar view={<div data-library-toolbar-end="global" className="flex items-end gap-4">
+          {multiSelectMode && <div className="scene-toolbar-row" data-library-selection-actions="">
+            <GridToolbarGroup caption={`${selectedIds.size}개 선택`}>
+              <LibraryAction label={visible.every(entry => selectedIds.has(entry.id)) ? '전체 해제' : '전체 선택'} icon={<FaCheckSquare />}
+                onClick={() => setSelectedIds(visible.every(entry => selectedIds.has(entry.id)) ? new Set() : new Set(visible.map(entry => entry.id)))} />
+              <Tooltip content="선택한 프리셋을 프로젝트에 추가">
+                <button type="button" className="round-button back-sky h-8 px-3 text-sm" disabled={!selectedIds.size} onClick={handleBulkImportToSession}>선택 추가</button>
+              </Tooltip>
+              <button type="button" className="round-button back-orange h-8 px-3 text-sm" disabled={!selectedIds.size} onClick={() => handleBulkSetDefault(true)}>기본 지정</button>
+              <button type="button" className="round-button back-gray h-8 px-3 text-sm" disabled={!selectedIds.size} onClick={() => handleBulkSetDefault(false)}>기본 해제</button>
+              <LibraryAction label="선택 삭제" tone="red" icon={<FaTrash />} disabled={!selectedIds.size} onClick={handleBulkDelete} />
+              <LibraryAction label="선택 해제" icon={<FaTimes />} onClick={exitMultiSelect} />
+            </GridToolbarGroup>
+          </div>}
+          <div className="flex items-center gap-2 h-8">
           {q && <span role="status" className="text-xs text-muted tabular-nums">검색 결과 {visible.length}개</span>}
           <select aria-label="프리셋 정렬" value={sortBy} onChange={e => setSortBy(e.target.value as GlobalPresetSortBy)}
             className="gray-input text-sm py-1 px-2">
@@ -717,7 +542,8 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
             <option value="name">이름순</option>
             <option value="default">기본 우선</option>
           </select>
-        </>}>
+          </div>
+        </div>}>
           <GridToolbarGroup caption="추가">
             <LibraryAction label="새 프리셋" tone="sky" icon={<ActionIcon id="add-scene" size={18} />} onClick={newPreset} />
             <LibraryAction label="PNG 불러오기" icon={<ActionIcon id="import" size={18} />} onClick={() => fileInputRef.current?.click()} />
@@ -726,20 +552,12 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
             <LibraryAction label="백업" hint="글로벌 프리셋 전체 백업" icon={<FaFileArchive />} onClick={() => appState.globalPresetBackupExport()} />
             <LibraryAction label="백업 불러오기" icon={<FaFileImport />} onClick={() => appState.globalPresetBackupImport()} />
           </GridToolbarGroup>
-          {(isMobile || multiSelectMode) && <GridToolbarGroup caption="선택" separate>
+          {isMobile && <GridToolbarGroup caption="선택" separate>
             <LibraryAction label={isMobile ? (multiSelectMode ? '멀티선택 취소' : '멀티선택') : `선택 해제 (${selectedIds.size})`} pressed={multiSelectMode}
               tone={multiSelectMode ? 'orange' : 'gray'} icon={<FaCheckSquare />}
               onClick={() => multiSelectMode ? exitMultiSelect() : setMultiSelectMode(true)} />
           </GridToolbarGroup>}
         </LibraryToolbar>
-        {multiSelectMode && (
-          <div className="flex items-center gap-1.5">
-            <button type="button" className="round-button back-sky h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkImportToSession}>프로젝트로 복사</button>
-            <button type="button" className="round-button back-orange h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(true)}>기본 지정</button>
-            <button type="button" className="round-button back-gray h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={() => handleBulkSetDefault(false)}>기본 해제</button>
-            <button type="button" className="round-button back-red h-8 flex-1 min-w-0 px-1 text-xs" disabled={selectedIds.size === 0} onClick={handleBulkDelete}>삭제</button>
-          </div>
-        )}
         <input
           type="file"
           accept="image/png"
@@ -778,7 +596,6 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
                 onToggleSelect={() => toggleSelect(entry.id)}
                 onImportToSession={() => handleImportToSession(entry)}
                 onToggleDefault={() => handleToggleDefault(entry)}
-                onRename={() => handleRename(entry)}
                 onEdit={() => setEditing(entry)}
                 onExport={() => handleExport(entry)}
                 onDelete={() => handleDelete(entry)}
