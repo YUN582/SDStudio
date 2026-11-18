@@ -931,13 +931,25 @@ export const AppContextMenu = observer(() => {
       appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
     }
   };
+  const viewImageMetadata = async (path: string | undefined, scene?: GenericScene) => {
+    if (!path) return;
+    try {
+      const image = await imageService.fetchImage(path);
+      if (!image) throw new Error('이미지 파일을 찾을 수 없습니다.');
+      appState.openExternalImage(dataUriToBase64(image), scene);
+    } catch (error: any) {
+      appState.pushMessage(error.message || '이미지 메타 정보를 열지 못했습니다.', 'error');
+    }
+  };
   const handleImageItemClick = ({ id, props }: any) => {
     const ctx2: GallaryImageContextAlt = {
       ...props.ctx,
       type: 'gallary_image',
       path: [props.ctx.path],
     };
-    if (id === 'duplicate') {
+    if (id === 'metadata') {
+      void viewImageMetadata(ctx2.path[0], ctx2.scene);
+    } else if (id === 'duplicate') {
       duplicateImage(ctx2);
     } else if (id === 'copy') {
       copyImage(ctx2);
@@ -962,7 +974,9 @@ export const AppContextMenu = observer(() => {
     }
   };
   const handleImageItemClick2 = ({ id, props }: any) => {
-    if (id === 'duplicate') {
+    if (id === 'metadata' && props.ctx.path?.length === 1) {
+      void viewImageMetadata(props.ctx.path[0], props.ctx.scene);
+    } else if (id === 'duplicate') {
       duplicateImage(props.ctx);
     } else if (id === 'copy') {
       copyImage(props.ctx);
@@ -1086,7 +1100,9 @@ export const AppContextMenu = observer(() => {
   };
   const handleHistoryItemClick = ({ id, props }: any) => {
     const ctx = props.ctx as HistoryImageContextAlt;
-    if (id === 'goto-scene') {
+    if (id === 'metadata') {
+      void viewImageMetadata(ctx.entry.path);
+    } else if (id === 'goto-scene') {
       imageHistoryService.navigateTo(ctx.entry, { openGrid: false });
     } else if (id === 'open-grid') {
       imageHistoryService.navigateTo(ctx.entry, { openGrid: true });
@@ -1210,6 +1226,9 @@ export const AppContextMenu = observer(() => {
         </Item>
       </Menu>
       <Menu id={ContextMenuType.GallaryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.GallaryImage)}>
+        <Item id="metadata" onClick={handleImageItemClick2} hidden={({ props }) => props?.ctx?.path?.length !== 1}>
+          메타 정보 보기
+        </Item>
         <Item id="download" onClick={handleImageItemClick2}>
           이미지 다운로드
         </Item>
@@ -1262,6 +1281,7 @@ export const AppContextMenu = observer(() => {
         </Item>
       </Menu>
       <Menu id={ContextMenuType.Image} onVisibilityChange={contextMenuBackLayer(ContextMenuType.Image)}>
+        <Item id="metadata" onClick={handleImageItemClick}>메타 정보 보기</Item>
         <Item id="upscale" onClick={handleImageItemClick}>
           업스케일 ×2 (Anlas)
         </Item>
@@ -1301,6 +1321,7 @@ export const AppContextMenu = observer(() => {
         </Item>
       </Menu>
       <Menu id={ContextMenuType.HistoryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.HistoryImage)}>
+        <Item id="metadata" onClick={handleHistoryItemClick}>메타 정보 보기</Item>
         <Item id="upscale" onClick={handleHistoryItemClick}>
           업스케일 ×2 (Anlas)
         </Item>
