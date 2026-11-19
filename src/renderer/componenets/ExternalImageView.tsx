@@ -564,21 +564,21 @@ export const ExternalImageView = observer(
                 ))}</div> : <div className="text-xs text-muted">원본 이미지는 없지만, 레퍼런스 설정으로 적용합니다.</div>}
               </MetadataSection>}
               <MetadataSection label="파라미터" selected={options.settings}>
-                <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-3 text-sm" data-metadata-parameters="">
-                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-4 gap-y-1.5 min-w-0 break-words">
+                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-4 gap-y-2 text-sm min-w-0 break-words" data-metadata-parameters="">
                   {[
                     ['Steps', job.steps], ['CFG', job.promptGuidance], ['Rescale', job.cfgRescale], ['Sampler', job.sampling],
                     ['Noise', job.noiseSchedule], ['Variety+', job.varietyPlus ? 'ON' : 'OFF'],
                     ['Euler A Bug', job.deliberateEulerAncestralBug ? 'ON' : 'OFF'], ['Coords', job.useCoords ? 'ON' : 'OFF'],
                     ['Legacy UC', job.legacyPromptConditioning ? 'ON' : 'OFF'],
                   ].map(([label, value]) => <div key={String(label)}><span className="text-muted">{label}:</span> <span className="text-body">{value}</span></div>)}
-                  <div className="min-[480px]:col-span-2"><span className="text-muted">시드:</span> <span className="text-body">{job.seed ?? '없음'}</span>{(!options.seed || isGlobalTarget) && <span className="text-xs text-muted ml-2">적용 안 함</span>}</div>
-                </div>
-                {hasResolution && <div data-metadata-resolution="">
-                  <div className="text-muted mb-1">해상도</div>
-                  <div className="text-body tabular-nums whitespace-nowrap">{job.resolution!.width} × {job.resolution!.height}</div>
-                  {(!options.resolution || !scene || isGlobalTarget) && <div className="text-xs text-muted mt-1">적용 안 함</div>}
-                </div>}
+                  <div className="mt-3 min-[480px]:col-start-1">
+                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-default">시드{(!options.seed || isGlobalTarget) && <span className="text-xs font-normal text-muted">적용 안 함</span>}</div>
+                    <div className="text-body tabular-nums">{job.seed ?? '없음'}</div>
+                  </div>
+                  {hasResolution && <div className="mt-3" data-metadata-resolution="">
+                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-default">해상도{(!options.resolution || !scene || isGlobalTarget) && <span className="text-xs font-normal text-muted">적용 안 함</span>}</div>
+                    <div className="text-body tabular-nums">{job.resolution!.width} × {job.resolution!.height}</div>
+                  </div>}
                 </div>
                 {skipFixedSampling && <div className="text-xs text-muted mt-2" data-v5m-import-note="">V5M(Medium) 이미지라 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</div>}
               </MetadataSection>
