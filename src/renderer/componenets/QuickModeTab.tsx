@@ -21,6 +21,7 @@ import { UndoInlineSlot } from './UndoBarSlot';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { isTextEntryFocused } from '../models/keyTargetGuard';
 import { hasOpenContextMenu } from './contextMenuBack';
+import { QUICK_RESOLUTION_META, readQuickResolutionSettings } from '../models/quickResolution';
 
 // 퀵 모드 탭 — NAI 공식 웹풍의 즉시 생성 화면.
 // 중앙에 최신 생성 이미지를 크게 표시하고, 생성 버튼 하나로
@@ -477,6 +478,10 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
         </button>
         {/* 해상도 표시 + 드롭다운 (공용 ResolutionPicker — 위로 열리는 패널) */}
         <ResolutionPicker
+          random={{
+            ...readQuickResolutionSettings(quickScene?.meta?.get(QUICK_RESOLUTION_META)),
+            onChange: settings => applyResolution(scene => scene.meta.set(QUICK_RESOLUTION_META, settings)),
+          }}
           className="flex-none"
           triggerClassName="h-full"
           disabled={!quickSession}

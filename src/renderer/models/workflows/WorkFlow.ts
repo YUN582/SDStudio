@@ -1,5 +1,5 @@
 import { action, observable, makeAutoObservable } from 'mobx';
-import type { GenerationSettingsSnapshot } from '../../backends/imageGen';
+import type { GenerationSettingsSnapshot, ImageSize } from '../../backends/imageGen';
 import {
   isModelSamplingFamily,
   normalizeSamplingProfiles,
@@ -49,6 +49,7 @@ export type WFHandler = (
   onComplete?: (img: string) => void,
   nodelay?: boolean,
   generationSnapshot?: GenerationSettingsSnapshot,
+  imageOptions?: { resolution: ImageSize; imageIndex: number },
 ) => void | Promise<void>;
 
 export type WFCreatePrompt = (

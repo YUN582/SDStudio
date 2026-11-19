@@ -1,5 +1,6 @@
 import {
   GenerationSettingsSnapshot,
+  ImageSize,
   NoiseSchedule,
   Sampling,
 } from '../../backends/imageGen';
@@ -42,6 +43,7 @@ import { imageService, promptService, taskQueueService, workFlowService } from '
 import { TaskParam } from '../TaskQueueService';
 import { dataUriToBase64 } from '../ImageService';
 import { resolveSceneSeed, resolveVariantSceneSeed } from '../sceneSeedGroups';
+import { seedForImageIndex } from '../seedSchedule';
 import {
   FOCUS_CONTEXT_DEFAULT,
   FOCUS_CONTEXT_MAX,
@@ -275,8 +277,13 @@ const SDImageGenHandler = async (
   onComplete?: (img: string) => void,
   nodelay?: boolean,
   generationSnapshot?: GenerationSettingsSnapshot,
+  imageOptions?: { resolution: ImageSize; imageIndex: number },
 ) => {
   const job = buildSDImageGenJob(scene, prompt, characterPrompts, preset, shared);
+  if (imageOptions) {
+    job.overrideResolution = { ...imageOptions.resolution };
+    job.seed = seedForImageIndex(job.seed, imageOptions.imageIndex);
+  }
   const param: TaskParam = {
     session: session,
     job: job,

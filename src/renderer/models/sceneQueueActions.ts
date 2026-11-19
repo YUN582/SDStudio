@@ -1,4 +1,5 @@
 import { appState } from './AppService';
+import { QUICK_RESOLUTION_META, quickResolutionSize, readQuickResolutionSettings } from './quickResolution';
 import { v4 } from 'uuid';
 import {
   backend,
@@ -171,6 +172,10 @@ export const queueQuickScene = async (
 ) => {
   const workflow = promptSession.selectedWorkflow!;
   const [type, preset, shared, def] = promptSession.getCommonSetup(workflow);
+  const randomSize = readQuickResolutionSettings(scene.meta?.get(QUICK_RESOLUTION_META));
+  if (randomSize.enabled && !['SDImageGen', 'SDImageGenEasy'].includes(type)) {
+    throw new Error('랜덤 크기는 이미지 생성 프리셋에서 사용할 수 있습니다.');
+  }
   const prompts = await def.createPrompt!(promptSession, scene, preset, shared);
   const characterPrompts = await def.createCharacterPrompts!(
     promptSession,
@@ -179,7 +184,21 @@ export const queueQuickScene = async (
     shared,
   );
   await copyPresetAssets(promptSession, quickSession, shared);
+  const snapshot = randomSize.enabled ? await taskQueueService.captureGenerationSnapshot() : undefined;
   for (let i = 0; i < prompts.length; i++) {
+    if (randomSize.enabled) {
+      // One immutable size per image: retry/cost checks keep that size, while
+      // imageIndex preserves the seed sequence of the former multi-image task.
+      const count = Math.floor(Number(samples));
+      if (!Number.isFinite(count) || count < 1) throw new Error('생성 개수가 올바르지 않습니다.');
+      for (let imageIndex = 0; imageIndex < count; imageIndex++) {
+        const choice = randomSize.choices[Math.floor(Math.random() * randomSize.choices.length)];
+        await def.handler(quickSession, scene, prompts[i], characterPrompts[i], preset, shared, 1,
+          scene.meta.get(type), undefined, undefined, snapshot,
+          { resolution: quickResolutionSize(choice), imageIndex });
+      }
+      continue;
+    }
     await def.handler(
       quickSession,
       scene,
