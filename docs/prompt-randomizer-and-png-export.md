@@ -1,7 +1,7 @@
 # Prompt randomizer and batch PNG export
 
 1. Snapshot selected preset IDs. Choose one output folder, build the existing PNG format, avoid filename collisions, and report partial failures.
-2. Resolve `||a|b||` per generated image. Preserve standalone `|` interleaving and existing `{a|b}` syntax. Exclude fully commented candidates; keep comma-only empty candidates valid.
+2. Resolve `||a|b||` per generated image. Preserve standalone `|` interleaving and existing `{a|b}` syntax. Exclude fully commented candidates; keep comma-only empty candidates valid. In multi-line pieces, split rows outside paired comments and exclude comment-only rows from the draw. Preserve deliberate blank rows and the editable source.
 3. Treat pipes as editor boundaries for weight/comment shortcuts and highlighting. Preserve original project text and caret offsets. API prompts and the image's generation metadata contain the resolved choice.
 4. Verify parser/editor regressions, request payloads without paid generation, and PNG metadata. Commit by feature, push to the fork, back up before installation, then reopen the app.
 

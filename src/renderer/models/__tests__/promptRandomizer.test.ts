@@ -1,7 +1,7 @@
 jest.mock('..', () => ({ backend: {}, isMobile: false, promptService: {}, globalPieceService: { library: new Map() } }));
 import { promptService } from '..';
 import { PromptService, expandInlineRandom, highlightPrompt, lowerPromptNode, toPARR } from '../PromptService';
-import { activeRandomizerOptions, readPromptRandomizer } from '../promptRandomizer';
+import { activeRandomizerOptions, readPromptRandomizer, splitPromptPieceLines } from '../promptRandomizer';
 import { adjustPromptWeightAtSelection, getPromptWeightAtSelection, togglePromptCommentAtSelection } from '../promptTransforms';
 
 const parser = new PromptService();
@@ -53,6 +53,45 @@ test('a selected candidate can reference a prompt piece', () => {
   const session = { library: new Map([['L', { pieces: [{ name: 'P', prompt: 'glasses, smile' }] }]]) };
   expect(lower('||<L.P>|standing||', session)).toBe('glasses, smile');
   expect(activeRandomizerOptions(readPromptRandomizer('||##off##|on||', 0)!)).toEqual(['on']);
+});
+
+describe('comments in multi-line prompt pieces', () => {
+  const sessionWith = (prompt: string) => ({
+    library: new Map([['L', { pieces: [{ name: 'P', multi: true, prompt }] }]]),
+  });
+
+  test.each(['\n', '\r\n', '\r'])('keeps paired comments intact across %j line breaks', newline => {
+    const block = `##hidden one${newline}hidden two##`;
+    expect(splitPromptPieceLines(`alpha${newline}${block}${newline}omega`))
+      .toEqual(['alpha', block, 'omega']);
+  });
+
+  test.each([0, 0.3, 0.5, 0.99])('never selects disabled rows or leaks multiline comment text at %s', value => {
+    jest.spyOn(Math, 'random').mockReturnValue(value);
+    const source = 'alpha\n##hidden one\nhidden two##\n##<missing.piece>##, \nomega';
+    expect(lower('<L.P>', sessionWith(source))).toBe(value < 0.5 ? 'alpha' : 'omega');
+  });
+
+  test('an entirely commented piece contributes no text or random draw', () => {
+    const random = jest.spyOn(Math, 'random');
+    const session = sessionWith('##hidden one\nhidden two##\n##hidden three,##');
+    expect(lower('before, <L.P>, after', session)).toBe('before, after');
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  test('preserves intentional blank choices and incomplete comments', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    expect(lower('<L.P>', sessionWith('alpha\n\nomega'))).toBe('');
+    expect(lower('<L.P>', sessionWith('alpha\n##incomplete\nomega'))).toBe('##incomplete');
+  });
+
+  test('keeps active text around a multiline comment and disabled inline choices', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const session = sessionWith('alpha, ##hidden\nignored## omega\n||##disabled##|visible||');
+    expect(lower('<L.P>', session)).toBe('alpha, omega');
+    jest.spyOn(Math, 'random').mockReturnValue(0.99);
+    expect(lower('<L.P>', session)).toBe('visible');
+  });
 });
 
 test('commented candidates do not trigger missing-piece preflight errors', () => {

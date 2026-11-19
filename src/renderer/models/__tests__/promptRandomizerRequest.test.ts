@@ -145,3 +145,28 @@ test.each(['sd', 'sd_i2i', 'sd_inpaint'])('%s resolves randomizers in every outg
   expect(JSON.stringify(task.params.job)).toBe(original);
 });
 
+test.each(['sd', 'sd_i2i', 'sd_inpaint'])('%s excludes commented piece rows from every outgoing prompt field', async type => {
+  jest.clearAllMocks();
+  const random = jest.spyOn(Math, 'random').mockReturnValue(0.3);
+  const task = genTask(1000);
+  const source = 'alpha\n##hidden one\nhidden two##\n##hidden three,##\nomega';
+  task.params.session.library = new Map([['L', { pieces: [{ name: 'P', multi: true, prompt: source }] }]]);
+  const node = () => promptService.parseWord('<L.P>', task.params.session);
+  task.params.job = { ...task.params.job, type,
+    prompt: node(), uc: '<L.P>',
+    characterPrompts: [{ prompt: node(), uc: '<L.P>', position: { x: 0.5, y: 0.5 } }],
+    image: 'input', mask: 'mask', strength: 0.5, noise: 0,
+  };
+  const handler = taskHandlers.find(h => h.checkTask(task))!;
+  for (const [value, expected] of [[0.3, 'alpha'], [0.5, 'omega']] as const) {
+    random.mockReturnValue(value);
+    await handler.handleTask(task, { stopped: false });
+    const request = generateImage.mock.calls[generateImage.mock.calls.length - 1][0];
+    expect(request.prompt).toBe(expected);
+    expect(request.uc).toBe(expected);
+    expect(request.characterPrompts).toEqual([expected]);
+    expect(request.characterUCs).toEqual([expected]);
+  }
+  expect(task.params.session.library.get('L').pieces[0].prompt).toBe(source);
+});
+

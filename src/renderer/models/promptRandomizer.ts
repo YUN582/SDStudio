@@ -51,6 +51,22 @@ export function activeRandomizerOptions(range: PromptRandomizer): string[] {
     option.replace(/##[\s\S]*?##/g, '').trim() !== '');
 }
 
+/** Split multi-line pieces only outside paired comments; retain the source for nested choices. */
+export function splitPromptPieceLines(text: string): string[] {
+  const lines: string[] = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    const end = commentEnd(text, index);
+    if (end !== undefined) { index = end - 1; continue; }
+    if (text[index] !== '\r' && text[index] !== '\n') continue;
+    lines.push(text.slice(start, index));
+    if (text[index] === '\r' && text[index + 1] === '\n') index++;
+    start = index + 1;
+  }
+  lines.push(text.slice(start));
+  return lines;
+}
+
 /** Keep whole randomizers, including their comments and commas, until an image is generated. */
 export function splitPromptTags(text: string): string[] {
   const parts: string[] = [];

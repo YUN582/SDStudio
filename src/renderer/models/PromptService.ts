@@ -12,7 +12,7 @@ import {
 } from './types';
 import { resolveSceneCharacterPrompts } from './sceneCharacterPrompts';
 import { variantComboMode } from './comboMode';
-import { activeRandomizerOptions, expandPromptAlternatives, promptRandomizerRanges, readPromptRandomizer, splitPromptTags } from './promptRandomizer';
+import { activeRandomizerOptions, expandPromptAlternatives, promptRandomizerRanges, readPromptRandomizer, splitPromptPieceLines, splitPromptTags } from './promptRandomizer';
 import {
   makeExplicitWeightRangeRegex,
   parsePromptWeightNumber,
@@ -255,13 +255,15 @@ export class PromptService extends EventTarget {
       try {
         if (this.isMulti(word, session)) {
           const expanded = this.tryExpandPiece(word, session, scene);
-          const lines = expanded.split(/\r\n?|\n/);
+          const lines = splitPromptPieceLines(expanded);
           const randNode: PromptRandomNode = {
             type: 'random',
             options: [],
           };
           for (const line of lines) {
             const parr = toPARR(line);
+            // Comment-only rows are disabled choices. Deliberately empty rows stay valid.
+            if (parr.length === 0 && /##[\s\S]*?##/.test(line)) continue;
             const newNode: PromptGroupNode = {
               type: 'group',
               children: [],
@@ -273,7 +275,7 @@ export class PromptService extends EventTarget {
             }
             randNode.options.push(newNode);
           }
-          res.children.push(randNode);
+          if (randNode.options.length > 0) res.children.push(randNode);
         } else {
           let newp = toPARR(this.tryExpandPiece(word, session, scene));
           for (const p of newp) {
