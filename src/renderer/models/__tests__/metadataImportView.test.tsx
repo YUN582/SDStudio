@@ -4,7 +4,7 @@ const extract = jest.fn();
 const close = jest.fn();
 const record = { preset: jest.fn(), shared: jest.fn(), scene: jest.fn(), presetAdded: jest.fn(), commit: jest.fn() };
 const confirmAsync = jest.fn(async () => true);
-const state: any = { curSession: undefined, confirmAsync, incrementModalOverlay: jest.fn(), decrementModalOverlay: jest.fn(), pushMessage: jest.fn() };
+const state: any = { curSession: undefined, confirmAsync, incrementModalOverlay: jest.fn(), decrementModalOverlay: jest.fn(), pushMessage: jest.fn(), pushDialog: jest.fn() };
 jest.mock('../AppService', () => ({ appState: state }));
 jest.mock('..', () => ({ isMobile: false, backend: {}, sessionService: {}, workFlowService: {}, imageService: {}, globalPresetService: {} }));
 jest.mock('../util', () => ({ extractPromptDataFromBase64: (...args: any[]) => extract(...args) }));
@@ -15,6 +15,7 @@ jest.mock('../imageStateUndo', () => ({ beginMetaApplyRecord: () => record }));
 jest.mock('../undoService', () => ({ undoService: { canRecord: () => false }, UNDO_TEXT: {} }));
 import { ExternalImageView } from '../../componenets/ExternalImageView';
 import { planSelectedPromptImport } from '../sdstudioPromptImport';
+import { globalPresetService, workFlowService } from '..';
 
 const source: any = { schemaVersion: 1, workflowType: 'SDImageGen', frontPrompt: 'new front', extraPrompt: 'new extra', middlePrompt: 'new middle', backPrompt: 'new back' };
 let preset: any, session: any, scene: any, theme: HTMLElement;
@@ -22,7 +23,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   preset = { name: 'keep', frontPrompt: 'old front', backPrompt: 'old back', uc: 'old uc' };
   scene = { name: 'test', type: 'scene', slots: [[{ prompt: 'old middle', enabled: true }]] };
-  session = { selectedWorkflow: { workflowType: 'SDImageGen', presetName: 'keep' }, presets: new Map([['SDImageGen', [preset]]]), presetShareds: new Map(), extraPrompt: 'old extra' };
+  session = { selectedWorkflow: { workflowType: 'SDImageGen', presetName: 'keep' }, presets: new Map([['SDImageGen', [preset]]]), presetShareds: new Map(), extraPrompt: 'old extra', addPreset: jest.fn() };
+  workFlowService.buildPreset = jest.fn((type: string) => ({ type, frontPrompt: '', backPrompt: '', uc: '' })) as any;
+  globalPresetService.addFromPresetAndImage = jest.fn(async () => ({ name: 'saved global' })) as any;
   state.curSession = session;
   extract.mockResolvedValue({ prompt: 'merged prompt', uc: 'new uc', characterPrompts: [], vibes: [], characterReferences: [], seed: 123,
     sdstudioMetadata: { promptSource: source }, resolution: { width: 832, height: 1216 } });
@@ -68,7 +71,7 @@ test.each(['상위 프롬프트', '하위 프롬프트', '중간 프롬프트'])
   expect(scene.slots[0][0].prompt).toBe(name === '중간 프롬프트' ? 'new middle' : 'old middle');
   expect(session.extraPrompt).toBe(name === '중간 프롬프트' ? 'new extra' : 'old extra');expect(preset.uc).toBe('old uc');
   expect(record.commit).toHaveBeenCalledTimes(1);
-  expect(confirmAsync).toHaveBeenCalledTimes(name === '중간 프롬프트' ? 1 : 0);
+  expect(confirmAsync).not.toHaveBeenCalled();
 });
 
 test('external merged prompts do not pretend to have separate source sections', async () => {
@@ -81,12 +84,37 @@ test('external merged prompts do not pretend to have separate source sections', 
   expect(preset.frontPrompt).toBe('merged prompt');expect(preset.backPrompt).toBe('old back');
 });
 
-test('canceling a scene replacement leaves all prompt sections intact', async () => {
-  confirmAsync.mockResolvedValueOnce(false);
-  await open();selectOnly('중간 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
-  await waitFor(() => expect(confirmAsync).toHaveBeenCalled());
-  expect(close).not.toHaveBeenCalled();expect(record.commit).not.toHaveBeenCalled();
+test('closing without applying leaves all prompt sections intact', async () => {
+  await open();selectOnly('중간 프롬프트');fireEvent.click(screen.getByLabelText('닫기'));
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  expect(record.commit).not.toHaveBeenCalled();expect(confirmAsync).not.toHaveBeenCalled();
   expect(preset.frontPrompt).toBe('old front');expect(preset.backPrompt).toBe('old back');expect(scene.slots[0][0].prompt).toBe('old middle');
+});
+
+test('imports to a new project preset directly without overwriting the existing preset', async () => {
+  await open();
+  fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: 'new-normal' } });
+  selectOnly('중간 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  expect(session.addPreset).toHaveBeenCalledTimes(1);
+  expect(session.selectedWorkflow).toEqual({ workflowType: 'SDImageGen', presetName: 'external image' });
+  expect(session.extraPrompt).toBe('new extra');expect(scene.slots[0][0].prompt).toBe('new middle');
+  expect(preset.frontPrompt).toBe('old front');expect(preset.backPrompt).toBe('old back');
+  expect(confirmAsync).not.toHaveBeenCalled();expect(record.commit).toHaveBeenCalledTimes(1);
+});
+
+test('imports a global preset without a blocking confirmation or success dialog', async () => {
+  await open();
+  fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: 'new-global' } });
+  selectOnly('상위 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  expect(globalPresetService.addFromPresetAndImage).toHaveBeenCalledWith(
+    expect.objectContaining({ frontPrompt: 'new front' }), 'fixture', 'external image',
+  );
+  expect(state.pushMessage).toHaveBeenCalledWith('"saved global" 프리셋을 글로벌로 복사했습니다.');
+  expect(state.pushDialog).not.toHaveBeenCalled();expect(confirmAsync).not.toHaveBeenCalled();
+  expect(session.addPreset).not.toHaveBeenCalled();expect(session.extraPrompt).toBe('old extra');
+  expect(scene.slots[0][0].prompt).toBe('old middle');expect(preset.frontPrompt).toBe('old front');
 });
 
 test('section masks preserve source text and handle folded destinations and selected empty fields', () => {

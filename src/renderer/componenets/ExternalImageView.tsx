@@ -152,36 +152,6 @@ export const ExternalImageView = observer(
 
     const applyImport = async () => {
       if (!job || !appState.curSession || !selectedPlan) return;
-      if (selectedPlan.split) {
-        // 프로젝트·씬 단위로 덮어쓰는 것이 있으면(값이 실제로 바뀔 때만) 확인을 받는다.
-        const overwrites: string[] = [];
-        const curExtra = appState.curSession.extraPrompt ?? '';
-        if (
-          selectedPlan.extraPrompt !== undefined &&
-          curExtra.trim() &&
-          selectedPlan.extraPrompt !== curExtra
-        ) {
-          overwrites.push('프로젝트 추가 프롬프트를 생성 당시 값으로 바꿉니다.');
-        }
-        if (
-          selectedPlan.middlePrompt !== undefined &&
-          normalScene &&
-          !sceneSlotsMatchMiddle(normalScene.slots, selectedPlan.middlePrompt)
-        ) {
-          overwrites.push(
-            `「${normalScene.name}」 씬의 조합을 생성에 사용된 한 조합으로 교체합니다.`,
-          );
-        }
-        if (overwrites.length > 0) {
-          const ok = await appState.confirmAsync(
-            '선택한 프롬프트 구획을 이미지 생성 당시 값으로 적용합니다. ' +
-              overwrites.join(' '),
-            '정확히 적용',
-            { danger: true },
-          );
-          if (!ok) return;
-        }
-      }
       setImporting(true);
 
       try {
@@ -338,10 +308,7 @@ export const ExternalImageView = observer(
                 image,
                 preset.name,
               );
-              appState.pushDialog({
-                type: 'yes-only',
-                text: `"${entry.name}" 프리셋을 글로벌로 복사했습니다.`,
-              });
+              appState.pushMessage(`"${entry.name}" 프리셋을 글로벌로 복사했습니다.`);
               onClose();
             } catch (e: any) {
               appState.pushMessage(
