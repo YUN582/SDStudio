@@ -1,4 +1,16 @@
 import type { ReactNode } from 'react';
+import { FaCheckSquare, FaSquare } from 'react-icons/fa';
+
+export const LIBRARY_CARD_SELECTED = 'border-sky-500 ring-2 ring-inset ring-sky-500';
+
+export function LibraryCardSelection({ selected, onToggle }: { selected: boolean; onToggle: () => void }) {
+  return <button type="button" aria-label={selected ? '선택 해제' : '선택'}
+    data-library-card-selection="" aria-pressed={selected}
+    className="absolute top-2 right-2 z-30 w-6 h-6 rounded bg-[var(--c-surface-2)] flex items-center justify-center"
+    onClick={event => { event.stopPropagation(); onToggle(); }}>
+    {selected ? <FaCheckSquare className="text-sky-500" size={22} /> : <FaSquare className="text-faint" size={22} />}
+  </button>;
+}
 
 /** Image effects sit below captions, hints, and action buttons. */
 export function LibraryCardHover({ hint }: { hint: string }) {

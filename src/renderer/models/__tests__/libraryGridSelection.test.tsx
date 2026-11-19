@@ -28,10 +28,11 @@ function Fixture({ active = true, scope = '', order = ids, open = jest.fn(), act
   const reorder = useGridReorder({ enabled: active, scope, viewport, suppressClick, cardSelector: '[data-card]',
     resolve: card => card.dataset.card, selected: id => selection.selectedIds.has(id) ? [...selection.selectedIds] : [id], commit });
   return <div ref={viewport} data-testid="viewport" tabIndex={0}
+    onKeyDownCapture={selection.onKeyDownCapture}
     onMouseDownCapture={e => { if (!selection.onMouseDownCapture(e)) reorder.start(e); }}
     onClickCapture={selection.onClickCapture}>
     {order.map(id => <div key={id} data-card={id} data-selected={selection.selectedIds.has(id)} onClick={() => open(id)}>
-      {id}<button onClick={event => { event.stopPropagation(); action(id); }}>action</button>
+      <span data-library-card-activate="">{id}</span><button onClick={event => { event.stopPropagation(); action(id); }}>action</button>
     </div>)}
     {selection.overlay}
     {reorder.drag && <ReorderDragPreview type="library-test" drag={reorder.drag} />}
@@ -42,6 +43,24 @@ const escape = () => {
   const result = decide(layers.map((layer, id) => ({ id, onClose: layer.close, opts: layer.opts })), 'escape');
   if (result.kind === 'run') result.run();
 };
+
+test('keyboard movement, range selection, toggling, select all and Enter share one focus', () => {
+  const open = jest.fn(), ui = render(<Fixture open={open} />), view = ui.getByTestId('viewport');
+  fireEvent.keyDown(view, { key: 'ArrowRight' });
+  expect(ui.container.querySelector('[data-card=a]')?.getAttribute('data-library-focused')).toBe('true');
+  fireEvent.keyDown(view, { key: ' ', ctrlKey: true });
+  expect(selected(ui.container)).toEqual(['a']);
+  fireEvent.keyDown(view, { key: 'ArrowDown', shiftKey: true });
+  expect(selected(ui.container)).toEqual(['a', 'b']);
+  fireEvent.keyDown(view, { key: 'ArrowDown', shiftKey: true });
+  expect(selected(ui.container)).toEqual(['a', 'b', 'c']);
+  fireEvent.keyDown(view, { key: 'ArrowUp' });
+  expect(selected(ui.container)).toEqual([]);
+  fireEvent.keyDown(view, { key: 'Enter' });
+  expect(open).toHaveBeenCalledWith('b');
+  fireEvent.keyDown(view, { key: 'a', ctrlKey: true });
+  expect(selected(ui.container)).toEqual(ids);
+});
 beforeEach(() => {
   jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const index = ids.indexOf(this.dataset.card ?? '');

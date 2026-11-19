@@ -12,7 +12,7 @@ import {
   FaUserAlt,
 } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
-import { LibraryCardCaption, LibraryCardHover } from './LibraryCardVisuals';
+import { LIBRARY_CARD_SELECTED, LibraryCardCaption, LibraryCardHover, LibraryCardSelection } from './LibraryCardVisuals';
 import Tooltip from './Tooltip';
 import { CharacterPreset } from '../models/types';
 import { imageService, globalCharacterPresetService } from '../models';
@@ -490,15 +490,16 @@ export const GlobalCharacterPresetCard = observer(({
       data-character-applied={applied ? 'true' : 'false'}
       onContextMenu={onContextMenu}
       className={
-        'group relative rounded-lg bg-[var(--c-surface-2)] border-2 overflow-hidden transition-all hover:shadow-lg ' +
+        'group relative rounded-lg bg-[var(--c-surface-2)] border-2 overflow-hidden ' +
         (isDragging ? 'opacity-30 ' : '') +
-        (workspace && selected ? 'border-sky-500 ring-2 ring-inset ring-sky-500 ' : workspace && applied ? 'border-green-500 ring-2 ring-inset ring-green-500 ' : isOver
-          ? 'border-purple-400 ring-2 ring-purple-400 '
-          : 'border-purple-300 dark:border-purple-600 ')
+        (workspace && selected ? LIBRARY_CARD_SELECTED + ' ' : workspace && applied ? 'border-green-500 ring-2 ring-inset ring-green-500 ' : isOver
+          ? 'border-sky-400 ring-2 ring-sky-400 '
+          : 'line-color ')
       }
     >
       <div
         className="relative overflow-hidden aspect-[3/4] md:aspect-auto md:h-96 cursor-pointer"
+        data-library-card-activate=""
         title={workspace ? `${entry.name} · 클릭하여 ${applied ? '적용 해제' : '적용'}` : undefined}
         onClick={() => {
           if (cyclingMode) onToggleSelect?.();
@@ -511,20 +512,7 @@ export const GlobalCharacterPresetCard = observer(({
           : workspace ? `카드를 클릭하여 ${applied ? '적용 해제' : '적용'}` : '카드를 클릭하여 수정'} />
         {/* "글로벌" 코너 배지 제거 — 글로벌이 기본 화면이 되면서(주종 역전,
             2026-07-16) 더 이상 구분 표기가 불필요. */}
-        {(cyclingMode || selectionMode) && (
-          <div
-            className="absolute top-2 right-2 z-30 cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
-          >
-            <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-              selected
-                ? 'bg-purple-500 border-purple-500 text-white'
-                : 'bg-white/80 dark:bg-slate-800/80 line-color'
-            }`}>
-              {selected && <FaCheck size={12} />}
-            </div>
-          </div>
-        )}
+        {(cyclingMode || selectionMode) && <LibraryCardSelection selected={!!selected} onToggle={() => onToggleSelect?.()} />}
         {/* 편집 힌트: 카드 탭/클릭 = 편집. 매우 흐릿한 편집 아이콘 (장식용, 순차 생성 모드 제외) */}
         {!cyclingMode && !workspace && (
           <FaEdit

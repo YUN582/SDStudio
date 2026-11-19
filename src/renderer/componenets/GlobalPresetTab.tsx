@@ -15,7 +15,7 @@ import { useLibraryGridSelection } from './LibraryGridSelection';
 import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
-import { LibraryCardCaption, LibraryCardHover } from './LibraryCardVisuals';
+import { LIBRARY_CARD_SELECTED, LibraryCardCaption, LibraryCardHover, LibraryCardSelection } from './LibraryCardVisuals';
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
 import { exportGlobalPresetPngs } from '../models/globalPresetPngExport';
@@ -120,8 +120,8 @@ const EasyCard = observer(({
 }: EasyCardProps) => (
   <div data-global-preset-id={entry.id} data-library-selected={selected ? 'true' : 'false'} onContextMenu={onContextMenu}
     className={(reorderClass || '') + 'relative flex-none w-[calc(50%-8px)] md:w-64 group rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
-      (selected ? 'border-sky-500 ring-2 ring-inset ring-sky-500' : 'line-color')}>
-    <div className="relative cursor-pointer" title={entry.name + ' · 프로젝트에 추가'}
+      (selected ? LIBRARY_CARD_SELECTED : 'line-color')}>
+    <div className="relative cursor-pointer" data-library-card-activate="" title={entry.name + ' · 프로젝트에 추가'}
       onClick={event => {
         if (!isMobile && gridCardUsesSelection(event)) return;
         if (isMobile && multiSelectMode) onToggleSelect(); else onImportToSession();
@@ -131,11 +131,7 @@ const EasyCard = observer(({
       {entry.isDefault && <div className="absolute top-2 left-2 z-10 bg-orange-500 text-white rounded-full p-2 shadow-lg pointer-events-none" title="기본으로 지정됨">
         <ActionIcon id="pin-default" size={16} />
       </div>}
-      {multiSelectMode && <button type="button" aria-label={selected ? '선택 해제' : '선택'}
-        className="absolute top-2 right-2 z-30 w-6 h-6 rounded bg-[var(--c-surface-2)] flex items-center justify-center"
-        onClick={event => { event.stopPropagation(); onToggleSelect(); }}>
-        {selected ? <FaCheckSquare className="text-sky-500" size={22} /> : <FaSquare className="text-faint" size={22} />}
-      </button>}
+      {multiSelectMode && <LibraryCardSelection selected={selected} onToggle={onToggleSelect} />}
       <LibraryCardHover hint="카드를 클릭하여 프로젝트에 추가" />
       <div data-library-card-actions="" className={'absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200' + (isMobile && multiSelectMode ? ' hidden' : '')}>
         {[
@@ -603,7 +599,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
         />
       </div>
       {/* 본문 */}
-      <div ref={viewport} tabIndex={0} aria-label="글로벌 프리셋 목록"
+      <div ref={viewport} tabIndex={0} aria-label="글로벌 프리셋 목록" data-library-grid="" onKeyDownCapture={selection.onKeyDownCapture}
         className={'relative select-none outline-none ' + (isMobile ? 'flex-1 overflow-auto px-3 pt-1 pb-3' : 'flex-1 overflow-auto px-1 pt-1 pb-6')}
         onMouseDownCapture={e => { if (!isMobile) focusGridSurface(e); if (!selection.onMouseDownCapture(e)) reorder.start(e); }}
         onClickCapture={selection.onClickCapture}>
@@ -615,9 +611,9 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
             "{query}" 검색 결과가 없습니다.
           </div>
         )}
-        {(visible.length > 0 || (!multiSelectMode && !q)) && (
+        {(visible.length > 0 || !q) && (
           <div className="flex flex-wrap gap-4">
-            {!multiSelectMode && !q && (
+            {!q && (
               <button type="button" onClick={newPreset}
                 className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub cursor-pointer select-none flex flex-col items-center justify-center gap-1.5">
                 <ActionIcon id="add-scene" size={22} />
@@ -653,16 +649,16 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
           const entry = contextId && globalPresetService.get(contextId);
           if (selectedIds.size === 1 && entry) void handleImportToSession(entry);
           else void handleBulkImportToSession();
-        }}>프로젝트에 추가{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        }}>프로젝트에 추가</Item>
         <Item onClick={() => { void handleBulkSetDefault(true); }}>기본으로 지정</Item>
         <Item onClick={() => { void handleBulkSetDefault(false); }}>기본 해제</Item>
         <Separator />
         <Item disabled={selectedIds.size !== 1} onClick={() => {
           const entry = contextId && globalPresetService.get(contextId); if (entry) setEditing(entry);
         }}>수정</Item>
-        <Item onClick={() => { void handleExportSelected(); }}>PNG로 내보내기{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        <Item onClick={() => { void handleExportSelected(); }}>PNG로 내보내기</Item>
         <Separator />
-        <Item onClick={handleBulkDelete}>삭제{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        <Item onClick={handleBulkDelete}>삭제</Item>
       </Menu>
       {draft && (
         <PresetEditModal title="새 글로벌 프리셋" initialName="" preset={draft}

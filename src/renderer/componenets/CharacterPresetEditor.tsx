@@ -341,7 +341,7 @@ const GlobalFolderRow = observer(
     );
     if (editing) {
       return (
-        <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm whitespace-nowrap flex-none md:w-full bg-[var(--c-surface)] ring-2 ring-purple-400">
+        <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm whitespace-nowrap flex-none md:w-full bg-[var(--c-surface)] ring-2 ring-sky-400">
           {icon}
           <input
             autoFocus
@@ -395,8 +395,8 @@ const GlobalFolderRow = observer(
         <button
           onClick={onClick}
           className={`group flex w-full items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
-            droppable && isOver ? 'ring-2 ring-purple-400 ' : ''
-          }${active ? 'bg-purple-600 text-white dark:bg-purple-500' : 'btn-neutral text-body'}`}
+            droppable && isOver ? 'ring-2 ring-sky-400 ' : ''
+          }${active ? 'bg-sky-600 text-white dark:bg-sky-500' : 'btn-neutral text-body'}`}
         >
           {icon}
           <span className="truncate min-w-0 max-w-[7rem] md:max-w-none md:flex-1 text-left">
@@ -404,7 +404,7 @@ const GlobalFolderRow = observer(
           </span>
           <span
             className={`text-xs flex-none ${
-              active ? 'text-purple-100' : 'text-faint'
+              active ? 'text-sky-100' : 'text-faint'
             }`}
           >
             {count}
@@ -1303,7 +1303,7 @@ export function useCharacterPresetPanel({
     <button
       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
         globalView
-          ? 'bg-purple-600 text-white dark:bg-purple-500'
+          ? 'bg-sky-600 text-white dark:bg-sky-500'
           : 'btn-neutral text-body'
       }`}
       onClick={() => switchView(!globalView)}
@@ -1329,7 +1329,7 @@ export function useCharacterPresetPanel({
       <button
         aria-pressed={globalView}
         className={`flex-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
-          globalView ? 'bg-purple-600 text-white dark:bg-purple-500' : 'btn-neutral text-body'
+          globalView ? 'bg-sky-600 text-white dark:bg-sky-500' : 'btn-neutral text-body'
         }`}
         onClick={() => switchView(true)}
       >
@@ -1346,7 +1346,7 @@ export function useCharacterPresetPanel({
         <button
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
             cyclingMode
-              ? (globalView ? 'bg-purple-600 text-white dark:bg-purple-500' : 'bg-sky-600 text-white dark:bg-sky-500')
+              ? 'bg-sky-600 text-white dark:bg-sky-500'
               : 'btn-neutral text-body'
           }`}
           onClick={() => cyclingMode ? exitCyclingMode() : enterCyclingMode()}
@@ -1361,7 +1361,7 @@ export function useCharacterPresetPanel({
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
             selectMode
               ? globalView
-                ? 'bg-purple-600 text-white dark:bg-purple-500'
+                ? 'bg-sky-600 text-white dark:bg-sky-500'
                 : 'bg-sky-600 text-white dark:bg-sky-500'
               : 'btn-neutral text-body'
           }`}
@@ -1574,7 +1574,7 @@ export function useCharacterPresetPanel({
           label={f}
           icon={
             <FaFolder
-              className="text-purple-400 dark:text-purple-500 flex-none"
+              className="text-sky-400 dark:text-sky-500 flex-none"
               size={13}
             />
           }
@@ -1601,7 +1601,7 @@ export function useCharacterPresetPanel({
           label=""
           icon={
             <FaFolder
-              className="text-purple-400 dark:text-purple-500 flex-none"
+              className="text-sky-400 dark:text-sky-500 flex-none"
               size={13}
             />
           }
@@ -1643,14 +1643,14 @@ export function useCharacterPresetPanel({
   // 글로벌 카드 그리드
   const globalGrid = (
     <div style={gridStyle} data-character-grid="global">
-      {/* 새 글로벌 프리셋 카드 (순차 생성·선택 모드가 아닐 때만) */}
-      {!cyclingMode && !selectMode && (
+      {/* 선택해도 새 카드와 기존 카드의 위치는 유지한다. */}
+      {!cyclingMode && (
         <div
-          className="rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96"
+          className="rounded-lg border-2 border-dashed line-color cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96"
           onClick={handleAddNewGlobal}
         >
-          <FaPlus className="text-2xl text-purple-400 dark:text-purple-500 mb-2" />
-          <span className="text-sm text-purple-400 dark:text-purple-500">
+          <FaPlus className="text-2xl text-faint mb-2" />
+          <span className="text-sm text-faint">
             새 글로벌 프리셋
           </span>
         </div>
@@ -2081,6 +2081,7 @@ export function useCharacterPresetPanel({
       bodyPadding: 'normal',
       // 본문 = 카드 그리드만(창의 유일한 세로 스크롤)
       body: <div ref={workspace ? viewport : undefined} tabIndex={workspace ? 0 : undefined}
+        data-library-grid={workspace ? '' : undefined} onKeyDownCapture={workspace ? selection.onKeyDownCapture : undefined}
         aria-label={workspace ? '캐릭터 프리셋 목록' : undefined}
         className={workspace ? 'text-default relative h-full overflow-auto select-none outline-none p-1' : 'text-default'} data-character-preset-body=""
         onMouseDownCapture={workspace ? event => { focusGridSurface(event); selection.onMouseDownCapture(event); } : undefined}

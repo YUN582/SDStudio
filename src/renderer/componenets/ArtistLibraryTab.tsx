@@ -14,7 +14,6 @@ import {
   FaFileArchive,
   FaFileImport,
   FaCheckSquare,
-  FaSquare,
   FaGlobe,
   FaCompressArrowsAlt,
   FaMagic,
@@ -26,7 +25,7 @@ import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
 import { ActionIcon } from './ActionIcon';
-import { LibraryCardHover } from './LibraryCardVisuals';
+import { LIBRARY_CARD_SELECTED, LibraryCardHover, LibraryCardSelection } from './LibraryCardVisuals';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
 import { IArtistEntry, IArtistImage } from '../models/ArtistLibraryService';
@@ -536,13 +535,13 @@ const ArtistCard = observer(({
   };
   return (
     <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} onContextMenu={onContextMenu} className={
-      'group relative flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] transition-colors ' +
+      'group relative flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
       (selected
-        ? 'border-sky-500 ring-2 ring-inset ring-sky-500'
+        ? LIBRARY_CARD_SELECTED
         : 'line-color hover:border-sky-400')
     }>
       {/* 대표 이미지 */}
-      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-72 bg-[var(--c-surface)] cursor-pointer" title={artist.name + ' · 상세·수정 열기'} onClick={handleClick}>
+      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-72 bg-[var(--c-surface)] cursor-pointer" data-library-card-activate="" title={artist.name + ' · 상세·수정 열기'} onClick={handleClick}>
         {thumb ? (
           <ArtistImage path={thumb.path} className="w-full h-full" />
         ) : (
@@ -559,13 +558,7 @@ const ArtistCard = observer(({
           </span>
         )}
         {familyView === 'all' && <FamilyBadge family={thumb?.family} className="absolute bottom-2 left-2 z-10" />}
-        {multiSelectMode && (
-          <button type="button" aria-label={selected ? '선택 해제' : '선택'}
-            className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-[var(--c-surface-2)] rounded shadow"
-            onClick={event => { event.stopPropagation(); onToggleSelect(); }}>
-            {selected ? <FaCheckSquare className="text-sky-500" size={20} /> : <FaSquare className="text-faint" size={20} />}
-          </button>
-        )}
+        {multiSelectMode && <LibraryCardSelection selected={selected} onToggle={onToggleSelect} />}
         <LibraryCardHover hint="카드를 클릭하여 상세 보기" />
         <div data-library-card-actions="" className="absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200">
           <Tooltip content="작가 태그 복사">
@@ -821,7 +814,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
       </div>
 
       {/* 본문 */}
-      <div ref={viewport} tabIndex={0} aria-label="작가 라이브러리 목록" className="relative select-none outline-none flex-1 overflow-auto px-1 pt-1 pb-4"
+      <div ref={viewport} tabIndex={0} aria-label="작가 라이브러리 목록" data-library-grid="" onKeyDownCapture={selection.onKeyDownCapture} className="relative select-none outline-none flex-1 overflow-auto px-1 pt-1 pb-4"
         onMouseDownCapture={e => { if (!isMobile) focusGridSurface(e); selection.onMouseDownCapture(e); }}
         onClickCapture={selection.onClickCapture}>
         {selection.overlay}
@@ -829,7 +822,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
           <div className="text-center text-faint py-10">검색 결과가 없습니다.</div>
         ) : (
           <div className="flex flex-wrap gap-4 items-start">
-            {!multiSelectMode && <AddArtistCard onClick={newArtist} />}
+            <AddArtistCard onClick={newArtist} />
             {list.map((a) => (
               <ArtistCard
                 key={a.id}
@@ -855,7 +848,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
         <Item onClick={() => {
           const tags = Array.from(selectedIds).map(id => artistLibraryService.getArtist(id)).filter(Boolean).map(artist => 'artist:' + artist!.name);
           void copyText(tags.join(', '), `작가 태그 ${tags.length}개를 복사했습니다`);
-        }}>작가 태그 복사{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        }}>작가 태그 복사</Item>
         {(isMobile || appState.webSearchEnabled) && <Item disabled={selectedIds.size !== 1} onClick={() => {
           const artist = contextId && artistLibraryService.getArtist(contextId);
           if (artist) window.dispatchEvent(new CustomEvent('danbooru-search-request', { detail: { text: artist.name } }));
@@ -864,7 +857,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
         <Item onClick={() => setArtistsFavoriteRecorded(selectedIds, true)}>즐겨찾기 지정</Item>
         <Item onClick={() => setArtistsFavoriteRecorded(selectedIds, false)}>즐겨찾기 해제</Item>
         <Separator />
-        <Item onClick={doBulkDelete}>삭제{selectedIds.size > 1 ? ` (${selectedIds.size}개)` : ''}</Item>
+        <Item onClick={doBulkDelete}>삭제</Item>
       </Menu>
       {openId && <ArtistDetailModal artistId={openId} onClose={() => setOpenId(null)} />}
     </div>

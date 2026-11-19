@@ -292,6 +292,9 @@ export class KeyboardShortcutService {
 
     // 공통 억제: input/textarea 포커스
     if (this.isInputFocused()) return;
+    // Library grids own their navigation/selection keys; scene/image actions must not consume them.
+    if ((e.target as Element | null)?.closest?.('[data-library-grid]') &&
+        (e.key.startsWith('Arrow') || e.key === 'Enter' || e.key === ' ' || normalized === 'Ctrl+A')) return;
     if (normalized === 'Ctrl+A' && document.activeElement?.closest('[data-selectable-text]')) return;
     if (['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z'].includes(normalized) && document.querySelector('[data-canvas-history-active="true"]')) return;
 
