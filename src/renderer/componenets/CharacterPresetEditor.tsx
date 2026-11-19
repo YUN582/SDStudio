@@ -1634,8 +1634,8 @@ export function useCharacterPresetPanel({
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: isMobile
-      ? 'repeat(2, 1fr)'
-      : 'repeat(auto-fill, minmax(180px, 1fr))',
+      ? 'repeat(2, minmax(0, 1fr))'
+      : 'repeat(auto-fill, 256px)',
     gap: '0.75rem',
     alignContent: 'start',
   };
@@ -1646,7 +1646,7 @@ export function useCharacterPresetPanel({
       {/* 새 글로벌 프리셋 카드 (순차 생성·선택 모드가 아닐 때만) */}
       {!cyclingMode && !selectMode && (
         <div
-          className="rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 hover:border-purple-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] transition-colors group"
+          className="rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 hover:border-purple-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96 transition-colors group"
           onClick={handleAddNewGlobal}
         >
           <FaPlus className="text-2xl text-purple-400 dark:text-purple-500 group-hover:text-purple-600 transition-colors mb-2" />
@@ -1729,7 +1729,7 @@ export function useCharacterPresetPanel({
       {/* 새 프리셋 카드 (순회·선택 모드가 아닐 때만) */}
       {!cyclingMode && !selectMode && (
         <div
-          className="rounded-lg border-2 border-dashed line-color hover:border-sky-400 dark:hover:border-sky-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] transition-colors group"
+          className="rounded-lg border-2 border-dashed line-color hover:border-sky-400 dark:hover:border-sky-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96 transition-colors group"
           onClick={handleAddNew}
         >
           <FaPlus className="text-2xl text-faint group-hover:text-sky-500 transition-colors mb-2" />

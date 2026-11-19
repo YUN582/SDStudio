@@ -26,6 +26,7 @@ import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
 import { ActionIcon } from './ActionIcon';
+import { LibraryCardHover } from './LibraryCardVisuals';
 import { queueArtistSample } from '../models/sceneQueueActions';
 import { artistLibraryService, imageService, backend, isMobile } from '../models';
 import { IArtistEntry, IArtistImage } from '../models/ArtistLibraryService';
@@ -553,11 +554,11 @@ const ArtistCard = observer(({
           </div>
         )}
         {shown.length > 0 && (
-          <span className="absolute bottom-2 right-2 text-xs bg-black/60 text-white rounded-md px-2 py-0.5 pointer-events-none">
+          <span className="absolute bottom-2 right-2 z-10 text-xs bg-black/60 text-white rounded-md px-2 py-0.5 pointer-events-none">
             {familyView === 'all' ? `${shown.length}장` : `${FAMILY_LABEL[familyView]} ${shown.length}장`}
           </span>
         )}
-        {familyView === 'all' && <FamilyBadge family={thumb?.family} className="absolute bottom-2 left-2" />}
+        {familyView === 'all' && <FamilyBadge family={thumb?.family} className="absolute bottom-2 left-2 z-10" />}
         {multiSelectMode && (
           <button type="button" aria-label={selected ? '선택 해제' : '선택'}
             className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-[var(--c-surface-2)] rounded shadow"
@@ -565,7 +566,7 @@ const ArtistCard = observer(({
             {selected ? <FaCheckSquare className="text-sky-500" size={20} /> : <FaSquare className="text-faint" size={20} />}
           </button>
         )}
-        <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+        <LibraryCardHover hint="카드를 클릭하여 상세 보기" />
         <div data-library-card-actions="" className="absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200">
           <Tooltip content="작가 태그 복사">
             <button type="button" aria-label="작가 태그 복사" title="작가 태그 복사" className="w-8 h-8 rounded-full btn-solid-sky flex items-center justify-center shadow-lg transition-colors"
@@ -828,6 +829,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
           <div className="text-center text-faint py-10">검색 결과가 없습니다.</div>
         ) : (
           <div className="flex flex-wrap gap-4 items-start">
+            {!multiSelectMode && <AddArtistCard onClick={newArtist} />}
             {list.map((a) => (
               <ArtistCard
                 key={a.id}
@@ -844,8 +846,6 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
                 }}
               />
             ))}
-            {/* 항상 그리드 끝에 추가 카드 (멀티선택 중엔 숨김) */}
-            {!multiSelectMode && <AddArtistCard onClick={newArtist} />}
           </div>
         )}
       </div>

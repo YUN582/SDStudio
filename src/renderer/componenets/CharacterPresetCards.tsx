@@ -12,6 +12,7 @@ import {
   FaUserAlt,
 } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
+import { LibraryCardCaption, LibraryCardHover } from './LibraryCardVisuals';
 import Tooltip from './Tooltip';
 import { CharacterPreset } from '../models/types';
 import { imageService, globalCharacterPresetService } from '../models';
@@ -201,13 +202,13 @@ export const CharacterPresetCard = observer(({
       }
     >
       {/* 이미지 영역 (탭/클릭 = 편집. 편집 버튼은 제거하고 카드 탭으로 통일) */}
-      <div className="relative overflow-hidden aspect-[3/4]" onClick={() => onEdit()}>
+      <div className="relative overflow-hidden aspect-[3/4] md:aspect-auto md:h-96" onClick={() => onEdit()}>
         <CardImage
           preset={preset}
           className="w-full h-full object-cover"
         />
         {/* 호버 오버레이 (PC: 호버 시, 모바일: 상단만 상시) */}
-        <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+        <LibraryCardHover hint="카드를 클릭하여 수정" />
         {/* 편집 힌트: 카드 탭/클릭 = 편집. 매우 흐릿한 편집 아이콘 (장식용, 순차 생성 모드 제외) */}
         {!hideActions && (
           <FaEdit
@@ -216,11 +217,7 @@ export const CharacterPresetCard = observer(({
           />
         )}
         {/* 그라디언트 텍스트 오버레이 */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 pt-6 pb-2">
-          <div className="text-sm text-white font-medium drop-shadow truncate">
-            {preset.name}
-          </div>
-          <div className="text-xs text-white/70 drop-shadow">
+        <LibraryCardCaption name={preset.name}>
             {appState.appliedCharacterPresetNames.includes(preset.name) && (
               <span className="text-green-300 font-semibold mr-1">✓ 적용됨</span>
             )}
@@ -228,8 +225,7 @@ export const CharacterPresetCard = observer(({
             {preset.vibes.length > 0 && preset.characterReferences.length > 0 && ' '}
             {preset.characterReferences.length > 0 && `R:${preset.characterReferences.length}`}
             {preset.vibes.length === 0 && preset.characterReferences.length === 0 && '이미지 없음'}
-          </div>
-        </div>
+        </LibraryCardCaption>
       </div>
       {/* 액션 버튼 (PC: 호버 시 표시, 모바일: 항상 표시, 순차 생성 모드: 숨김) */}
       {!hideActions && <div className="absolute top-0 left-0 right-0 flex justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
@@ -502,7 +498,7 @@ export const GlobalCharacterPresetCard = observer(({
       }
     >
       <div
-        className="relative overflow-hidden aspect-[3/4] cursor-pointer"
+        className="relative overflow-hidden aspect-[3/4] md:aspect-auto md:h-96 cursor-pointer"
         title={workspace ? `${entry.name} · 클릭하여 ${applied ? '적용 해제' : '적용'}` : undefined}
         onClick={() => {
           if (cyclingMode) onToggleSelect?.();
@@ -511,7 +507,8 @@ export const GlobalCharacterPresetCard = observer(({
         }}
       >
         <GlobalCardImage entry={entry} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+        <LibraryCardHover hint={cyclingMode ? (selected ? '카드를 클릭하여 선택 해제' : '카드를 클릭하여 선택')
+          : workspace ? `카드를 클릭하여 ${applied ? '적용 해제' : '적용'}` : '카드를 클릭하여 수정'} />
         {/* "글로벌" 코너 배지 제거 — 글로벌이 기본 화면이 되면서(주종 역전,
             2026-07-16) 더 이상 구분 표기가 불필요. */}
         {(cyclingMode || selectionMode) && (
@@ -535,11 +532,7 @@ export const GlobalCharacterPresetCard = observer(({
             className="absolute left-1/2 bottom-14 -translate-x-1/2 text-white/30 drop-shadow pointer-events-none z-10"
           />
         )}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 pt-6 pb-2">
-          <div className="text-sm text-white font-medium drop-shadow truncate">
-            {entry.name}
-          </div>
-          <div className="text-xs text-white/70 drop-shadow truncate">
+        <LibraryCardCaption name={entry.name}>
             {(applied ?? appState.appliedCharacterPresetNames.includes(entry.name)) && (
               <span className="text-green-300 font-semibold mr-1">✓ 적용됨</span>
             )}
@@ -548,8 +541,7 @@ export const GlobalCharacterPresetCard = observer(({
             {rcount > 0 && `R:${rcount}`}
             {vcount === 0 && rcount === 0 && (workspace ? '참조 이미지 없음' : '이미지 없음')}
             {entry.folder && ` · 📁${entry.folder}`}
-          </div>
-        </div>
+        </LibraryCardCaption>
         <div className={`absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 ${cyclingMode ? 'hidden' : ''}`}>
           {isEasyMode && !workspace && (
             <Tooltip content="프로젝트로 복사해 이지모드 적용">

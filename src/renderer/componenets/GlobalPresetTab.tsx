@@ -15,6 +15,7 @@ import { useLibraryGridSelection } from './LibraryGridSelection';
 import { focusGridSurface, gridCardUsesSelection } from '../models/gridSelection';
 import { GridSearchBar, GridToolbarGroup, LibraryAction, LibraryToolbar } from './GridToolbar';
 import { ActionIcon } from './ActionIcon';
+import { LibraryCardCaption, LibraryCardHover } from './LibraryCardVisuals';
 import { Menu, Item, Separator, useContextMenu } from 'react-contexify';
 import { contextMenuBackLayer } from './contextMenuBack';
 import { exportGlobalPresetPngs } from '../models/globalPresetPngExport';
@@ -126,10 +127,8 @@ const EasyCard = observer(({
         if (isMobile && multiSelectMode) onToggleSelect(); else onImportToSession();
       }}>
       <GlobalVibeImage profile={entry.profile} className="w-full aspect-[3/4] md:aspect-auto md:h-96 object-cover" />
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 pt-6 pb-2 pointer-events-none">
-        <div className="text-sm text-white font-medium drop-shadow truncate">{entry.name}</div>
-      </div>
-      {entry.isDefault && <div className="absolute top-2 left-2 bg-orange-500 text-white rounded-full p-2 shadow-lg pointer-events-none" title="기본으로 지정됨">
+      <LibraryCardCaption name={entry.name}>{entry.isDefault ? '기본 그림체' : '글로벌 그림체'}</LibraryCardCaption>
+      {entry.isDefault && <div className="absolute top-2 left-2 z-10 bg-orange-500 text-white rounded-full p-2 shadow-lg pointer-events-none" title="기본으로 지정됨">
         <ActionIcon id="pin-default" size={16} />
       </div>}
       {multiSelectMode && <button type="button" aria-label={selected ? '선택 해제' : '선택'}
@@ -137,7 +136,7 @@ const EasyCard = observer(({
         onClick={event => { event.stopPropagation(); onToggleSelect(); }}>
         {selected ? <FaCheckSquare className="text-sky-500" size={22} /> : <FaSquare className="text-faint" size={22} />}
       </button>}
-      <div className="absolute inset-0 bg-black/0 md:group-hover:bg-black/40 transition-colors duration-200 pointer-events-none" />
+      <LibraryCardHover hint="카드를 클릭하여 프로젝트에 추가" />
       <div data-library-card-actions="" className={'absolute top-0 left-0 right-0 flex flex-wrap justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity duration-200' + (isMobile && multiSelectMode ? ' hidden' : '')}>
         {[
           { label: '수정', tone: 'indigo', icon: <ActionIcon id="edit" size={14} />, run: onEdit },
@@ -618,6 +617,13 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
         )}
         {(visible.length > 0 || (!multiSelectMode && !q)) && (
           <div className="flex flex-wrap gap-4">
+            {!multiSelectMode && !q && (
+              <button type="button" onClick={newPreset}
+                className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub hover:border-sky-500 clickable select-none flex flex-col items-center justify-center gap-1.5">
+                <ActionIcon id="add-scene" size={22} />
+                <span className="text-sm">새 글로벌 프리셋</span>
+              </button>
+            )}
             {visible.map((entry) => (
               <EasyCard
                 key={entry.id}
@@ -639,13 +645,6 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
                 }}
               />
             ))}
-            {!multiSelectMode && !q && (
-              <button type="button" onClick={newPreset}
-                className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub hover:border-sky-500 clickable select-none flex flex-col items-center justify-center gap-1.5">
-                <ActionIcon id="add-scene" size={22} />
-                <span className="text-sm">새 글로벌 프리셋</span>
-              </button>
-            )}
           </div>
         )}
       </div>
