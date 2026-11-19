@@ -619,7 +619,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
           <div className="flex flex-wrap gap-4">
             {!multiSelectMode && !q && (
               <button type="button" onClick={newPreset}
-                className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub hover:border-sky-500 clickable select-none flex flex-col items-center justify-center gap-1.5">
+                className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 rounded-lg border-2 border-dashed line-color bg-transparent text-sub cursor-pointer select-none flex flex-col items-center justify-center gap-1.5">
                 <ActionIcon id="add-scene" size={22} />
                 <span className="text-sm">새 글로벌 프리셋</span>
               </button>

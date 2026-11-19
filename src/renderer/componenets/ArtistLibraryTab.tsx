@@ -603,7 +603,7 @@ const ArtistCard = observer(({
 // ─── 그리드 끝 "새 작가 추가" 카드 ───
 const AddArtistCard = ({ onClick }: { onClick: () => void }) => (
   <button
-    className="flex-none w-[calc(50%-8px)] md:w-60 self-stretch min-h-[16rem] rounded-lg border-2 border-dashed line-color flex flex-col items-center justify-center text-faint hover:border-sky-400 hover:text-sky-500 transition-colors"
+    className="flex-none w-[calc(50%-8px)] md:w-60 self-stretch min-h-[16rem] rounded-lg border-2 border-dashed line-color flex flex-col items-center justify-center text-faint"
     onClick={onClick}
   >
     <FaPlus size={30} />

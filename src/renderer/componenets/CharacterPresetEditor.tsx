@@ -1646,11 +1646,11 @@ export function useCharacterPresetPanel({
       {/* 새 글로벌 프리셋 카드 (순차 생성·선택 모드가 아닐 때만) */}
       {!cyclingMode && !selectMode && (
         <div
-          className="rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 hover:border-purple-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96 transition-colors group"
+          className="rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96"
           onClick={handleAddNewGlobal}
         >
-          <FaPlus className="text-2xl text-purple-400 dark:text-purple-500 group-hover:text-purple-600 transition-colors mb-2" />
-          <span className="text-sm text-purple-400 dark:text-purple-500 group-hover:text-purple-600 transition-colors">
+          <FaPlus className="text-2xl text-purple-400 dark:text-purple-500 mb-2" />
+          <span className="text-sm text-purple-400 dark:text-purple-500">
             새 글로벌 프리셋
           </span>
         </div>
@@ -1729,11 +1729,11 @@ export function useCharacterPresetPanel({
       {/* 새 프리셋 카드 (순회·선택 모드가 아닐 때만) */}
       {!cyclingMode && !selectMode && (
         <div
-          className="rounded-lg border-2 border-dashed line-color hover:border-sky-400 dark:hover:border-sky-500 cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96 transition-colors group"
+          className="rounded-lg border-2 border-dashed line-color cursor-pointer flex flex-col items-center justify-center aspect-[3/4] md:aspect-auto md:min-h-96"
           onClick={handleAddNew}
         >
-          <FaPlus className="text-2xl text-faint group-hover:text-sky-500 transition-colors mb-2" />
-          <span className="text-sm text-faint group-hover:text-sky-500 transition-colors">
+          <FaPlus className="text-2xl text-faint mb-2" />
+          <span className="text-sm text-faint">
             새 프리셋
           </span>
         </div>
