@@ -12,6 +12,7 @@ import {
   importedModelVersionOf,
   planPromptImport,
   planSelectedPromptImport,
+  joinPromptSections,
   sceneSlotsMatchMiddle,
   skipsFixedSamplingImport,
 } from '../models/sdstudioPromptImport';
@@ -45,7 +46,6 @@ import ModalOverlay from './ModalOverlay';
 interface ImportOptions {
   prompt: boolean;
   promptBack: boolean;
-  promptExtra: boolean;
   uc: boolean;
   characters: boolean;
   charactersAppend: boolean;
@@ -74,7 +74,6 @@ export const ExternalImageView = observer(
     const [options, setOptions] = useState<ImportOptions>({
       prompt: true,
       promptBack: true,
-      promptExtra: true,
       uc: true,
       characters: true,
       charactersAppend: false,
@@ -149,7 +148,7 @@ export const ExternalImageView = observer(
     const splitPrompt = !!promptPlan?.split;
     const selectedPlan = job ? planSelectedPromptImport(job.prompt, exactSource, {
       targetType: targetPresetType, placeExtra: !isGlobalTarget, middle: middleMode,
-    }, { front: options.prompt, back: options.promptBack, extra: options.promptExtra, middle: options.sceneMiddle }) : undefined;
+    }, { front: options.prompt, back: options.promptBack, extra: options.sceneMiddle, middle: options.sceneMiddle }) : undefined;
 
     const applyImport = async () => {
       if (!job || !appState.curSession || !selectedPlan) return;
@@ -467,9 +466,8 @@ export const ExternalImageView = observer(
         <legend className="text-xs font-medium text-muted mb-1">불러올 항목</legend>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-2 gap-y-0.5">
           {choice('prompt', splitPrompt ? '상위 프롬프트' : '통합 프롬프트')}
-          {choice('sceneMiddle', '중간(씬) 프롬프트', !splitPrompt || (isGlobalTarget && !!normalScene))}
+          {choice('sceneMiddle', '중간 프롬프트', !splitPrompt)}
           {choice('promptBack', '하위 프롬프트', !splitPrompt)}
-          {choice('promptExtra', '추가(프로젝트) 프롬프트', !splitPrompt)}
           {choice('uc', '네거티브 프롬프트')}
           {choice('characters', '캐릭터 프롬프트', !hasCharacters)}
           {choice('settings', '파라미터')}
@@ -488,14 +486,14 @@ export const ExternalImageView = observer(
       </fieldset>
       <p className="text-xs text-muted mt-2 mb-0">
         {!splitPrompt ? '구획 정보가 없어 통합 프롬프트를 상위 프롬프트에 적용합니다.'
-          : isGlobalTarget ? '글로벌 그림체에는 상위(+추가)·하위 프롬프트와 파라미터를 저장합니다.'
-          : normalScene ? '중간 프롬프트를 선택하면 현재 씬의 조합을 생성 당시 한 조합으로 교체합니다.'
+          : isGlobalTarget ? '글로벌 그림체에는 프롬프트와 파라미터를 저장합니다. 씬 조합은 저장하지 않습니다.'
+          : normalScene ? '중간을 선택하면 프로젝트 추가 프롬프트를 적용하고 씬 조합을 생성 당시 한 조합으로 교체합니다.'
           : '씬이 없어 선택한 중간 프롬프트는 하위 프롬프트 앞에 포함합니다.'}
       </p>
     </div>;
 
     return createPortal(
-      <ModalOverlay isOpen onClose={() => { if (!importing) onClose(); }} title="메타데이터 적용" size="xl" bodyPadding="none"
+      <ModalOverlay isOpen onClose={() => { if (!importing) onClose(); }} title="메타데이터 적용" size="xl" expandedHeight bodyPadding="none"
         toolbar={controls}
         footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || !job}>
           {importing ? '적용 중...' : '적용'}
@@ -555,8 +553,7 @@ export const ExternalImageView = observer(
                   <div className="flex flex-col gap-3">
                     {([
                       ['상위 프롬프트', exactSource.frontPrompt, options.prompt],
-                      ['추가(프로젝트) 프롬프트', exactSource.extraPrompt, options.promptExtra],
-                      ['중간(씬) 프롬프트', exactSource.middlePrompt, options.sceneMiddle],
+                      ['중간 프롬프트', joinPromptSections(exactSource.extraPrompt, exactSource.middlePrompt), options.sceneMiddle],
                       ['하위 프롬프트', exactSource.backPrompt, options.promptBack],
                       ...(exactSource.characterPrompt !== undefined ? [['캐릭터 관련 태그', exactSource.characterPrompt, options.prompt]] : []),
                       ...(exactSource.backgroundPrompt !== undefined ? [['배경 관련 태그', exactSource.backgroundPrompt, options.promptBack]] : []),
@@ -564,7 +561,7 @@ export const ExternalImageView = observer(
                       <div key={label}>
                         <div className="flex items-center gap-2 text-xs text-muted mb-1">{label}{!selected && <span>적용 안 함</span>}</div>
                         {text?.trim() ? <PromptHighlighter text={text} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
-                          : <div className="text-xs text-muted px-2">(비어 있음)</div>}
+                          : <div className="text-xs text-muted px-2">비어 있음</div>}
                       </div>
                     ))}
                   </div>
@@ -610,7 +607,7 @@ export const ExternalImageView = observer(
                 </div>
                 {skipFixedSampling && <div className="text-xs text-muted mt-2" data-v5m-import-note="">V5M(Medium) 이미지라 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</div>}
               </MetadataSection>
-              <MetadataSection label="시드" selected={options.seed && !isGlobalTarget}><div className="text-sm text-body">{job.seed ?? '(없음)'}</div></MetadataSection>
+              <MetadataSection label="시드" selected={options.seed && !isGlobalTarget}><div className="text-sm text-body">{job.seed ?? '없음'}</div></MetadataSection>
               {hasResolution && <MetadataSection label="해상도" selected={options.resolution && !!scene && !isGlobalTarget}><div className="text-sm text-body">{job.resolution!.width} × {job.resolution!.height}</div></MetadataSection>}
               {(job.sdstudioMetadata?.generationSettings || importedModel) && <MetadataSection label="모델·품질 전역 설정" selected={options.modelSettings && target === 'current'}>
                 <div className="text-xs text-muted">{job.sdstudioMetadata?.generationSettings

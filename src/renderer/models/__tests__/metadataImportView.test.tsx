@@ -49,30 +49,32 @@ test('portals above the clipped main region with the shared full-screen blurred 
   expect(clipped.querySelector('[data-metadata-import]')).toBeNull();
   expect(theme.querySelector('[data-metadata-import]')).toBeTruthy();
   const frame = document.querySelector('[data-modal-size=xl]')!;
+  expect((frame as HTMLElement).style.height).toBe('92vh');
   expect((frame.parentElement as HTMLElement).style.backdropFilter).toBe('blur(8px)');
   expect(frame.parentElement!.className).toContain('fixed inset-0');
-  expect(document.querySelectorAll('[data-metadata-options] input[type=checkbox]').length).toBe(12);
+  expect(document.querySelectorAll('[data-metadata-options] input[type=checkbox]').length).toBe(11);
+  expect(screen.queryByLabelText('추가(프로젝트) 프롬프트')).toBeNull();
   expect(document.querySelector('[data-metadata-preview] input[type=checkbox]')).toBeNull();
   fireEvent.click(screen.getByLabelText('닫기'));
   await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
 });
 
-test.each(['상위 프롬프트', '하위 프롬프트', '중간(씬) 프롬프트'])('applies only %s and leaves other sections untouched', async name => {
+test.each(['상위 프롬프트', '하위 프롬프트', '중간 프롬프트'])('applies only %s and leaves other sections untouched', async name => {
   await open();selectOnly(name);
   fireEvent.click(screen.getByRole('button', { name: '적용' }));
   await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
   expect(preset.frontPrompt).toBe(name === '상위 프롬프트' ? 'new front' : 'old front');
   expect(preset.backPrompt).toBe(name === '하위 프롬프트' ? 'new back' : 'old back');
-  expect(scene.slots[0][0].prompt).toBe(name === '중간(씬) 프롬프트' ? 'new middle' : 'old middle');
-  expect(session.extraPrompt).toBe('old extra');expect(preset.uc).toBe('old uc');
+  expect(scene.slots[0][0].prompt).toBe(name === '중간 프롬프트' ? 'new middle' : 'old middle');
+  expect(session.extraPrompt).toBe(name === '중간 프롬프트' ? 'new extra' : 'old extra');expect(preset.uc).toBe('old uc');
   expect(record.commit).toHaveBeenCalledTimes(1);
-  expect(confirmAsync).toHaveBeenCalledTimes(name === '중간(씬) 프롬프트' ? 1 : 0);
+  expect(confirmAsync).toHaveBeenCalledTimes(name === '중간 프롬프트' ? 1 : 0);
 });
 
 test('external merged prompts do not pretend to have separate source sections', async () => {
   extract.mockResolvedValue({ prompt: 'merged prompt', uc: '', characterPrompts: [], vibes: [], characterReferences: [] });
   await open();
-  expect((screen.getByLabelText('중간(씬) 프롬프트') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText('중간 프롬프트') as HTMLInputElement).disabled).toBe(true);
   expect((screen.getByLabelText('하위 프롬프트') as HTMLInputElement).disabled).toBe(true);
   selectOnly('통합 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
   await waitFor(() => expect(close).toHaveBeenCalled());
@@ -81,7 +83,7 @@ test('external merged prompts do not pretend to have separate source sections', 
 
 test('canceling a scene replacement leaves all prompt sections intact', async () => {
   confirmAsync.mockResolvedValueOnce(false);
-  await open();selectOnly('중간(씬) 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
+  await open();selectOnly('중간 프롬프트');fireEvent.click(screen.getByRole('button', { name: '적용' }));
   await waitFor(() => expect(confirmAsync).toHaveBeenCalled());
   expect(close).not.toHaveBeenCalled();expect(record.commit).not.toHaveBeenCalled();
   expect(preset.frontPrompt).toBe('old front');expect(preset.backPrompt).toBe('old back');expect(scene.slots[0][0].prompt).toBe('old middle');

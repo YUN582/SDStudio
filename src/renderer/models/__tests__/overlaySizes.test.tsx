@@ -71,6 +71,12 @@ describe('resolveOverlayFrame (순수)', () => {
       height: 'min(85vh, 860px)',
     });
   });
+  test('expanded height keeps the width tier and uses 92vh on desktop and mobile', () => {
+    expect(resolveOverlayFrame({ size: 'xl', expandedHeight: true, mobile: false }).style)
+      .toEqual({ width: 'min(1280px, 94vw)', height: '92vh' });
+    expect(resolveOverlayFrame({ size: 'xl', expandedHeight: true, mobile: true }).style)
+      .toEqual({ maxWidth: '1280px', height: '92vh', maxHeight: '92vh' });
+  });
   test('모바일: 90vw·max-h 85vh 유지, 최소·고정 높이 미적용', () => {
     for (const size of ['s', 'm', 'l', 'xl'] as const) {
       const f = resolveOverlayFrame({ size, mobile: true });

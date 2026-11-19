@@ -23,6 +23,8 @@ interface ModalOverlayProps {
   // 최대 85vh — 넘치면 본문만 스크롤), l·xl = 고정 min(85vh, 760·860). 모바일은 폭 min(등급, 90vw)·최대 85vh 만.
   // 주면 width 보다 우선. 새 창은 size 만 쓴다.
   size?: OverlaySize;
+  /** Expand to 92vh for long previews without widening this size tier. */
+  expandedHeight?: boolean;
   /**
    * @deprecated 옛 Tailwind 폭 클래스(예 'max-w-2xl'). 기존 호출부 호환용 — 주면(또는 size 를 생략하면) 종전과
    * 똑같이 렌더한다. 새 창은 `size` 를 쓴다(specGuard 가 새 사용을 막는다). 등급 추천은 LEGACY_WIDTH_TO_SIZE.
@@ -70,6 +72,7 @@ const ModalOverlay = ({
   title,
   children,
   size,
+  expandedHeight,
   width,
   toolbar,
   footer,
@@ -111,7 +114,7 @@ const ModalOverlay = ({
   if (!isOpen) return null;
 
   // 창 틀(폭·높이) — 단일 출처 models/overlaySizes.ts. size 가 없으면 옛 width 클래스 그대로(동작 불변).
-  const frame = resolveOverlayFrame({ size, width, fullscreen, mobile: isMobile });
+  const frame = resolveOverlayFrame({ size, width, fullscreen, expandedHeight, mobile: isMobile });
   const columns = (sideTabs != null || aside != null) && overlayUsesColumns(frame, isMobile);
   // 본문: 옛 경로는 클래스 그대로(글자 하나까지), 등급 경로는 고정 높이에서도 줄어들게 min-h-0 를 더한다.
   const bodyClass =

@@ -32,6 +32,8 @@ export const OVERLAY_PC_MAX_VW = 94;
 export const OVERLAY_MOBILE_VW = 90;
 /** 최대 높이(content 모드)·고정 높이 상한(fixed 모드)의 뷰포트 비율 */
 export const OVERLAY_MAX_VH = 85;
+/** More vertical space for long previews, retaining the selected width tier. */
+export const OVERLAY_EXPANDED_HEIGHT_VH = 92;
 /** 왼쪽 세로 탭 열 폭(px, 160~200 범위) — L 이상·PC 만 */
 export const OVERLAY_SIDE_TABS_WIDTH = 180;
 /** 「목록 | 편집」 두 열의 왼쪽 목록 폭(px) — L 이상·PC 만 */
@@ -103,6 +105,7 @@ export function resolveOverlayFrame(opts: {
   size?: OverlaySize;
   width?: string;
   fullscreen?: boolean;
+  expandedHeight?: boolean;
   mobile: boolean;
 }): OverlayFrame {
   const size: OverlaySize | undefined = opts.size ?? (opts.fullscreen ? 'full' : undefined);
@@ -122,11 +125,14 @@ export function resolveOverlayFrame(opts: {
       mode: 'size',
       size,
       className: `w-[90vw] max-h-[85vh] ${SHELL}`,
-      style: { maxWidth: `${spec.width}px` },
+      style: { maxWidth: `${spec.width}px`, ...(opts.expandedHeight
+        ? { height: `${OVERLAY_EXPANDED_HEIGHT_VH}vh`, maxHeight: `${OVERLAY_EXPANDED_HEIGHT_VH}vh` } : {}) },
     };
   }
   const style: CSSProperties = { width: `min(${spec.width}px, ${OVERLAY_PC_MAX_VW}vw)` };
-  if (spec.height === 'fixed') {
+  if (opts.expandedHeight) {
+    style.height = `${OVERLAY_EXPANDED_HEIGHT_VH}vh`;
+  } else if (spec.height === 'fixed') {
     style.height = `min(${OVERLAY_MAX_VH}vh, ${spec.fixedHeight}px)`;
   } else {
     // 최소 높이도 85vh 를 넘지 않게(아주 낮은 창에서 최소가 최대를 이기지 않도록)
