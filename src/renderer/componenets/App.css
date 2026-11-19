@@ -1182,7 +1182,7 @@ input[type='number']::-webkit-outer-spin-button {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   border-radius: 2px;
-  font-style: italic;
+  font-style: normal;
   white-space: inherit;
   word-break: inherit;
 }
