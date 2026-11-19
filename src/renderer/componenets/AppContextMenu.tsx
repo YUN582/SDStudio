@@ -1102,6 +1102,8 @@ export const AppContextMenu = observer(() => {
     const ctx = props.ctx as HistoryImageContextAlt;
     if (id === 'metadata') {
       void viewImageMetadata(ctx.entry.path);
+    } else if (id === 'save-global') {
+      void appState.saveImageAsGlobalPreset(ctx.entry.path);
     } else if (id === 'goto-scene') {
       imageHistoryService.navigateTo(ctx.entry, { openGrid: false });
     } else if (id === 'open-grid') {
@@ -1274,7 +1276,7 @@ export const AppContextMenu = observer(() => {
         )}
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick2}>
-          글로벌 프리셋으로 복사
+          이 이미지로 글로벌 프리셋 추가
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick2}>
           작가 라이브러리에 저장
@@ -1314,7 +1316,7 @@ export const AppContextMenu = observer(() => {
         )}
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick}>
-          글로벌 프리셋으로 복사
+          이 이미지로 글로벌 프리셋 추가
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick}>
           작가 라이브러리에 저장
@@ -1347,6 +1349,10 @@ export const AppContextMenu = observer(() => {
             파일 탐색기에서 열기
           </Item>
         )}
+        <Separator />
+        <Item id="save-global" onClick={handleHistoryItemClick}>
+          이 이미지로 글로벌 프리셋 추가
+        </Item>
         <Separator />
         <Item id="delete" onClick={handleHistoryItemClick}>
           해당 이미지 삭제
