@@ -1276,7 +1276,7 @@ export const AppContextMenu = observer(() => {
         )}
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick2}>
-          이 이미지로 글로벌 프리셋 추가
+          글로벌 프리셋 추가
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick2}>
           작가 라이브러리에 저장
@@ -1316,7 +1316,7 @@ export const AppContextMenu = observer(() => {
         )}
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick}>
-          이 이미지로 글로벌 프리셋 추가
+          글로벌 프리셋 추가
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick}>
           작가 라이브러리에 저장
@@ -1351,7 +1351,7 @@ export const AppContextMenu = observer(() => {
         )}
         <Separator />
         <Item id="save-global" onClick={handleHistoryItemClick}>
-          이 이미지로 글로벌 프리셋 추가
+          글로벌 프리셋 추가
         </Item>
         <Separator />
         <Item id="delete" onClick={handleHistoryItemClick}>
