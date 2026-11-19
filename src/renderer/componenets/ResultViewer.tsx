@@ -1592,6 +1592,7 @@ export const ResultDetailView = observer(
                 onWork={editVariant} onQuick={quickVariant}
                 onClose={() => setVariantChoices(false)} />
             )}
+            <div data-image-detail-text="" data-selectable-text tabIndex={0}>
             <div className="max-w-full mb-2 text-sub">
               <span className="gray-label">파일이름: </span>
               <span className="break-all">{filename}</span>
@@ -1649,6 +1650,7 @@ export const ResultDetailView = observer(
             <div className="w-full mb-2 text-sub">
               <span className="gray-label">스텝: </span>
               {steps}
+            </div>
             </div>
             <LinkedImageWorks session={session} scene={scene} path={viewedImagePath}/>
       </>
