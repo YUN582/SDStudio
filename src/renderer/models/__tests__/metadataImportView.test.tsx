@@ -74,6 +74,17 @@ test.each(['상위 프롬프트', '하위 프롬프트', '중간 프롬프트'])
   expect(confirmAsync).not.toHaveBeenCalled();
 });
 
+test('allows copying the metadata body and groups seed and resolution with parameters', async () => {
+  await open();
+  const preview = document.querySelector('[data-metadata-preview]')!;
+  expect(preview.hasAttribute('data-selectable-text')).toBe(true);
+  expect(preview.getAttribute('tabindex')).toBe('0');
+  const parameters = document.querySelector('[data-metadata-parameters]')!;
+  expect(parameters.contains(screen.getByText('123'))).toBe(true);
+  expect(parameters.contains(screen.getByText('832 × 1216'))).toBe(true);
+  expect(document.querySelectorAll('[data-metadata-resolution]')).toHaveLength(1);
+});
+
 test('external merged prompts do not pretend to have separate source sections', async () => {
   extract.mockResolvedValue({ prompt: 'merged prompt', uc: '', characterPrompts: [], vibes: [], characterReferences: [] });
   await open();
