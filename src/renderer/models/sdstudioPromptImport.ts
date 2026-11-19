@@ -98,6 +98,36 @@ export function planPromptImport(
   return plan;
 }
 
+export interface PromptImportSelection { front: boolean; extra: boolean; middle: boolean; back: boolean }
+
+/** Omitted fields must stay untouched, including when selected sections fold into another field. */
+export function planSelectedPromptImport(
+  mergedPrompt: string | undefined,
+  source: SDStudioPromptSourceV1 | undefined,
+  opts: PromptImportOptions,
+  selected: PromptImportSelection,
+): Omit<PromptImportPlan, 'frontPrompt'> & { frontPrompt?: string } {
+  if (!canSplitPromptImport(source, opts.targetType)) {
+    return selected.front ? { split: false, frontPrompt: mergedPrompt ?? '' } : { split: false };
+  }
+  const plan: Omit<PromptImportPlan, 'frontPrompt'> & { frontPrompt?: string } = planPromptImport(mergedPrompt, {
+    ...source,
+    frontPrompt: selected.front ? source.frontPrompt : '',
+    backPrompt: selected.back ? source.backPrompt : '',
+    extraPrompt: selected.extra ? source.extraPrompt : '',
+    middlePrompt: selected.middle ? source.middlePrompt : '',
+    characterPrompt: selected.front ? source.characterPrompt : undefined,
+    backgroundPrompt: selected.back ? source.backgroundPrompt : undefined,
+  }, { ...opts, middle: selected.middle ? opts.middle : 'omit' });
+  if (!selected.front && !(selected.extra && !opts.placeExtra)) delete plan.frontPrompt;
+  if (!selected.back && !(selected.middle && opts.middle === 'fold')) delete plan.backPrompt;
+  if (!selected.extra) delete plan.extraPrompt;
+  if (!selected.middle) delete plan.middlePrompt;
+  if (!selected.front) delete plan.characterPrompt;
+  if (!selected.back) delete plan.backgroundPrompt;
+  return plan;
+}
+
 /** 씬 칸이 이미 「중간 프롬프트 하나」와 같은가(같으면 씬 교체 확인이 필요 없다). */
 export function sceneSlotsMatchMiddle(
   slots: ReadonlyArray<ReadonlyArray<{ prompt?: string; enabled?: boolean }>>,

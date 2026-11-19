@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   GenericScene,
   ImportableMetadata,
@@ -10,6 +11,7 @@ import {
 import {
   importedModelVersionOf,
   planPromptImport,
+  planSelectedPromptImport,
   sceneSlotsMatchMiddle,
   skipsFixedSamplingImport,
 } from '../models/sdstudioPromptImport';
@@ -37,12 +39,13 @@ import {
 import { runInAction } from 'mobx';
 import { beginMetaApplyRecord } from '../models/imageStateUndo';
 import { undoService, UNDO_TEXT } from '../models/undoService';
-import { FaTimes } from 'react-icons/fa';
 import { v4 } from 'uuid';
-import { useBackdropClose } from './backdropClose';
+import ModalOverlay from './ModalOverlay';
 
 interface ImportOptions {
   prompt: boolean;
+  promptBack: boolean;
+  promptExtra: boolean;
   uc: boolean;
   characters: boolean;
   charactersAppend: boolean;
@@ -51,6 +54,7 @@ interface ImportOptions {
   settings: boolean;
   seed: boolean;
   resolution: boolean;
+  references: boolean;
   modelSettings: boolean;
   /** SDStudio 구획 메타가 있을 때 씬(중간) 구획으로 현재 씬 조합을 교체할지(기본: 현재 사전설정 대상만). */
   sceneMiddle: boolean;
@@ -65,13 +69,12 @@ interface ExternalImageViewProps {
 export const ExternalImageView = observer(
   ({ image, onClose, scene }: ExternalImageViewProps) => {
     const [job, setJob] = useState<ImportableMetadata | undefined>(undefined);
-    // 바깥 클릭은 누름·뗌 모두 배경일 때만 닫기(글자 드래그 선택 중 닫힘 방지, 2026-10-03 U1·X6).
-    // Esc·뒤로 가기는 감싼 FloatView 가 닫기 관문으로 처리한다.
-    const backdrop = useBackdropClose(onClose);
     const [target, setTarget] = useState<string>('new-normal');
     const [importing, setImporting] = useState(false);
     const [options, setOptions] = useState<ImportOptions>({
       prompt: true,
+      promptBack: true,
+      promptExtra: true,
       uc: true,
       characters: true,
       charactersAppend: false,
@@ -80,13 +83,14 @@ export const ExternalImageView = observer(
       settings: true,
       seed: true,
       resolution: true,
+      references: true,
       modelSettings: true,
       sceneMiddle: false,
     });
     // 씬 교체 기본값은 대상에 따른다 — 현재 사전설정이면 생성 당시 그대로(예전 「정확히 적용」), 새 사전설정이면 씬 유지.
     useEffect(() => {
-      setOptions((prev) => ({ ...prev, sceneMiddle: target === 'current' }));
-    }, [target]);
+      setOptions((prev) => ({ ...prev, sceneMiddle: target === 'current' || scene?.type !== 'scene' }));
+    }, [target, scene]);
 
     useEffect(() => {
       (async () => {
@@ -143,24 +147,27 @@ export const ExternalImageView = observer(
         })
       : undefined;
     const splitPrompt = !!promptPlan?.split;
+    const selectedPlan = job ? planSelectedPromptImport(job.prompt, exactSource, {
+      targetType: targetPresetType, placeExtra: !isGlobalTarget, middle: middleMode,
+    }, { front: options.prompt, back: options.promptBack, extra: options.promptExtra, middle: options.sceneMiddle }) : undefined;
 
     const applyImport = async () => {
-      if (!job || !appState.curSession || !promptPlan) return;
-      if (options.prompt && promptPlan.split) {
+      if (!job || !appState.curSession || !selectedPlan) return;
+      if (selectedPlan.split) {
         // 프로젝트·씬 단위로 덮어쓰는 것이 있으면(값이 실제로 바뀔 때만) 확인을 받는다.
         const overwrites: string[] = [];
         const curExtra = appState.curSession.extraPrompt ?? '';
         if (
-          promptPlan.extraPrompt !== undefined &&
+          selectedPlan.extraPrompt !== undefined &&
           curExtra.trim() &&
-          promptPlan.extraPrompt !== curExtra
+          selectedPlan.extraPrompt !== curExtra
         ) {
           overwrites.push('프로젝트 추가 프롬프트를 생성 당시 값으로 바꿉니다.');
         }
         if (
-          promptPlan.middlePrompt !== undefined &&
+          selectedPlan.middlePrompt !== undefined &&
           normalScene &&
-          !sceneSlotsMatchMiddle(normalScene.slots, promptPlan.middlePrompt)
+          !sceneSlotsMatchMiddle(normalScene.slots, selectedPlan.middlePrompt)
         ) {
           overwrites.push(
             `「${normalScene.name}」 씬의 조합을 생성에 사용된 한 조합으로 교체합니다.`,
@@ -168,7 +175,7 @@ export const ExternalImageView = observer(
         }
         if (overwrites.length > 0) {
           const ok = await appState.confirmAsync(
-            '상위·추가·씬·하위 프롬프트를 이미지 생성 당시 구획대로 적용합니다. ' +
+            '선택한 프롬프트 구획을 이미지 생성 당시 값으로 적용합니다. ' +
               overwrites.join(' '),
             '정확히 적용',
             { danger: true },
@@ -229,41 +236,39 @@ export const ExternalImageView = observer(
           if (options.resolution && job.resolution) undoRec.scene(scene, ['resolution', 'resolutionWidth', 'resolutionHeight']);
 
           runInAction(() => {
-            if (options.prompt) {
-              preset.frontPrompt = promptPlan.frontPrompt;
-              if (promptPlan.split) {
-                preset.backPrompt = promptPlan.backPrompt ?? '';
-                if (!isGlobal && promptPlan.extraPrompt !== undefined) {
-                  session.extraPrompt = promptPlan.extraPrompt;
-                }
-                if (
-                  promptPlan.middlePrompt !== undefined &&
-                  normalScene &&
-                  !sceneSlotsMatchMiddle(normalScene.slots, promptPlan.middlePrompt)
-                ) {
-                  normalScene.slots = promptPlan.middlePrompt.trim()
-                    ? [[
-                        PromptPiece.fromJSON({
-                          id: v4(),
-                          prompt: promptPlan.middlePrompt,
-                          characterPrompts: [],
-                          enabled: true,
-                        }),
-                      ]]
-                    : [];
-                }
-                if (
-                  !isGlobal &&
-                  presetType === 'SDImageGenEasy' &&
-                  promptPlan.characterPrompt !== undefined
-                ) {
-                  const shared = ensureShared();
-                  shared.characterPrompt = promptPlan.characterPrompt;
-                  shared.backgroundPrompt = promptPlan.backgroundPrompt ?? '';
-                }
-              } else if (isNew || isGlobal) {
-                preset.backPrompt = '';
+            if (selectedPlan.frontPrompt !== undefined) preset.frontPrompt = selectedPlan.frontPrompt;
+            if (selectedPlan.split) {
+              if (selectedPlan.backPrompt !== undefined) preset.backPrompt = selectedPlan.backPrompt;
+              if (!isGlobal && selectedPlan.extraPrompt !== undefined) {
+                session.extraPrompt = selectedPlan.extraPrompt;
               }
+              if (
+                selectedPlan.middlePrompt !== undefined &&
+                normalScene &&
+                !sceneSlotsMatchMiddle(normalScene.slots, selectedPlan.middlePrompt)
+              ) {
+                normalScene.slots = selectedPlan.middlePrompt.trim()
+                  ? [[
+                      PromptPiece.fromJSON({
+                        id: v4(),
+                        prompt: selectedPlan.middlePrompt,
+                        characterPrompts: [],
+                        enabled: true,
+                      }),
+                    ]]
+                  : [];
+              }
+              if (
+                !isGlobal &&
+                presetType === 'SDImageGenEasy' &&
+                (selectedPlan.characterPrompt !== undefined || selectedPlan.backgroundPrompt !== undefined)
+              ) {
+                const shared = ensureShared();
+                if (selectedPlan.characterPrompt !== undefined) shared.characterPrompt = selectedPlan.characterPrompt;
+                if (selectedPlan.backgroundPrompt !== undefined) shared.backgroundPrompt = selectedPlan.backgroundPrompt;
+              }
+            } else if (options.prompt && (isNew || isGlobal)) {
+              preset.backPrompt = '';
             }
             if (options.uc) {
               preset.uc = job.uc ?? '';
@@ -385,7 +390,7 @@ export const ExternalImageView = observer(
             });
           }
 
-          if (hasCharRefs) {
+          if (options.references && hasCharRefs) {
             const shared = ensureShared();
             const newRefs: ReferenceItem[] = [];
             for (let i = 0; i < job.characterReferences.length; i++) {
@@ -437,82 +442,68 @@ export const ExternalImageView = observer(
       }
     };
 
-    const CheckboxRow = ({
-      label,
-      checked,
-      onChange,
-      disabled,
-      children,
-      right,
-    }: {
-      label: string;
-      checked: boolean;
-      onChange: (v: boolean) => void;
-      disabled?: boolean;
-      children?: React.ReactNode;
-      right?: React.ReactNode;
-    }) => (
-      <div className={'mb-2.5 rounded-lg border line-color p-3' + (disabled ? ' opacity-40' : '')}>
-        <div className="flex items-center gap-2.5">
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => onChange(e.target.checked)}
-            disabled={disabled}
-            className="w-4 h-4 accent-sky-500 flex-none"
-          />
-          <span className="font-semibold text-sm text-default flex-1">{label}</span>
-          {right}
-        </div>
-        {checked && !disabled && children && (
-          <div className="mt-2">{children}</div>
-        )}
-      </div>
+    const choice = (key: keyof ImportOptions, label: string, disabled = false) => (
+      <label className={'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-default ' + (disabled ? 'opacity-40' : 'cursor-pointer hover:bg-[var(--c-surface)]')}>
+        <input type="checkbox" checked={!disabled && options[key]} disabled={disabled || importing}
+          onChange={event => setOpt(key, event.target.checked)} className="w-4 h-4 accent-sky-500 flex-none" />
+        {label}
+      </label>
     );
 
-    return (
-      <div
-        className="absolute inset-0 flex items-center justify-center"
-        style={{
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-        }}
-        {...backdrop}
-      >
-        <div
-          className="w-[95vw] max-w-5xl max-h-[90vh] bg-[var(--c-zone)] rounded-xl shadow-2xl flex flex-col overflow-hidden border line-color"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* 헤더 */}
-          <div className="flex items-center justify-between px-5 py-3 border-b line-color flex-none">
-            <div>
-              <h1 className="text-base font-semibold text-default">메타데이터 적용</h1>
-              <p className="text-xs text-muted mt-0.5">
-                이미지에서 생성 설정을 추출하여 프리셋에 적용합니다.
-              </p>
-            </div>
-            <button
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-muted transition-colors"
-              aria-label="닫기"
-              onClick={onClose}
-            >
-              <FaTimes size={16} />
-            </button>
+    const controls = job && <div className="w-full max-h-[45vh] overflow-auto" data-metadata-options="">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+        <label htmlFor="metadata-import-target" className="text-sm font-medium text-default">적용할 프리셋</label>
+        <select id="metadata-import-target" className="gray-input text-sm py-1.5 px-2 flex-1 min-w-48" value={target} disabled={importing}
+          onChange={event => setTarget(event.target.value)}>
+          <optgroup label="현재 프로젝트">
+            <option value="new-normal">새 일반 사전설정</option>
+            {appState.legacyWorkflowMode && <option value="new-easy">새 이지모드 사전설정</option>}
+            {appState.curSession?.selectedWorkflow && <option value="current">현재 사전설정에 적용</option>}
+          </optgroup>
+          <optgroup label="글로벌 프리셋"><option value="new-global">새 글로벌 그림체</option></optgroup>
+        </select>
+      </div>
+      <fieldset>
+        <legend className="text-xs font-medium text-muted mb-1">불러올 항목</legend>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-2 gap-y-0.5">
+          {choice('prompt', splitPrompt ? '상위 프롬프트' : '통합 프롬프트')}
+          {choice('sceneMiddle', '중간(씬) 프롬프트', !splitPrompt || (isGlobalTarget && !!normalScene))}
+          {choice('promptBack', '하위 프롬프트', !splitPrompt)}
+          {choice('promptExtra', '추가(프로젝트) 프롬프트', !splitPrompt)}
+          {choice('uc', '네거티브 프롬프트')}
+          {choice('characters', '캐릭터 프롬프트', !hasCharacters)}
+          {choice('settings', '파라미터')}
+          {choice('seed', '시드', job.seed == null || isGlobalTarget)}
+          {choice('resolution', '해상도', !hasResolution || !scene || isGlobalTarget)}
+          {choice('vibes', '바이브 트랜스퍼', !hasVibes || isGlobalTarget)}
+          {choice('references', '캐릭터 레퍼런스', !hasCharRefs || isGlobalTarget)}
+          {choice('modelSettings', '모델·품질 전역 설정', target !== 'current' || !(importedModel || job.sdstudioMetadata?.generationSettings))}
+        </div>
+        {target === 'current' && ((hasCharacters && options.characters) || (hasVibes && options.vibes)) && (
+          <div className="flex flex-wrap gap-x-3 mt-1">
+            {hasCharacters && options.characters && choice('charactersAppend', '캐릭터 프롬프트 추가 모드')}
+            {hasVibes && options.vibes && choice('vibesAppend', '바이브 추가 모드')}
           </div>
+        )}
+      </fieldset>
+      <p className="text-xs text-muted mt-2 mb-0">
+        {!splitPrompt ? '구획 정보가 없어 통합 프롬프트를 상위 프롬프트에 적용합니다.'
+          : isGlobalTarget ? '글로벌 그림체에는 상위(+추가)·하위 프롬프트와 파라미터를 저장합니다.'
+          : normalScene ? '중간 프롬프트를 선택하면 현재 씬의 조합을 생성 당시 한 조합으로 교체합니다.'
+          : '씬이 없어 선택한 중간 프롬프트는 하위 프롬프트 앞에 포함합니다.'}
+      </p>
+    </div>;
 
-          {/* 본문 */}
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden" style={{ minHeight: 0 }}>
-            {/* 왼쪽: 설정 패널 */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-5">
-              {!job && (
-                <div className="text-muted text-sm py-8 text-center">
-                  메타데이터를 추출하는 중...
-                </div>
-              )}
-
-              {job && (
-                <>
+    return createPortal(
+      <ModalOverlay isOpen onClose={() => { if (!importing) onClose(); }} title="메타데이터 적용" size="xl" bodyPadding="none"
+        toolbar={controls}
+        footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || !job}>
+          {importing ? '적용 중...' : '적용'}
+        </button>}>
+        <div className="h-full min-h-0 flex flex-col md:flex-row overflow-hidden" data-metadata-import="">
+          <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-5" data-metadata-preview="">
+            {!job && <div className="text-muted text-sm py-8 text-center">메타데이터를 추출하는 중...</div>}
+            {job && <>
                   {job.naiDiagnostics && (
                     <div className="mb-4 rounded-lg border line-color p-3 bg-[var(--c-surface)]">
                       <div className="text-sm font-semibold text-default mb-2">
@@ -559,322 +550,88 @@ export const ExternalImageView = observer(
                       </div>
                     </div>
                   )}
-                  <div className="mb-4 rounded-lg border line-color p-3 bg-[var(--c-surface)] text-sm">
-                    <div className="font-semibold text-default">
-                      {splitPrompt
-                        ? 'SDStudio 생성 구획대로 적용'
-                        : '통합 프롬프트로 적용'}
-                    </div>
-                    <div className="text-xs text-muted mt-1">
-                      {splitPrompt
-                        ? isGlobalTarget
-                          ? '그림체에는 상위(+추가)·하위 프롬프트만 나눠 담습니다. 씬 프롬프트는 프로젝트의 씬에 남습니다.'
-                          : '상위·하위는 사전설정에, 추가는 프로젝트 추가 프롬프트에 나눠 적용합니다.'
-                        : job.sdstudioMetadata
-                          ? '이 사전설정 종류에는 구획을 나눌 수 없어 긍정 프롬프트를 상위 프롬프트에 통합해 적용합니다.'
-                          : '이전 SDStudio·NAI 공식 이미지 또는 이미지 수정 결과로, 긍정 프롬프트를 상위 프롬프트에 통합해 적용합니다.'}
-                    </div>
-                  </div>
-                  {/* 적용 대상 */}
-                  <div className="mb-4">
-                    <label className="text-xs font-medium text-muted mb-1 block">적용할 프리셋</label>
-                    <select
-                      className="gray-input text-sm py-1.5 px-2 w-full"
-                      value={target}
-                      onChange={(e) => setTarget(e.target.value)}
-                    >
-                      <optgroup label="현재 세션">
-                        <option value="new-normal">새 일반 사전설정</option>
-                        {appState.legacyWorkflowMode && (
-                          <option value="new-easy">새 이지모드 사전설정</option>
-                        )}
-                        {appState.curSession?.selectedWorkflow && (
-                          <option value="current">현재 사전설정에 적용</option>
-                        )}
-                      </optgroup>
-                      <optgroup label="글로벌 프리셋">
-                        <option value="new-global">새 글로벌 그림체</option>
-                      </optgroup>
-                    </select>
-                    {target.startsWith('new-global') && (
-                      <p className="text-xs text-muted mt-1.5 leading-snug">
-                        ⓘ 글로벌 프리셋은 그림체 설정(프롬프트·파라미터)만 저장됩니다.
-                        시드·바이브·캐릭터 레퍼런스는 저장되지 않습니다.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* 프롬프트 */}
-                  <CheckboxRow
-                    label="프롬프트"
-                    checked={options.prompt}
-                    onChange={(v) => setOpt('prompt', v)}
-                  >
-                    {promptPlan?.split ? (
-                      <div className="flex flex-col gap-2">
-                        {(
-                          [
-                            ['상위 프롬프트', promptPlan.frontPrompt],
-                            ...(promptPlan.characterPrompt !== undefined
-                              ? [['캐릭터 관련 태그', promptPlan.characterPrompt]]
-                              : []),
-                            ...(promptPlan.extraPrompt !== undefined
-                              ? [['추가 프롬프트(프로젝트)', promptPlan.extraPrompt]]
-                              : []),
-                            ...(promptPlan.middlePrompt !== undefined
-                              ? [[`씬 프롬프트(${normalScene?.name ?? ''})`, promptPlan.middlePrompt]]
-                              : []),
-                            ...(promptPlan.backgroundPrompt !== undefined
-                              ? [['배경 관련 태그', promptPlan.backgroundPrompt]]
-                              : []),
-                            ['하위 프롬프트', promptPlan.backPrompt ?? ''],
-                          ] as [string, string][]
-                        ).map(([label, text]) => (
-                          <div key={label}>
-                            <div className="text-xs text-muted mb-0.5">{label}</div>
-                            {text.trim() ? (
-                              <PromptHighlighter
-                                text={text}
-                                className="w-full max-h-28 overflow-auto text-sm p-2 rounded"
-                              />
-                            ) : (
-                              <div className="text-xs text-muted px-2">(비어 있음)</div>
-                            )}
-                          </div>
-                        ))}
-                        {normalScene && !isGlobalTarget && (
-                          <label className="flex items-center gap-1.5 text-xs text-muted">
-                            <input
-                              type="checkbox"
-                              checked={options.sceneMiddle}
-                              onChange={(e) => setOpt('sceneMiddle', e.target.checked)}
-                              className="w-3.5 h-3.5 accent-sky-500"
-                            />
-                            씬 프롬프트도 「{normalScene.name}」 씬에 적용(조합을 생성 당시 한 조합으로 교체)
-                          </label>
-                        )}
-                      </div>
-                    ) : (
-                      <PromptHighlighter
-                        text={job.prompt}
-                        className="w-full max-h-28 overflow-auto text-sm p-2 rounded"
-                      />
-                    )}
-                  </CheckboxRow>
-
-                  {/* 네거티브 */}
-                  <CheckboxRow
-                    label="네거티브 프롬프트"
-                    checked={options.uc}
-                    onChange={(v) => setOpt('uc', v)}
-                  >
-                    <PromptHighlighter
-                      text={job.uc}
-                      className="w-full max-h-28 overflow-auto text-sm p-2 rounded"
-                    />
-                  </CheckboxRow>
-
-                  {/* 캐릭터 프롬프트 */}
-                  <CheckboxRow
-                    label="캐릭터 프롬프트"
-                    checked={options.characters}
-                    onChange={(v) => setOpt('characters', v)}
-                    disabled={!hasCharacters}
-                    right={
-                      hasCharacters && options.characters && !target.startsWith('new-') ? (
-                        <label className="flex items-center gap-1 text-xs text-muted">
-                          <input
-                            type="checkbox"
-                            checked={options.charactersAppend}
-                            onChange={(e) => setOpt('charactersAppend', e.target.checked)}
-                            className="w-3.5 h-3.5 accent-sky-500"
-                          />
-                          추가 모드
-                        </label>
-                      ) : undefined
-                    }
-                  >
-                    {job.characterPrompts.map((cp) => (
-                      <div key={cp.id} className="mb-2 p-2.5 bg-[var(--c-surface)] rounded-lg text-sm">
-                        <div className="text-muted text-xs mb-1">
-                          Pos: ({cp.position?.x?.toFixed(2) ?? '-'}, {cp.position?.y?.toFixed(2) ?? '-'})
-                        </div>
-                        <div className="text-body break-words">{cp.prompt}</div>
-                        {cp.uc && (
-                          <div className="text-muted mt-1 break-words text-xs">UC: {cp.uc}</div>
-                        )}
+              <MetadataSection label="프롬프트">
+                {splitPrompt && exactSource ? (
+                  <div className="flex flex-col gap-3">
+                    {([
+                      ['상위 프롬프트', exactSource.frontPrompt, options.prompt],
+                      ['추가(프로젝트) 프롬프트', exactSource.extraPrompt, options.promptExtra],
+                      ['중간(씬) 프롬프트', exactSource.middlePrompt, options.sceneMiddle],
+                      ['하위 프롬프트', exactSource.backPrompt, options.promptBack],
+                      ...(exactSource.characterPrompt !== undefined ? [['캐릭터 관련 태그', exactSource.characterPrompt, options.prompt]] : []),
+                      ...(exactSource.backgroundPrompt !== undefined ? [['배경 관련 태그', exactSource.backgroundPrompt, options.promptBack]] : []),
+                    ] as [string, string, boolean][]).map(([label, text, selected]) => (
+                      <div key={label}>
+                        <div className="flex items-center gap-2 text-xs text-muted mb-1">{label}{!selected && <span>적용 안 함</span>}</div>
+                        {text?.trim() ? <PromptHighlighter text={text} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
+                          : <div className="text-xs text-muted px-2">(비어 있음)</div>}
                       </div>
                     ))}
-                  </CheckboxRow>
-
-                  {/* 바이브 트랜스퍼 */}
-                  <CheckboxRow
-                    label={`바이브 트랜스퍼${hasVibes ? ` (${job.vibes.length}개)` : ''}`}
-                    checked={options.vibes}
-                    onChange={(v) => setOpt('vibes', v)}
-                    disabled={!hasVibes}
-                    right={
-                      hasVibes && options.vibes && !target.startsWith('new-') ? (
-                        <label className="flex items-center gap-1 text-xs text-muted">
-                          <input
-                            type="checkbox"
-                            checked={options.vibesAppend}
-                            onChange={(e) => setOpt('vibesAppend', e.target.checked)}
-                            className="w-3.5 h-3.5 accent-sky-500"
-                          />
-                          추가 모드
-                        </label>
-                      ) : undefined
-                    }
-                  >
-                    {hasVibeImages ? (
-                      <div className="flex gap-2 flex-wrap">
-                        {job.vibeImageData!.map((img, i) => (
-                          <div key={i} className="text-center">
-                            <img
-                              src={`data:image/png;base64,${img}`}
-                              className="w-16 h-16 object-cover rounded-md border line-color"
-                            />
-                            <div className="text-xs text-muted mt-1">
-                              S:{job.vibes[i]?.strength?.toFixed(2)} I:{job.vibes[i]?.info?.toFixed(2)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : hasVibes ? (
-                      <div className="text-sm text-muted">
-                        <p className="text-xs text-muted mb-2">
-                          원본 이미지는 없지만, 인코딩된 바이브 데이터로 적용합니다.
-                        </p>
-                        {job.vibes.map((v, i) => (
-                          <div key={i} className="flex items-center gap-3 py-1.5 px-2.5 bg-[var(--c-surface)] rounded-lg mb-1.5">
-                            <div className="w-10 h-10 rounded bg-gray-300 dark:bg-slate-600 flex items-center justify-center text-xs text-muted flex-none">
-                              데이터
-                            </div>
-                            <div className="text-xs text-muted">
-                              <div>강도 (RS): {v.strength?.toFixed(2)}</div>
-                              <div>정보 (IS): {v.info?.toFixed(2)}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </CheckboxRow>
-
-                  {/* 캐릭터 레퍼런스 */}
-                  {hasCharRefs && (
-                    <div className="mb-2.5 rounded-lg border line-color p-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-semibold text-sm text-default">
-                          캐릭터 레퍼런스 ({job.characterReferences.length}개)
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        {hasRefImages ? (
-                          <div className="flex gap-2 flex-wrap">
-                            {job.referenceImageData!.map((img, i) => (
-                              <div key={i} className="text-center">
-                                <img
-                                  src={`data:image/png;base64,${img}`}
-                                  className="w-16 h-16 object-cover rounded-md border line-color"
-                                />
-                                <div className="text-xs text-muted mt-1">
-                                  S:{job.characterReferences[i]?.strength?.toFixed(2)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted">
-                            원본 이미지는 없지만, 인코딩된 레퍼런스 데이터로 적용합니다.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 파라미터 */}
-                  <CheckboxRow
-                    label="파라미터"
-                    checked={options.settings}
-                    onChange={(v) => setOpt('settings', v)}
-                  >
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                      <div><span className="text-muted">Steps:</span> <span className="text-body">{job.steps}</span></div>
-                      <div><span className="text-muted">CFG:</span> <span className="text-body">{job.promptGuidance}</span></div>
-                      <div><span className="text-muted">Rescale:</span> <span className="text-body">{job.cfgRescale}</span></div>
-                      <div><span className="text-muted">Sampler:</span> <span className="text-body">{job.sampling}</span></div>
-                      <div><span className="text-muted">Noise:</span> <span className="text-body">{job.noiseSchedule}</span></div>
-                      <div><span className="text-muted">Variety+:</span> <span className="text-body">{job.varietyPlus ? 'ON' : 'OFF'}</span></div>
-                      <div><span className="text-muted">Euler A Bug:</span> <span className="text-body">{job.deliberateEulerAncestralBug ? 'ON' : 'OFF'}</span></div>
-                      <div><span className="text-muted">Coords:</span> <span className="text-body">{job.useCoords ? 'ON' : 'OFF'}</span></div>
-                      <div><span className="text-muted">Legacy UC:</span> <span className="text-body">{job.legacyPromptConditioning ? 'ON' : 'OFF'}</span></div>
-                    </div>
-                      {skipFixedSampling && (
-                        <div className="text-xs text-muted mt-2" data-v5m-import-note="">
-                          V5M(Medium) 이미지라 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.
-                        </div>
-                      )}
-                  </CheckboxRow>
-
-                  {/* 시드 */}
-                  <CheckboxRow
-                    label={`시드${job.seed != null ? ': ' + job.seed : ''}`}
-                    checked={options.seed}
-                    onChange={(v) => setOpt('seed', v)}
-                    disabled={job.seed == null}
-                  />
-
-                  {(job.sdstudioMetadata?.generationSettings || importedModel) && (
-                    <CheckboxRow
-                      label="모델·품질 전역 설정"
-                      checked={options.modelSettings}
-                      onChange={(v) => setOpt('modelSettings', v)}
-                      disabled={target !== 'current'}
-                    >
-                      <div className="text-xs text-muted">
-                        {job.sdstudioMetadata?.generationSettings
-                          ? '현재 설정에 적용할 때 모델, 품질, UC 프리셋과 투명 배경 설정을 생성 당시 값으로 맞춥니다.'
-                          : '현재 설정에 적용할 때 모델을 V5M(Medium)으로 맞춥니다.'}
-                      </div>
-                    </CheckboxRow>
-                  )}
-
-                  {/* 해상도 */}
-                  <CheckboxRow
-                    label={`해상도${hasResolution ? `: ${job.resolution!.width} × ${job.resolution!.height}` : ''}`}
-                    checked={options.resolution}
-                    onChange={(v) => setOpt('resolution', v)}
-                    disabled={!hasResolution}
-                  />
-                </>
-              )}
-            </div>
-
-            {/* 오른쪽: 이미지 프리뷰 */}
-            <div className="hidden md:flex flex-none w-72 lg:w-80 border-l line-color items-center justify-center bg-[var(--c-surface)] p-3">
-              {image && (
-                <img
-                  src={base64ToDataUri(image)}
-                  draggable={false}
-                  className="max-w-full max-h-full object-contain rounded-lg"
-                />
-              )}
-            </div>
+                  </div>
+                ) : <PromptHighlighter text={job.prompt} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />}
+              </MetadataSection>
+              <MetadataSection label="네거티브 프롬프트" selected={options.uc}>
+                <PromptHighlighter text={job.uc} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
+              </MetadataSection>
+              {hasCharacters && <MetadataSection label="캐릭터 프롬프트" selected={options.characters}>
+                {job.characterPrompts.map(cp => <div key={cp.id} className="mb-2 p-2.5 bg-[var(--c-surface)] rounded-lg text-sm">
+                  <div className="text-muted text-xs mb-1">Pos: ({cp.position?.x?.toFixed(2) ?? '-'}, {cp.position?.y?.toFixed(2) ?? '-'})</div>
+                  <div className="text-body break-words">{cp.prompt}</div>
+                  {cp.uc && <div className="text-muted mt-1 break-words text-xs">UC: {cp.uc}</div>}
+                </div>)}
+              </MetadataSection>}
+              {hasVibes && <MetadataSection label={`바이브 트랜스퍼 (${job.vibes.length}개)`} selected={options.vibes && !isGlobalTarget}>
+                {hasVibeImages ? <div className="flex gap-2 flex-wrap">{job.vibeImageData!.map((img, i) => (
+                  <div key={i} className="text-center">
+                    <img alt={`바이브 ${i + 1}`} src={`data:image/png;base64,${img}`} className="w-16 h-16 object-cover rounded-md border line-color" />
+                    <div className="text-xs text-muted mt-1">S:{job.vibes[i]?.strength?.toFixed(2)} I:{job.vibes[i]?.info?.toFixed(2)}</div>
+                  </div>
+                ))}</div> : <div className="text-sm text-muted">
+                  <p className="text-xs mb-2">원본 이미지 없이 인코딩된 바이브 데이터로 적용합니다.</p>
+                  {job.vibes.map((v, i) => <div key={i} className="text-xs py-1">강도 (RS): {v.strength?.toFixed(2)} · 정보 (IS): {v.info?.toFixed(2)}</div>)}
+                </div>}
+              </MetadataSection>}
+              {hasCharRefs && <MetadataSection label={`캐릭터 레퍼런스 (${job.characterReferences.length}개)`} selected={options.references && !isGlobalTarget}>
+                {hasRefImages ? <div className="flex gap-2 flex-wrap">{job.referenceImageData!.map((img, i) => (
+                  <div key={i} className="text-center">
+                    <img alt={`캐릭터 레퍼런스 ${i + 1}`} src={`data:image/png;base64,${img}`} className="w-16 h-16 object-cover rounded-md border line-color" />
+                    <div className="text-xs text-muted mt-1">S:{job.characterReferences[i]?.strength?.toFixed(2)}</div>
+                  </div>
+                ))}</div> : <div className="text-xs text-muted">원본 이미지는 없지만, 레퍼런스 설정으로 적용합니다.</div>}
+              </MetadataSection>}
+              <MetadataSection label="파라미터" selected={options.settings}>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                  {[
+                    ['Steps', job.steps], ['CFG', job.promptGuidance], ['Rescale', job.cfgRescale], ['Sampler', job.sampling],
+                    ['Noise', job.noiseSchedule], ['Variety+', job.varietyPlus ? 'ON' : 'OFF'],
+                    ['Euler A Bug', job.deliberateEulerAncestralBug ? 'ON' : 'OFF'], ['Coords', job.useCoords ? 'ON' : 'OFF'],
+                    ['Legacy UC', job.legacyPromptConditioning ? 'ON' : 'OFF'],
+                  ].map(([label, value]) => <div key={String(label)}><span className="text-muted">{label}:</span> <span className="text-body">{value}</span></div>)}
+                </div>
+                {skipFixedSampling && <div className="text-xs text-muted mt-2" data-v5m-import-note="">V5M(Medium) 이미지라 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</div>}
+              </MetadataSection>
+              <MetadataSection label="시드" selected={options.seed && !isGlobalTarget}><div className="text-sm text-body">{job.seed ?? '(없음)'}</div></MetadataSection>
+              {hasResolution && <MetadataSection label="해상도" selected={options.resolution && !!scene && !isGlobalTarget}><div className="text-sm text-body">{job.resolution!.width} × {job.resolution!.height}</div></MetadataSection>}
+              {(job.sdstudioMetadata?.generationSettings || importedModel) && <MetadataSection label="모델·품질 전역 설정" selected={options.modelSettings && target === 'current'}>
+                <div className="text-xs text-muted">{job.sdstudioMetadata?.generationSettings
+                  ? '현재 사전설정에 적용할 때 모델, 품질, UC 프리셋과 투명 배경 설정을 생성 당시 값으로 맞춥니다.'
+                  : '현재 사전설정에 적용할 때 모델을 V5M(Medium)으로 맞춥니다.'}</div>
+              </MetadataSection>}
+            </>}
           </div>
-
-          {/* 하단 버튼 */}
-          <div className="flex-none p-4 border-t line-color">
-            <button
-              className="w-full btn back-sky py-2.5 rounded-lg font-medium"
-              onClick={applyImport}
-              disabled={importing || !job}
-            >
-              {importing ? '적용 중...' : '적용'}
-            </button>
+          <div className="hidden md:flex flex-none w-72 lg:w-80 border-l line-color items-center justify-center bg-[var(--c-surface)] p-3">
+            {image && <img alt="메타데이터를 불러올 이미지" src={base64ToDataUri(image)} draggable={false} className="max-w-full max-h-full object-contain rounded-lg" />}
           </div>
         </div>
-      </div>
+      </ModalOverlay>,
+      document.querySelector('[data-app-theme-root]') ?? document.body,
     );
   },
 );
+
+function MetadataSection({ label, selected = true, children }: { label: string; selected?: boolean; children: React.ReactNode }) {
+  return <section className="mb-3 rounded-lg border line-color p-3">
+    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-default">{label}{!selected && <span className="text-xs font-normal text-muted">적용 안 함</span>}</div>
+    {children}
+  </section>;
+}

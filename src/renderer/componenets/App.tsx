@@ -941,20 +941,13 @@ export const App = observer(() => {
                   </div>
                 </div>
                 {appState.externalImage && (
-                  <FloatView
-                    onEscape={() => {
+                  <ExternalImageView
+                    image={appState.externalImage}
+                    scene={appState.externalImageScene}
+                    onClose={() => {
                       appState.closeExternalImage();
                     }}
-                    priority={1}
-                  >
-                    <ExternalImageView
-                      image={appState.externalImage}
-                      scene={appState.externalImageScene}
-                      onClose={() => {
-                        appState.closeExternalImage();
-                      }}
-                    />
-                  </FloatView>
+                  />
                 )}
               </FloatViewProvider>
               </div>
