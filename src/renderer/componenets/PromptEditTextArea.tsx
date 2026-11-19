@@ -54,6 +54,7 @@ import {
 } from '../models/promptEditorFocus';
 import {
   autocompleteTagCategory,
+  autocompleteSegment,
   trimAutocompleteWord,
 } from '../models/promptAutocomplete';
 import { PROMPT_WEIGHT_OPEN_AT_START_RE } from '../models/promptWeightSyntax';
@@ -372,44 +373,15 @@ class CursorMemorizeEditor {
   }
 
   getCurWord(start: number) {
-    let curText = this.domText;
-    let startIdx = start;
-    while (startIdx > 0 && !',\n|'.includes(curText[startIdx - 1])) {
-      startIdx--;
-    }
-    if (appState.fullWordAutoComplete) {
-      // 콤마 사이 전체 단어 모드
-      let endIdx = start;
-      while (endIdx < curText.length && !',\n|'.includes(curText[endIdx])) {
-        endIdx++;
-      }
-      return curText.substring(startIdx, endIdx).trim();
-    }
-    // 기본: 커서 왼쪽만
-    return curText.substring(startIdx, start).trim();
+    return autocompleteSegment(this.domText, start, appState.fullWordAutoComplete).word;
   }
 
   setCurWord(word: string) {
     mutex.runExclusive(async () => {
       const [start, end] = this.getCaretPosition();
       let curText = this.domText;
-      let startIdx = start;
-      while (startIdx > 0 && !',\n|'.includes(curText[startIdx - 1])) {
-        startIdx--;
-      }
-      if (appState.fullWordAutoComplete) {
-        // 전체 단어 모드: 커서 오른쪽도 포함하여 교체
-        var endIdx = start;
-        while (endIdx < curText.length && !',\n|'.includes(curText[endIdx])) {
-          endIdx++;
-        }
-      } else {
-        // 기본 모드: 커서 왼쪽만 교체 (오른쪽 텍스트 보존)
-        var endIdx = start;
-      }
-      if (curText[startIdx - 1] === '|') {
-        word = (curText.slice(startIdx).match(/^[ \t]*/)?.[0] ?? '') + word;
-      } else if (startIdx !== 0 && curText[startIdx - 1] !== '\n') word = ' ' + word;
+      const { start: startIdx, end: endIdx, prefix } = autocompleteSegment(curText, start, appState.fullWordAutoComplete);
+      word = prefix + word;
       this.updateCurText(
         curText.substring(0, startIdx) + word + curText.substring(endIdx),
       );
@@ -1277,20 +1249,7 @@ const NativeEditTextArea = observer(
       const isAutoComplete = useRef(false);
 
       const getCurWord = () => {
-        let start = textareaRef.current.selectionStart;
-        const curText = textareaRef.current.value;
-        let startIdx = start;
-        while (startIdx > 0 && !',\n|'.includes(curText[startIdx - 1])) {
-          startIdx--;
-        }
-        if (appState.fullWordAutoComplete) {
-          let endIdx = start;
-          while (endIdx < curText.length && !',\n|'.includes(curText[endIdx])) {
-            endIdx++;
-          }
-          return curText.substring(startIdx, endIdx).trim();
-        }
-        return curText.substring(startIdx, start).trim();
+        return autocompleteSegment(textareaRef.current.value, textareaRef.current.selectionStart, appState.fullWordAutoComplete).word;
       };
 
       const renderText = () => {
@@ -1441,22 +1400,8 @@ const NativeEditTextArea = observer(
         setCurWord: (word: string) => {
           const start = textareaRef.current.selectionStart;
           let curText = textareaRef.current.value;
-          let startIdx = start;
-          while (startIdx > 0 && !',\n|'.includes(curText[startIdx - 1])) {
-            startIdx--;
-          }
-          let endIdx: number;
-          if (appState.fullWordAutoComplete) {
-            endIdx = start;
-            while (endIdx < curText.length && !',\n|'.includes(curText[endIdx])) {
-              endIdx++;
-            }
-          } else {
-            endIdx = start;
-          }
-          if (curText[startIdx - 1] === '|') {
-            word = (curText.slice(startIdx).match(/^[ \t]*/)?.[0] ?? '') + word;
-          } else if (startIdx !== 0 && curText[startIdx - 1] !== '\n') word = ' ' + word;
+          const { start: startIdx, end: endIdx, prefix } = autocompleteSegment(curText, start, appState.fullWordAutoComplete);
+          word = prefix + word;
           const newText =
             curText.substring(0, startIdx) + word + curText.substring(endIdx);
           textareaRef.current.value = newText;

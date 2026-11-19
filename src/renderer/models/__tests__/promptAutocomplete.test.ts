@@ -1,5 +1,6 @@
 import {
   ARTIST_TAG_CATEGORY,
+  autocompleteSegment,
   autocompleteTagCategory,
   filterTagsByCategory,
   trimAutocompleteWord,
@@ -39,4 +40,21 @@ describe('프롬프트 자동완성 문맥', () => {
     ]);
     expect(filterTagsByCategory(tags)).toEqual(tags);
   });
+});
+
+test('comment boundaries keep the active artist category separate', () => {
+  const text = '##ignored, artist:other##artist:cil##tail##';
+  const caret = text.indexOf('cil') + 3;
+  const segment = autocompleteSegment(text, caret, true);
+  expect(segment.word).toBe('artist:cil');
+  expect(autocompleteTagCategory(segment.word)).toBe(ARTIST_TAG_CATEGORY);
+  expect(trimAutocompleteWord(segment.word)).toBe('cil');
+  expect(text.slice(0, segment.start) + 'artist:updated' + text.slice(segment.end))
+    .toBe('##ignored, artist:other##artist:updated##tail##');
+});
+
+test('comment markers are protected, and an unpaired marker stays literal', () => {
+  expect(autocompleteSegment('##note##', 1, true).word).toBe('');
+  expect(autocompleteSegment('##note##', 7, true).word).toBe('');
+  expect(autocompleteSegment('##unfinished', 12, true).word).toBe('##unfinished');
 });

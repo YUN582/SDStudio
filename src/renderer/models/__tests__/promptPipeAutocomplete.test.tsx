@@ -32,7 +32,15 @@ test.each([
   [false, '||red hair|  blu||', '||red hair|  blue hair||'],
   [true, '||red hair|blu tail|green hair||', '||red hair|blue hair|green hair||'],
   [true, '||red hair|1.5::blu tail::||', '||red hair|1.5::blue hair::||'],
-])('completes only the current pipe candidate (full word=%s)', async (fullWord, initial, expected) => {
+  [false, '##hidden, tag##blu', '##hidden, tag##blue hair'],
+  [false, '##hidden##  blu', '##hidden##  blue hair'],
+  [false, 'blu##hidden##', 'blue hair##hidden##'],
+  [true, '##left##blu tail##right##', '##left##blue hair##right##'],
+  [true, '##left##  blu tail  ##right##', '##left##  blue hair  ##right##'],
+  [true, '##left##1.5::blu tail::##right##', '##left##1.5::blue hair::##right##'],
+  [false, '||##disabled##|##note##blu||', '||##disabled##|##note##blue hair||'],
+  [false, '##blu##', '##blue hair##'],
+])('completes only the current tag, preserving surrounding syntax (full word=%s)', async (fullWord, initial, expected) => {
   appState.fullWordAutoComplete = fullWord;
   render(<Fixture initial={initial} />);
   const editor = document.querySelector('[contenteditable=true]') as HTMLElement;
