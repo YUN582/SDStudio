@@ -1,3 +1,5 @@
+> **2026-11-25 원본 5.8.0 통합:** [쉬운 변경표](docs/UPSTREAM_5_8_INTEGRATION.ko.md) · [AI·코드 검토 안내](docs/UPSTREAM_5_8_AI_REVIEW.md)
+
 > **개인 수정본 안내** · 이 저장소는 [제작자의 SDStudio](https://github.com/Dd154663/SDStudio)를 바탕으로 수정한 포크입니다.
 >
 > [쉽게 읽는 변경사항](CHANGES.ko.md) · [AI·코드 검토용 변경 목록과 호환성 설명](AI_REVIEW.md)

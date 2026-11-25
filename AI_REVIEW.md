@@ -1,6 +1,8 @@
 # SDStudio fork review guide
 
-Status: review handoff, not an upstream integration or release approval. Code and documentation were authored/modified with Codex/GPT assistance. Human-facing overview: [CHANGES.ko.md](CHANGES.ko.md).
+Current integration: upstream 5.8.0 was merged in `a918f0b396c01903242cbfd13d778078234a8781`. Read [the current integration review](docs/UPSTREAM_5_8_AI_REVIEW.md) and its explicit validation limits first.
+
+The remainder records the historical 2026-11-21 review handoff; its unmerged-upstream counts and test snapshot are historical. Code and documentation were authored/modified with Codex/GPT assistance. Human-facing overview: [CHANGES.ko.md](CHANGES.ko.md).
 
 ## Review scope and immutable references
 
