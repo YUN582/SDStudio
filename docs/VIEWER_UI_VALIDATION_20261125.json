@@ -1,0 +1,152 @@
+{
+  "date": "2026-11-25",
+  "scope": "User-approved Gemini viewer UI and merge follow-up fixes",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "relatedTests": {
+    "suites": 9,
+    "passed": 96,
+    "failed": 21
+  },
+  "behaviorTests": {
+    "suites": 5,
+    "passed": 62,
+    "failed": 0
+  },
+  "remainingAssertions": [
+    {
+      "file": "imageDetailInfo.test.ts",
+      "failed": [
+        "배선 소스 계약 넓은 폭만 머리줄 포털·버튼 세 묶음, 모바일 V2 의 넘겨받은 버튼 판정은 라벨 정규식 그대로",
+        "상세 보기 PC 버튼 줄 — 아이콘과 업스케일 라벨 업스케일 버튼은 숫자 없는 라벨을 쓰고 비용은 툴팁에만",
+        "상세 보기 PC 버튼 줄 — 아이콘과 업스케일 라벨 줄 안의 버튼은 모두 앞에 아이콘을 둔다"
+      ]
+    },
+    {
+      "file": "resultDetailImageLoad.test.ts",
+      "failed": [
+        "ResultDetailView 소스 — 불러오기 effect 분리 이미지 불러오기 effect 는 보고 있는 경로 문자열과 다시 시도 번호에만 의존한다",
+        "ResultDetailView 소스 — 불러오기 effect 분리 무효화 리스너는 판정 함수를 거친다(무관한 이미지 무효화에 다시 읽지 않음)",
+        "ResultDetailView 소스 — 불러오기 effect 분리 모든 await 뒤와 비동기 콜백에서 최신 요청인지 확인한다",
+        "ResultDetailView 소스 — 불러오기 effect 분리 리스너 effect 는 여전히 [selectedIndex, paths] 에 묶이고 refreshPaths·filenameRef 는 그대로"
+      ]
+    },
+    {
+      "file": "imageMenuEditSettings.test.ts",
+      "failed": [
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 GallaryImage 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 Image 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 HistoryImage 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 그리드 선택 메뉴는 한 장일 때만 보인다",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 동작 = 상세 보기와 같은 경로(편집기 열기 → 감시, 외부 이미지 창), 실패는 알림",
+        "AppContextMenu — 히스토리 이미지 메뉴 「글로벌 프리셋으로 복사」(2026-11-22) 그리드·이미지 메뉴와 같은 이름·아이콘, 게이트 없음(PC·모바일), 자리 = 「생성 설정 적용」 뒤 구분선 다음·삭제 앞",
+        "AppContextMenu — 히스토리 이미지 메뉴 「글로벌 프리셋으로 복사」(2026-11-22) 동작 = 그리드 메뉴와 같은 saveImageAsGlobalPreset(→ appState.saveImageAsGlobalPreset)",
+        "「이미지 편집」 호출부 — 실패는 알림, 감시는 성공했을 때만(2026-11-22) ResultViewer.tsx",
+        "「이미지 편집」 호출부 — 실패는 알림, 감시는 성공했을 때만(2026-11-22) PreSetEdtior.tsx",
+        "ResultDetailView — 해상도 칸 해상도 = 실제 파일 픽셀 측정값(경로가 같을 때만 넘김, 모르면 칸 없음)",
+        "ResultDetailView — 해상도 칸 불러오기마다 비우고, 측정값은 최신 요청일 때만(getImageDimensions 재사용)"
+      ]
+    },
+    {
+      "file": "imageDetailInfoOpen.test.ts",
+      "failed": [
+        "소스 계약 — 세 화면이 같은 기억값을 쓴다 여닫힘 상태는 appState 기억값 하나(useState 초기값 아님)",
+        "소스 계약 — 세 화면이 같은 기억값을 쓴다 PC 「상세 정보」 버튼: 프롬프트 열 머리(왼쪽, 스크롤 밖), 켜짐 = back-sky toggle-on + aria-pressed, 이름은 고정",
+        "소스 계약 — 세 화면이 같은 기억값을 쓴다 넓은 폭 본문: 프롬프트 열은 항상(같은 폭), 상세 열은 펼침에서만, 이미지 영역은 남는 폭"
+      ]
+    }
+  ],
+  "runtime": {
+    "actions": {
+      "header": [
+        "즐겨찾기 해제",
+        "이미지 복사",
+        "북마크",
+        "이전 이미지",
+        "다음 이미지"
+      ],
+      "toolbar": [
+        "이미지 변형",
+        "생성 설정 적용",
+        "다운로드",
+        "파일 위치 열기",
+        "이미지 편집",
+        "삭제"
+      ],
+      "scene": "인페인트 씬 paintA",
+      "selectable": "text",
+      "linked": "연결된 인페인트·I2I 작업 1paintB인페인트 · 결과 1장작업 열기삭제"
+    },
+    "choices": {
+      "workflows": [
+        "SDInpaint",
+        "SDI2I",
+        "SDMirror",
+        "Augment"
+      ],
+      "upscale": "업스케일 ×2 · 1 Anlas가로·세로 2배 · 원본 유지 · Anlas 사용",
+      "disabled": false
+    },
+    "navigation": true,
+    "modalBlocksBackgroundKeys": true,
+    "nestedViewerKeyIsolation": true,
+    "stableHeaderAndStage": {
+      "before": {
+        "header": {
+          "x": 50,
+          "y": 97,
+          "width": 1524,
+          "height": 32
+        },
+        "toolbar": {
+          "x": 6,
+          "y": 134,
+          "width": 1568,
+          "height": 45
+        },
+        "stage": {
+          "x": 429,
+          "y": 179,
+          "width": 1145,
+          "height": 839
+        }
+      },
+      "after": {
+        "header": {
+          "x": 50,
+          "y": 97,
+          "width": 1524,
+          "height": 32
+        },
+        "toolbar": {
+          "x": 6,
+          "y": 134,
+          "width": 1568,
+          "height": 45
+        },
+        "stage": {
+          "x": 429,
+          "y": 179,
+          "width": 1145,
+          "height": 839
+        }
+      }
+    },
+    "favoriteAndBookmarkToggle": true,
+    "responsive": true,
+    "networkRequestsBlocked": true
+  },
+  "package": {
+    "baselineSha256": "bb99343163609701df4d2b6f7126a9b87f02b8fc15a64b032f79cf8d373bab7c",
+    "installedSha256": "83975035A545320482B853B37C8C3161EE65D6EACDA6ED97BADD3FC52DF5B1F1",
+    "preservedRuntimeFiles": 942,
+    "compiledFiles": 33,
+    "backupVerified": true,
+    "windowDetected": true
+  },
+  "limits": [
+    "Default full suite was not rerun; original full-run results remain historical.",
+    "No paid generation requests; Android/iOS runtime not exercised.",
+    "Personal projects were not used as test fixtures."
+  ]
+}

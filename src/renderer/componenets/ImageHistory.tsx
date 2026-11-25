@@ -82,7 +82,7 @@ export const HistoryImagePreview = observer(
     const index = getPaths().indexOf(path);
     if (index < 0) return null;
     return (
-      <FloatView priority={1} allowUndo onEscape={onClose}>
+      <FloatView priority={1} allowUndo headerSlot onEscape={onClose}>
         <ResultDetailView
           session={session}
           scene={scene}

@@ -22,6 +22,7 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FixedSizeGrid as Grid,
   GridChildComponentProps,
@@ -39,6 +40,8 @@ import {
   FaDice,
   FaDownload,
   FaFolder,
+  FaFolderOpen,
+  FaInfoCircle,
   FaStar,
   FaTrash,
   FaShareSquare,
@@ -53,7 +56,11 @@ import { V2MainRow, V2TierRows, type V2SlotDef, type V2TierItem } from './Mobile
 import { UndoBarSlot, UNDO_ANCHOR_ATTR } from './UndoBarSlot';
 import { PromptHighlighter } from './SceneEditor';
 import QueueControl from './SceneQueueControl';
-import { FloatView, FloatViewActiveContext } from './FloatView';
+import { FloatView, FloatViewActiveContext, useFloatViewHeaderSlot } from './FloatView';
+import { ImageDetailInfo } from './ImageDetailInfo';
+import { base64ByteLength, buildImageDetailInfo } from '../models/imageDetailInfo';
+import { detailWideColumns, IMAGE_DETAIL_INFO_TEXT } from '../models/imageDetailInfoOpen';
+import { imageExtFromBase64 } from '../models/imageFormats';
 import type { GenerationHistoryEntry } from '../models/ImageHistoryService';
 import memoizeOne from 'memoize-one';
 import {
@@ -70,6 +77,7 @@ import {
   CharacterPrompt,
   ContextMenuType,
   GenericScene,
+  ImportableMetadata,
   InpaintScene,
   Scene,
   SelectedWorkflow,
@@ -1164,6 +1172,8 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
 );
 
 interface ResultDetailViewButton {
+  id?: string;
+  isOn?: (path: string) => boolean;
   text: string | ((path: string) => string);
   className: string;
   onClick: (scene: GenericScene, path: string, close: () => void) => void;
@@ -1267,22 +1277,38 @@ export const ResultDetailView = observer(
     const [image, setImage] = useState<string | undefined>(undefined);
     const [imageLoadFailed, setImageLoadFailed] = useState(false);
     const [upscalePreparing, setUpscalePreparing] = useState(false);
-    const [restoringMetadata, setRestoringMetadata] = useState(false);
     const [upscaleInfo, setUpscaleInfo] = useState<{ path: string; cost?: number; error?: string }>();
+    const [imageSize, setImageSize] = useState<{ path: string; width: number; height: number }>();
+    const [detailMeta, setDetailMeta] = useState<{
+      path: string;
+      job?: ImportableMetadata;
+      format?: string;
+      bytes?: number;
+    }>();
     const [imageRetryRevision, setImageRetryRevision] = useState(0);
     const watchedImages = useRef(new Set<string>());
     // 모바일 좌우 스와이프로 이미지 전환. 시작 좌표를 저장해 끝점과 비교한다.
     const touchStart = useRef<{ x: number; y: number } | null>(null);
-    const [middlePrompt, setMiddlePrompt] = useState<string>('');
-    const [characterPrompts, setCharacterPrompts] = useState<CharacterPrompt[]>(
-      [],
+    const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+    const [bodyWidth, setBodyWidth] = useState<number>(() =>
+      typeof window !== 'undefined' ? window.innerWidth : 1280,
     );
-    const [seed, setSeed] = useState<string>('');
-    const [scale, setScale] = useState<string>('');
-    const [sampler, setSampler] = useState<string>('');
-    const [steps, setSteps] = useState<string>('');
-    const [uc, setUc] = useState<string>('');
     const [_, forceUpdate] = useState<{}>({});
+    useEffect(() => {
+      if (!bodyEl) return;
+      const update = () => {
+        if (bodyEl.clientWidth > 0) setBodyWidth(bodyEl.clientWidth);
+      };
+      update();
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) setBodyWidth(entry.contentRect.width);
+        }
+      });
+      ro.observe(bodyEl);
+      return () => ro.disconnect();
+    }, [bodyEl]);
+
     useEffect(() => {
       if (!viewedImagePath) return;
       let request = 0;
@@ -1291,6 +1317,8 @@ export const ResultDetailView = observer(
         setImage(undefined);
         setImageLoadFailed(false);
         setUpscaleInfo(undefined);
+        setImageSize(undefined);
+        setDetailMeta(undefined);
         try {
           const fullImage = await imageService.fetchImage(viewedImagePath);
           if (currentRequest !== request) return;
@@ -1299,42 +1327,23 @@ export const ResultDetailView = observer(
           }
           setImage(fullImage);
           const base64Image = dataUriToBase64(fullImage);
+          const format = imageExtFromBase64(base64Image);
+          const bytes = base64ByteLength(base64Image);
           void getImageDimensions(base64Image).then(({ width, height }) => {
+            if (currentRequest !== request) return;
+            setImageSize({ path: viewedImagePath, width, height });
             const cost = estimateNaiUpscaleCost(width, height);
-            if (currentRequest === request) setUpscaleInfo({ path: viewedImagePath, cost });
+            setUpscaleInfo({ path: viewedImagePath, cost });
           }).catch((e) => {
             if (currentRequest === request) setUpscaleInfo({ path: viewedImagePath, error: e?.message ?? '이미지 확인 실패' });
           });
           try {
             const job = await extractPromptDataFromBase64(base64Image);
             if (currentRequest !== request) return;
-            if (job) {
-              const { prompt, seed, promptGuidance, sampling, steps, uc } = job;
-              setMiddlePrompt(prompt);
-              setCharacterPrompts(job.characterPrompts);
-              setSeed(seed?.toString() ?? '');
-              setScale(promptGuidance.toString());
-              setSampler(sampling);
-              setSteps(steps.toString());
-              setUc(uc);
-            } else {
-              setMiddlePrompt('');
-              setCharacterPrompts([]);
-              setSeed('');
-              setScale('');
-              setSampler('');
-              setSteps('');
-              setUc('');
-            }
+            setDetailMeta({ path: viewedImagePath, job: job ?? undefined, format, bytes });
           } catch (e: any) {
             if (currentRequest !== request) return;
-            setMiddlePrompt('');
-            setCharacterPrompts([]);
-            setSeed('');
-            setScale('');
-            setSampler('');
-            setSteps('');
-            setUc('');
+            setDetailMeta({ path: viewedImagePath, job: undefined, format, bytes });
           }
           setFilename(viewedImagePath.split('/').pop()!);
         } catch (e: any) {
@@ -1342,13 +1351,8 @@ export const ResultDetailView = observer(
           console.log(e);
           setImage(undefined);
           setImageLoadFailed(true);
-          setMiddlePrompt('');
-          setCharacterPrompts([]);
-          setSeed('');
-          setScale('');
-          setSampler('');
-          setSteps('');
-          setUc('');
+          setImageSize(undefined);
+          setDetailMeta(undefined);
           setFilename('');
         }
       };
@@ -1370,7 +1374,7 @@ export const ResultDetailView = observer(
         forceUpdate({});
       };
       const handleKeyDown = async (e: KeyboardEvent) => {
-        if (!activeView) return;
+        if (!activeView || variantChoices || appState.modalOverlayCount > 0) return;
         if (['ArrowLeft','ArrowRight'].includes(e.key) && (e.ctrlKey||e.metaKey||e.altKey)) return;
         // 입력 칸 포커스 중엔 전부, 확인 창이 열려 있으면 Delete/Backspace 무시(2026-11-01 U0-b E7)
         if (
@@ -1381,9 +1385,9 @@ export const ResultDetailView = observer(
         )
           return;
         if (e.key === 'ArrowLeft') {
-          setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
+          if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
         } else if (e.key === 'ArrowRight') {
-          setSelectedIndex((selectedIndex + 1) % paths.length);
+          if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
           const doDel = async () => {
             await deleteImageFilesRecorded(session, [paths[selectedIndex]], scene);
@@ -1401,16 +1405,16 @@ export const ResultDetailView = observer(
         }
       };
       const handleShortcut = async (e: Event) => {
-        if (!activeView) return;
+        if (!activeView || variantChoices || appState.modalOverlayCount > 0) return;
         const action = (e as CustomEvent).detail?.action;
         if (action === 'image-prev-scene' || action === 'image-next-scene') {
           if (!isTextEntryFocused() && !appState.dialogs.length) sceneNav?.go(action === 'image-prev-scene' ? -1 : 1, true);
           return;
         }
         if (action === 'prev-image') {
-          setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
+          if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
         } else if (action === 'next-image') {
-          setSelectedIndex((selectedIndex + 1) % paths.length);
+          if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
         } else if (action === 'delete-image') {
           const doDel = async () => {
             await deleteImageFilesRecorded(session, [paths[selectedIndex]], scene);
@@ -1465,7 +1469,7 @@ export const ResultDetailView = observer(
         sessionService.removeEventListener('main-image-updated', rerender);
         gameService.removeEventListener('updated', refreshPaths);
       };
-    }, [selectedIndex, paths, activeView, session, scene, appliedCharacterPreset, getPaths, sceneNav]);
+    }, [selectedIndex, paths, activeView, variantChoices, session, scene, appliedCharacterPreset, getPaths, sceneNav]);
 
     useEffect(() => {
       return () => {
@@ -1475,8 +1479,10 @@ export const ResultDetailView = observer(
       };
     });
 
-    const [showPrompt, setShowPrompt] = useState<boolean>(false);
-    // 모바일 V2(2026-09-26): 넓은 버튼 묶음 대신 이미지 아래 [자세한 정보 손잡이][하단 6칸 줄]. 클래식·PC 마크업은 불변.
+    const showPrompt = appState.imageDetailInfoOpen;
+    const setShowPrompt = (open: boolean) => appState.setImageDetailInfoOpen(open);
+    const headerSlotEl = useFloatViewHeaderSlot();
+    // 모바일 V2(2026-09-26): 넓은 버튼 묶음 대신 이미지 아래 [자세한 정보 손잡이][하단 6칸 줄].
     const v2 = isV2('grid');
     const [v2More, setV2More] = useState(false);
     const { show, hideAll } = useContextMenu({
@@ -1491,6 +1497,7 @@ export const ResultDetailView = observer(
         sessionService.removeEventListener('bookmark-updated', onBmUpdate);
     }, []);
     const currentFilename = paths[selectedIndex]?.split('/').pop();
+    const isFav = !!(currentFilename && scene.mains.includes(currentFilename));
     const isImageBm = !!(
       currentFilename &&
       sessionService.isImageBookmarked(
@@ -1499,15 +1506,49 @@ export const ResultDetailView = observer(
         currentFilename,
       )
     );
+    const currentDetailMeta = detailMeta?.path === viewedImagePath ? detailMeta : undefined;
+    const currentPixel = imageSize?.path === viewedImagePath ? imageSize : undefined;
+    const detailInfo = useMemo(
+      () =>
+        buildImageDetailInfo(currentDetailMeta?.job, {
+          filename: currentFilename ?? filename,
+          pixel: currentPixel ? { width: currentPixel.width, height: currentPixel.height } : undefined,
+          format: currentDetailMeta?.format,
+          bytes: currentDetailMeta?.bytes,
+          account: currentFilename ? scene.imageAccounts?.[currentFilename] : undefined,
+          accountLabel: BOOST_TEXT.accountLabel,
+          sourceScene: scene.type === 'inpaint' ? scene.sceneRef : undefined,
+          workflowTitle: (t) => workFlowService.getDef(t)?.title,
+        }),
+      [currentDetailMeta, currentPixel, currentFilename, filename, scene],
+    );
 
     if (!paths[selectedIndex]) return null;
 
-    // 버튼 동작(클래식 넓은 버튼과 V2 하단 줄이 공유)
-    const actDownloadFile = async () => {
+    // 버튼 동작(PC·클래식·V2 하단 줄이 공유)
+    const actDownloadSingle = async () => {
       if (isMobile) {
         await backend.copyToDownloads(paths[selectedIndex]);
       } else {
-        await backend.showFile(paths[selectedIndex]);
+        await imageDownloadService.downloadSingleImage(
+          session,
+          scene,
+          paths[selectedIndex],
+          appliedCharacterPreset,
+        );
+      }
+    };
+    const actRevealFile = async () => {
+      await backend.showFile(paths[selectedIndex]);
+    };
+    const actEditExternal = async () => {
+      const imagePath = paths[selectedIndex];
+      try {
+        await backend.openImageEditor(imagePath);
+        await backend.watchImage(imagePath);
+        watchedImages.current.add(imagePath);
+      } catch {
+        appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
       }
     };
     const actDeleteFile = () => {
@@ -1524,6 +1565,11 @@ export const ResultDetailView = observer(
         showSkipConfirm: showImageDeleteSkipOption(1),
         callback: doDel,
       });
+    };
+    const actToggleFavorite = () => {
+      if (currentFilename) {
+        toggleImageFavorite(session, scene, currentFilename);
+      }
     };
     const actToggleBookmark = () => {
       if (currentFilename) {
@@ -1546,151 +1592,156 @@ export const ResultDetailView = observer(
     const upscaleLabel = upscalePreparing
       ? '예약 중…'
       : `업스케일 ×2 · ${currentUpscaleInfo?.cost ? `${currentUpscaleInfo.cost} Anlas` : currentUpscaleInfo?.error ? '미지원' : '…'}`;
-    const actUpscale = async () => {
+    const actUpscale = async (): Promise<boolean> => {
       const path = paths[selectedIndex];
-      if (!path || !session || upscalePreparing) return;
+      if (!path || !session || upscalePreparing) return false;
       setUpscalePreparing(true);
       try {
         const source = await imageService.fetchImage(path);
         if (!source) throw new Error('원본 이미지를 읽지 못했습니다.');
         await queueNaiUpscale(session, scene, dataUriToBase64(source));
+        return true;
       } catch (e: any) {
         appState.pushMessage(e?.message ?? 'NAI 업스케일을 예약하지 못했습니다.');
+        return false;
       } finally {
         setUpscalePreparing(false);
       }
     };
-    const inheritedButtons = scene === sourceScene ? buttons : [{
-      className: 'back-orange',
-      text: (path: string) => scene.mains.includes(path.split('/').pop()!)
-        ? '즐겨찾기 해제'
-        : '즐겨찾기 지정',
-      onClick: (_scene: GenericScene, path: string) =>
-        toggleImageFavorite(session, scene, path.split('/').pop()!),
-    }];
-    const viewButtons = (inheritedButtons||[]).filter((button:any)=>!(/인페인트|인페인팅|이미지 변형/.test(typeof button.text==='function'?button.text(viewedImagePath):button.text)));
-    if(!viewButtons.some((button:any)=>/즐겨찾기/.test(typeof button.text==='function'?button.text(viewedImagePath):button.text)))viewButtons.push({
-      className:'back-orange',text:(path:string)=>scene.mains.includes(path.split('/').pop()!)?'즐겨찾기 해제':'즐겨찾기 지정',
-      onClick:(_scene:GenericScene,path:string)=>toggleImageFavorite(session,scene,path.split('/').pop()!),
-    });
-    viewButtons.push({className:'back-green',text:'인페인트 · I2I',onClick:()=>void editVariant('SDInpaint')},
-      {className:'back-gray',text:'이미지 변형',onClick:()=>setVariantChoices(value=>!value)});
-    const pluginLabel = (b: any) =>
-      String(typeof b.text === 'function' ? b.text(paths[selectedIndex]) : b.text);
-    const runPlugin = (b: any) => b.onClick(scene, paths[selectedIndex], onClose);
 
-    const restoreEditedMetadata = async () => {
-      setRestoringMetadata(true);
-      try {
-        if (await backend.restoreEditedImageMetadata(paths[selectedIndex])) {
-          appState.pushMessage('생성 정보를 복원한 PNG를 저장했습니다.');
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        appState.pushMessage(message.replace(/^Error invoking remote method '[^']+': Error: /, ''), 'error');
-      } finally {
-        setRestoringMetadata(false);
-      }
+    const pluginLabel = (b: ResultDetailViewButton) =>
+      String(typeof b.text === 'function' ? b.text(paths[selectedIndex]) : b.text);
+    const runPlugin = (b: ResultDetailViewButton) => b.onClick(scene, paths[selectedIndex], onClose);
+    // 외부 buttons 중 즐겨찾기·인페인트·이미지 변형은 뷰어가 직접 처리하고, 나머지(예: 원본 씬으로 이미지 복사 등)는 보존한다.
+    const extraButtons = (scene === sourceScene ? buttons : []).filter((b) => {
+      if (b.id === 'favorite' || b.id === 'inpaint' || b.id === 'variant') return false;
+      return !(/즐겨찾기|인페인트|인페인팅|이미지 변형/.test(pluginLabel(b)));
+    });
+
+    const wideLayout = !v2 && !isMobile && bodyWidth >= 680;
+    const wideCols = detailWideColumns(bodyWidth, showPrompt);
+    const metaNotReady = imageLoadFailed || !currentDetailMeta;
+
+    const renderInfo = (part: 'all' | 'prompt' | 'detail') => (
+      <div data-image-detail-text="" data-selectable-text tabIndex={0}>
+        <ImageDetailInfo
+          info={detailInfo}
+          job={currentDetailMeta?.job}
+          part={part}
+          loadFailed={metaNotReady}
+        />
+      </div>
+    );
+
+    const stepImage = (delta: number) => {
+      if (paths.length < 2) return;
+      setSelectedIndex((selectedIndex + delta + paths.length) % paths.length);
     };
 
-    const infoFields = (
+    const headerContent = (
       <>
-            {editingWork&&<FloatView priority={3} onEscape={()=>setEditingWork(null)}>
-              <InPaintEditor editingScene={editingWork} onConfirm={()=>setEditingWork(null)} onDelete={()=>setEditingWork(null)}/>
-            </FloatView>}
-            {variantChoices && (
-              <ImageVariantChoices path={viewedImagePath} busy={variantBusy}
-                onWork={editVariant} onQuick={quickVariant}
-                onClose={() => setVariantChoices(false)} />
-            )}
-            <div data-image-detail-text="" data-selectable-text tabIndex={0}>
-            <div className="max-w-full mb-2 text-sub">
-              <span className="gray-label">파일이름: </span>
-              <span className="break-all">{filename}</span>
-            </div>
-            {/* 부스트 다중 계정 실행으로 만든 이미지만 — 만든 계정(프로필 이름, D8 앱 내부 표식). 메타·내보내기에는 없음. */}
-            {scene.imageAccounts?.[filename] && (
-              <div className="max-w-full mb-2 text-sub" data-image-account>
-                <span className="gray-label">{BOOST_TEXT.accountLabel}: </span>
-                <span>{scene.imageAccounts[filename]}</span>
-              </div>
-            )}
-            <div className="w-full mb-2">
-              <div className="gray-label">프롬프트 </div>
-              <PromptHighlighter
-                text={middlePrompt}
-                className="w-full h-24 overflow-auto"
-              />
-            </div>
-            <div className="w-full mb-2">
-              <div className="gray-label">네거티브 프롬프트 </div>
-              <PromptHighlighter
-                text={uc}
-                className="w-full h-24 overflow-auto"
-              />
-            </div>
-            {characterPrompts.map((prompt, index) => (
-              <div
-                key={index}
-                className="w-full mb-4 border line-color rounded-md r-card p-3"
+        <div className="min-w-0 flex-1 flex items-baseline gap-2">
+          <h2
+            className="m-0 text-sm md:text-base font-semibold text-default sds-detail-title"
+            title={scene.name}
+            data-result-detail-scene
+          >
+            {resultSceneLabel(scene)} {scene.name}
+          </h2>
+          {currentFilename && (
+            <span
+              className="sds-detail-filename text-xs text-faint hidden sm:inline"
+              title={currentFilename}
+            >
+              {currentFilename}
+            </span>
+          )}
+          <span className="text-xs text-muted tabular-nums flex-none" data-detail-index="">
+            {selectedIndex + 1} / {paths.length}
+          </span>
+        </div>
+        {!v2 && (
+          <div className="flex-none flex items-center gap-1.5" data-detail-header-actions="">
+            <Tooltip content={isFav ? '즐겨찾기 해제' : '즐겨찾기 지정'}>
+              <button
+                type="button"
+                className={`round-button icon-only ${isFav ? 'back-orange toggle-on' : 'back-gray'}`}
+                aria-pressed={isFav}
+                aria-label={isFav ? '즐겨찾기 해제' : '즐겨찾기 지정'}
+                onClick={actToggleFavorite}
               >
-                <div className="gray-label">캐릭터 프롬프트 </div>
-                <PromptHighlighter
-                  text={prompt.prompt}
-                  className="w-full h-24 overflow-auto"
-                />
-                <div className="gray-label">네거티브 프롬프트 </div>
-                <PromptHighlighter
-                  text={prompt.uc}
-                  className="w-full h-24 overflow-auto"
-                />
-              </div>
-            ))}
-            <div className="w-full mb-2 text-sub">
-              <span className="gray-label">시드: </span>
-              {seed}
-            </div>
-            <div className="w-full mb-2 text-sub">
-              <span className="gray-label">프롬프트 가이던스: </span>
-              {scale}
-            </div>
-            <div className="w-full mb-2 text-sub">
-              <span className="gray-label">샘플러: </span>
-              {sampler}
-            </div>
-            <div className="w-full mb-2 text-sub">
-              <span className="gray-label">스텝: </span>
-              {steps}
-            </div>
-            </div>
-            <LinkedImageWorks session={session} scene={scene} path={viewedImagePath}/>
+                <ActionIcon id="favorite" size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content="이미지 복사">
+              <button
+                type="button"
+                className="round-button icon-only back-gray"
+                aria-label="이미지 복사"
+                onClick={actCopyImage}
+              >
+                <ActionIcon id="copy" size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content={isImageBm ? '북마크 해제' : '북마크'}>
+              <button
+                type="button"
+                className={`round-button icon-only ${isImageBm ? 'back-orange toggle-on' : 'back-gray'}`}
+                aria-pressed={isImageBm}
+                aria-label={isImageBm ? '북마크 해제' : '북마크'}
+                onClick={actToggleBookmark}
+              >
+                <ActionIcon id="bookmark" size={14} />
+              </button>
+            </Tooltip>
+            <span className="sds-detail-sep" aria-hidden="true" />
+            <Tooltip content="이전 이미지">
+              <button
+                type="button"
+                className="round-button icon-only back-gray"
+                aria-label="이전 이미지"
+                disabled={paths.length < 2}
+                onClick={() => stepImage(-1)}
+              >
+                <FaArrowLeft size={13} />
+              </button>
+            </Tooltip>
+            <Tooltip content="다음 이미지">
+              <button
+                type="button"
+                className="round-button icon-only back-gray"
+                aria-label="다음 이미지"
+                disabled={paths.length < 2}
+                onClick={() => stepImage(1)}
+              >
+                <FaArrowRight size={13} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
       </>
     );
 
-    // 모바일 V2 하단 6칸 줄(2026-09-26 사용자 결정): 다운로드·삭제·설정 불러오기·즐겨찾기·인페인트+더보기.
-    // 즐겨찾기·인페인트는 SceneQueueControl 이 넘기는 plugin 버튼(text 로 식별), 나머지 plugin 은 더보기로.
-    const favBtn = v2 ? viewButtons.find((b: any) => /즐겨찾기/.test(pluginLabel(b))) : undefined;
-    const inpaintBtn = v2 ? viewButtons.find((b: any) => /인페인/.test(pluginLabel(b))) : undefined;
-    const otherBtns = v2 ? viewButtons.filter((b: any) => b !== favBtn && b !== inpaintBtn) : [];
+    // 모바일 V2 하단 6칸 줄(2026-09-26 사용자 결정): 다운로드·삭제·설정 추출·즐겨찾기·인페인트+더보기.
     const detailSlots: V2SlotDef[] = v2
       ? [
-          { key: 'download', name: '다운로드', icon: <ActionIcon id="download" />, onTap: () => void actDownloadFile() },
+          { key: 'download', name: '다운로드', icon: <ActionIcon id="download" />, onTap: () => void actDownloadSingle() },
           { key: 'delete', name: '삭제', icon: <ActionIcon id="delete" />, tone: 'danger', onTap: actDeleteFile },
           { key: 'settings', name: '설정 추출', icon: <ActionIcon id="gen-settings" />, onTap: actLoadSettings, disabled: !image },
           {
             key: 'fav',
             name: '즐겨찾기',
             icon: <ActionIcon id="favorite" />,
-            tone: favBtn && /해제/.test(pluginLabel(favBtn)) ? 'accent' : 'default',
-            onTap: () => favBtn && runPlugin(favBtn),
-            disabled: !favBtn,
+            tone: isFav ? 'accent' : 'default',
+            onTap: actToggleFavorite,
+            disabled: !currentFilename,
           },
           {
             key: 'inpaint',
             name: '인페인트',
             icon: <ActionIcon id="inpaint" />,
-            onTap: () => inpaintBtn && runPlugin(inpaintBtn),
-            disabled: !inpaintBtn,
+            onTap: () => void editVariant('SDInpaint'),
+            disabled: variantBusy,
           },
           { key: 'more', name: '더보기', icon: <ActionIcon id="more" />, onTap: () => setV2More((v) => !v), expanded: v2More },
         ]
@@ -1719,12 +1770,21 @@ export const ResultDetailView = observer(
             id: 'upscale',
             label: '업스케일',
             node: (
-              <button className="round-button back-sky" title={upscaleTitle} disabled={upscaleDisabled} onClick={actUpscale}>
+              <button className="round-button back-sky" title={upscaleTitle} disabled={upscaleDisabled} onClick={() => void actUpscale()}>
                 <FaSearchPlus />
               </button>
             ),
           },
-          ...otherBtns.map((b: any, i: number) => ({
+          {
+            id: 'variant',
+            label: '이미지 변형',
+            node: (
+              <button className="round-button back-green" onClick={() => { setV2More(false); setVariantChoices(true); }} aria-label="이미지 변형">
+                <FaExchangeAlt />
+              </button>
+            ),
+          },
+          ...extraButtons.map((b, i) => ({
             id: `plugin-${i}`,
             label: pluginLabel(b),
             node: (
@@ -1736,273 +1796,340 @@ export const ResultDetailView = observer(
         ]
       : [];
 
-    return (
-      <div className="sds-image-detail z-10 bg-[var(--c-surface)] w-full h-full flex min-h-0 flex-col">
-        <div className="sds-detail-heading flex items-center gap-2 flex-none border-b line-color px-3 py-2 md:px-4">
-          <h2 className="m-0 text-base font-semibold text-default sds-detail-title" title={scene.name} data-result-detail-scene>
-            {resultSceneLabel(scene)} {scene.name}
-          </h2>
-
-        </div>
-        <div className="relative min-h-0 flex flex-1 flex-col overflow-auto md:flex-row">
-        {!v2 && (
-        <div className="sds-detail-info flex-none md:w-1/3 p-2 md:p-4 overflow-y-auto">
-          <div className="sds-detail-actions flex gap-2 md:gap-3 mb-2 md:mb-6 flex-wrap w-full">
-            {!isMobile && (
-              <button
-                className={`round-button back-green`}
-                onClick={async () => {
-                  // 다운로드 다이얼로그 열기
-                  await imageDownloadService.downloadSingleImage(
-                    session,
-                    scene,
-                    paths[selectedIndex],
-                    appliedCharacterPreset,
-                  );
-                }}
-              >
-                <FaDownload className="mr-1" />
-                다운로드
-              </button>
-            )}
-            <button
-              className={`round-button back-sky`}
-              onClick={actDownloadFile}
-            >
-              {!isMobile ? '파일 위치 열기' : '파일 다운로드'}
-            </button>
-            {!isMobile && (
-              <button
-                className={`round-button back-sky`}
-                onClick={async () => {
-                  const imagePath = paths[selectedIndex];
-                  try {
-                    await backend.openImageEditor(imagePath);
-                    await backend.watchImage(imagePath);
-                    watchedImages.current.add(imagePath);
-                  } catch {
-                    appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
-                  }
-                }}
-              >
-                이미지 편집
-              </button>
-            )}
-            {!isMobile && (
-              <button
-                className="round-button back-gray"
-                disabled={restoringMetadata || !paths[selectedIndex]}
-                onClick={restoreEditedMetadata}
-              >
-                {restoringMetadata ? '생성 정보 복원 중…' : '편집본에 생성 정보 복원'}
-              </button>
-            )}
-            <button
-              className={`round-button back-red`}
-              onClick={actDeleteFile}
-            >
-              파일 삭제
-            </button>
-            <button
-              className={`round-button ${isImageBm ? 'back-orange' : 'back-gray'}`}
-              onClick={actToggleBookmark}
-            >
-              <ActionIcon id="bookmark" className="mr-1" />
-              {isImageBm ? '북마크 해제' : '북마크'}
-            </button>
-            <button
-              className={`round-button back-sky`}
-              onClick={actCopyImage}
-            >
-              <ActionIcon id="copy" className="mr-1" />
-              이미지 복사
-            </button>
-            <button
-              className="round-button back-sky"
-              onClick={actLoadSettings}
-            >
-              생성 설정 적용
-            </button>
-            <button
-              className="round-button back-sky"
-              title={upscaleTitle}
-              disabled={upscaleDisabled}
-              onClick={actUpscale}
-            >
-              {upscaleLabel}
-            </button>
-            {viewButtons.map((button, index) => (
-              <button
-                key={index}
-                className={`round-button ${button.className}`}
-                onClick={() => {
-                  button.onClick(scene, paths[selectedIndex], onClose);
-                }}
-              >
-                {button.text instanceof Function
-                  ? button.text(paths[selectedIndex])
-                  : button.text}
-              </button>
-            ))}
-          </div>
-          <button
-            className={`round-button back-gray md:hidden`}
-            onClick={() => setShowPrompt(!showPrompt)}
-          >
-            {!showPrompt ? '자세한 정보 보기' : '자세한 정보 숨기기'}
-          </button>
-          <div
-            className={
-              'mt-2 md:mt-0 md:block ' + (showPrompt ? 'block' : 'hidden')
-            }
-          >
-            {infoFields}
-          </div>
-        </div>
-        )}
-        <div
-          className={v2 ? 'sds-detail-image flex-1 overflow-auto relative min-h-0' : 'sds-detail-image flex-1 overflow-auto'}
-          // 좌우 스와이프로 이미지를 넘기는 영역 — 가장자리 드로어 스와이프에 양보받는다(edgeSwipe.ts).
-          data-edge-swipe-ignore=""
-          onTouchStart={(e) => {
-            if (e.touches.length !== 1) {
-              touchStart.current = null;
-              return;
-            }
-            touchStart.current = {
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY,
-            };
-          }}
-          onTouchEnd={(e) => {
-            const start = touchStart.current;
+    const imageStage = (
+      <div
+        className={
+          v2
+            ? 'sds-detail-image flex-1 overflow-auto relative min-h-0'
+            : 'sds-detail-image flex-1 min-w-0 h-full relative bg-[var(--c-canvas)] p-2 md:p-4'
+        }
+        // 좌우 스와이프로 이미지를 넘기는 영역 — 가장자리 드로어 스와이프에 양보받는다(edgeSwipe.ts).
+        data-edge-swipe-ignore=""
+        onTouchStart={(e) => {
+          if (e.touches.length !== 1) {
             touchStart.current = null;
-            if (!start || paths.length < 2) return;
-            const t = e.changedTouches[0];
-            const dx = t.clientX - start.x;
-            const dy = t.clientY - start.y;
-            // 명확한 가로 스와이프만 처리(세로 스크롤/핀치와 충돌 방지):
-            // 이동 50px 이상 + 가로가 세로보다 우세할 때.
-            if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-            if (dx < 0) {
-              setSelectedIndex((selectedIndex + 1) % paths.length);
-            } else {
-              setSelectedIndex(
-                (selectedIndex - 1 + paths.length) % paths.length,
-              );
-            }
-          }}
-        >
-          {image ? (
-            <img
-              src={image}
-              draggable={false}
-              onContextMenu={(e) => {
-                show({
-                  event: e,
-                  props: {
-                    ctx: historyEntry ? {
-                      type: 'history_image',
-                      entry: {
-                        ...historyEntry,
-                        id: paths[selectedIndex],
-                        filename: currentFilename!,
-                        path: paths[selectedIndex],
-                      },
-                    } : {
-                      type: 'image',
+            return;
+          }
+          touchStart.current = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+          };
+        }}
+        onTouchEnd={(e) => {
+          const start = touchStart.current;
+          touchStart.current = null;
+          if (!start || paths.length < 2) return;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - start.x;
+          const dy = t.clientY - start.y;
+          // 명확한 가로 스와이프만 처리(세로 스크롤/핀치와 충돌 방지):
+          // 이동 50px 이상 + 가로가 세로보다 우세할 때.
+          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+          stepImage(dx < 0 ? 1 : -1);
+        }}
+      >
+        {image ? (
+          <img
+            src={image}
+            draggable={false}
+            onContextMenu={(e) => {
+              show({
+                event: e,
+                props: {
+                  ctx: historyEntry ? {
+                    type: 'history_image',
+                    entry: {
+                      ...historyEntry,
+                      id: paths[selectedIndex],
+                      filename: currentFilename!,
                       path: paths[selectedIndex],
-                      scene: scene,
-                      starable: true,
                     },
+                  } : {
+                    type: 'image',
+                    path: paths[selectedIndex],
+                    scene: scene,
+                    starable: true,
                   },
-                });
-              }}
-              className="w-full h-full object-contain bg-checkboard"
-            />
-          ) : imageLoadFailed ? (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted">
-              <span>이미지를 불러오지 못했습니다.</span>
-              <button
-                className="round-button back-sky"
-                onClick={async () => {
-                  const path = paths[selectedIndex];
-                  if (path) {
-                    await imageService.invalidateCache(path).catch(() => {});
-                  }
-                  await imageService.refresh(session, scene).catch(() => {});
-                  setImageRetryRevision((v) => v + 1);
-                }}
-              >
-                다시 시도
-              </button>
-            </div>
-          ) : (
-            // 이미지 전환/로딩 중 빈 화면 깜빡임 대신 로딩 표시(부팅 스피너와 동일 스타일).
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="w-8 h-8 rounded-full border-2 border-[color:var(--c-line)] border-t-sky-500 animate-spin" />
-            </div>
-          )}
-          <div className={'absolute bottom-0 md:bottom-auto right-0 md:top-10 flex gap-3 p-4 w-full md:w-auto' + (v2 ? ' opacity-60' : '')}>
+                },
+              });
+            }}
+            className="object-contain bg-checkboard"
+          />
+        ) : imageLoadFailed ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted">
+            <span>이미지를 불러오지 못했습니다.</span>
             <button
-              className={`round-button icon-only  ml-0 md:ml-auto h-10 md:h-8 w-20 md:w-auto bg-[var(--c-input-bg)] text-body mr-auto md:mr-0 text-xl md:text-base`}
-              onClick={() => {
-                setSelectedIndex(
-                  (selectedIndex - 1 + paths.length) % paths.length,
-                );
+              className="round-button back-sky"
+              onClick={async () => {
+                const path = paths[selectedIndex];
+                if (path) {
+                  await imageService.invalidateCache(path).catch(() => {});
+                }
+                await imageService.refresh(session, scene).catch(() => {});
+                setImageRetryRevision((v) => v + 1);
               }}
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : (
+          // 이미지 전환/로딩 중 빈 화면 깜빡임 대신 로딩 표시(부팅 스피너와 동일 스타일).
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-2 border-[color:var(--c-line)] border-t-sky-500 animate-spin" />
+          </div>
+        )}
+        {v2 && (
+          <div className="absolute bottom-0 right-0 flex gap-3 p-4 w-full opacity-60">
+            <button
+              className="round-button icon-only ml-0 h-10 w-20 bg-[var(--c-input-bg)] text-body mr-auto text-xl"
+              onClick={() => stepImage(-1)}
               aria-label="이전 이미지"
             >
               <FaArrowLeft />
             </button>
             <button
-              className={`round-button icon-only h-10 md:h-8 w-20 md:w-auto bg-[var(--c-input-bg)] text-xl text-body md:text-base`}
-              onClick={() => {
-                setSelectedIndex((selectedIndex + 1) % paths.length);
-              }}
+              className="round-button icon-only h-10 w-20 bg-[var(--c-input-bg)] text-xl text-body"
+              onClick={() => stepImage(1)}
               aria-label="다음 이미지"
             >
               <FaArrowRight />
             </button>
           </div>
-        </div>
-        {v2 && (
-          <>
-            {/* 자세한 정보 = 이미지 아래 손잡이(프롬프트 시트와 같은 언어). 탭하면 아래로 정보가 펼쳐지고 이미지가 줄어든다. */}
-            <div
-              role="button"
-              aria-label={showPrompt ? '자세한 정보 접기' : '자세한 정보 펼치기'}
-              aria-expanded={showPrompt}
-              data-v2-detail-info-handle=""
-              // 되돌리기 버튼 바(UndoRedoBar) 호스트(설계 E, 2026-11-04): 펼친 동안만 — 바가 아래 메인 줄 대신 이 손잡이 위
-              // 모서리 바깥에 붙어 펼친 정보를 덮지 않는다. 접히면 표식·자리가 빠져 메인 줄로 돌아간다.
-              {...(showPrompt ? { [UNDO_ANCHOR_ATTR]: '' } : null)}
-              className="relative flex-none select-none cursor-pointer px-3 pt-1.5 border-t line-color bg-[var(--c-zone)]"
-              style={{ height: V2_SHEET_PEEK_PX }}
-              onClick={() => setShowPrompt(!showPrompt)}
-            >
-              {showPrompt && <UndoBarSlot tone="sheet" />}
-              <div className="mx-auto mb-1.5 h-1 w-9 rounded-full bg-[var(--c-line)]" />
-              <div className="flex items-center justify-center gap-1.5 text-[12px] text-sub">
-                <span>자세한 정보</span>
-                <FaChevronUp
-                  size={10}
-                  className="flex-none text-faint transition-transform duration-200"
-                  style={{ transform: showPrompt ? 'rotate(180deg)' : undefined }}
-                />
-              </div>
-            </div>
-            {showPrompt && (
-              <div data-v2-detail-info="" className="flex-none overflow-auto px-3 py-2 bg-[var(--c-zone)] text-sm" style={{ maxHeight: '45%' }}>
-                {infoFields}
-              </div>
-            )}
-            <div className="relative flex-none" data-v2-detail-bar="">
-              <V2TierRows open={v2More} onClose={() => setV2More(false)} items={detailTier} perRow={6} />
-              <V2MainRow slots={detailSlots} />
-            </div>
-          </>
         )}
+      </div>
+    );
+
+    return (
+      <div className="sds-image-detail z-10 bg-[var(--c-surface)] w-full h-full flex min-h-0 flex-col">
+        {editingWork && (
+          <FloatView priority={3} onEscape={() => setEditingWork(null)}>
+            <InPaintEditor
+              editingScene={editingWork}
+              onConfirm={() => setEditingWork(null)}
+              onDelete={() => setEditingWork(null)}
+            />
+          </FloatView>
+        )}
+        <ImageVariantChoices
+          isOpen={variantChoices}
+          path={viewedImagePath}
+          busy={variantBusy}
+          upscale={{
+            label: upscaleLabel,
+            title: upscaleTitle,
+            disabled: upscaleDisabled,
+            onRun: () => {
+              void actUpscale().then((ok) => {
+                if (ok) setVariantChoices(false);
+              });
+            },
+          }}
+          onWork={editVariant}
+          onQuick={quickVariant}
+          onClose={() => setVariantChoices(false)}
+        />
+        {headerSlotEl ? (
+          createPortal(
+            <div className="sds-detail-header-portal" data-detail-header="">
+              {headerContent}
+            </div>,
+            headerSlotEl,
+          )
+        ) : (
+          <div
+            className="sds-detail-heading flex items-center gap-2 flex-none border-b line-color px-3 md:px-4"
+            data-detail-header=""
+          >
+            {headerContent}
+          </div>
+        )}
+        {!v2 && (
+          <nav
+            className="sds-detail-action-bar flex-none border-b line-color bg-[var(--c-surface)]"
+            aria-label="이미지 작업"
+            data-detail-buttons=""
+          >
+            <div className="sds-detail-action-group" data-detail-button-group="use">
+              <button
+                type="button"
+                className="round-button back-green"
+                aria-haspopup="dialog"
+                aria-expanded={variantChoices}
+                onClick={() => setVariantChoices(true)}
+              >
+                <FaExchangeAlt size={13} />
+                이미지 변형
+              </button>
+              <button
+                type="button"
+                className="round-button back-sky"
+                disabled={!image}
+                onClick={actLoadSettings}
+              >
+                <ActionIcon id="gen-settings" size={13} />
+                생성 설정 적용
+              </button>
+              {extraButtons.map((button, index) => (
+                <button
+                  key={button.id ?? index}
+                  type="button"
+                  className={`round-button ${button.className}`}
+                  onClick={() => runPlugin(button)}
+                >
+                  {pluginLabel(button)}
+                </button>
+              ))}
+            </div>
+            <span className="sds-detail-sep" aria-hidden="true" />
+            <div className="sds-detail-action-group" data-detail-button-group="file">
+              <button
+                type="button"
+                className="round-button back-gray"
+                onClick={() => void actDownloadSingle()}
+              >
+                <ActionIcon id="download" size={13} />
+                다운로드
+              </button>
+              {!isMobile && (
+                <button
+                  type="button"
+                  className="round-button back-gray"
+                  onClick={() => void actRevealFile()}
+                >
+                  <FaFolderOpen size={13} />
+                  파일 위치 열기
+                </button>
+              )}
+              {!isMobile && (
+                <button
+                  type="button"
+                  className="round-button back-gray"
+                  onClick={() => void actEditExternal()}
+                >
+                  <ActionIcon id="edit" size={13} />
+                  이미지 편집
+                </button>
+              )}
+            </div>
+            <div className="sds-detail-action-group ml-auto" data-detail-button-group="danger">
+              <button
+                type="button"
+                className="round-button back-red"
+                onClick={actDeleteFile}
+              >
+                <ActionIcon id="delete" size={13} />
+                삭제
+              </button>
+            </div>
+          </nav>
+        )}
+        <div
+          ref={setBodyEl}
+          className={
+            wideLayout
+              ? 'relative min-h-0 flex flex-1 flex-row overflow-hidden'
+              : 'relative min-h-0 flex flex-1 flex-col overflow-auto'
+          }
+        >
+          {wideLayout ? (
+            <>
+              <div
+                className="sds-detail-info flex-none min-w-0 flex flex-col border-r line-color"
+                style={{ width: wideCols.prompt }}
+                data-detail-info-pane=""
+              >
+                <div className="sds-detail-pane-head flex-none border-b line-color" data-detail-info-head="">
+                  <button
+                    type="button"
+                    data-detail-info-toggle=""
+                    className={`round-button ${showPrompt ? 'back-sky toggle-on' : 'back-gray'}`}
+                    aria-pressed={showPrompt}
+                    aria-label={IMAGE_DETAIL_INFO_TEXT.wideToggle}
+                    title={IMAGE_DETAIL_INFO_TEXT.wideToggle}
+                    onClick={() => setShowPrompt(!showPrompt)}
+                  >
+                    <FaInfoCircle size={13} />
+                    {IMAGE_DETAIL_INFO_TEXT.wideToggle}
+                    {showPrompt ? <FaChevronLeft size={10} /> : <FaChevronRight size={10} />}
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4 pt-3">
+                  {renderInfo(wideCols.merged ? 'all' : 'prompt')}
+                  <LinkedImageWorks session={session} scene={scene} path={viewedImagePath} />
+                </div>
+              </div>
+              {wideCols.side > 0 && (
+                <div
+                  className="sds-detail-info flex-none min-w-0 overflow-y-auto px-3.5 pb-4 pt-3 border-r line-color"
+                  style={{ width: wideCols.side }}
+                  data-detail-side-pane=""
+                >
+                  {renderInfo('detail')}
+                </div>
+              )}
+              {imageStage}
+            </>
+          ) : (
+            <>
+              {!v2 && (
+                <div className="sds-detail-info flex-none p-2 border-b line-color">
+                  <button
+                    type="button"
+                    className="round-button back-gray"
+                    aria-expanded={showPrompt}
+                    onClick={() => setShowPrompt(!showPrompt)}
+                  >
+                    {!showPrompt ? '자세한 정보 보기' : '자세한 정보 숨기기'}
+                  </button>
+                  {showPrompt && (
+                    <div className="mt-2">
+                      {renderInfo('all')}
+                      <LinkedImageWorks session={session} scene={scene} path={viewedImagePath} />
+                    </div>
+                  )}
+                </div>
+              )}
+              {imageStage}
+            </>
+          )}
+          {v2 && (
+            <>
+              {/* 자세한 정보 = 이미지 아래 손잡이(프롬프트 시트와 같은 언어). 탭하면 아래로 정보가 펼쳐지고 이미지가 줄어든다. */}
+              <div
+                role="button"
+                aria-label={showPrompt ? '자세한 정보 접기' : '자세한 정보 펼치기'}
+                aria-expanded={showPrompt}
+                data-v2-detail-info-handle=""
+                // 되돌리기 버튼 바(UndoRedoBar) 호스트(설계 E, 2026-11-04): 펼친 동안만 — 바가 아래 메인 줄 대신 이 손잡이 위
+                // 모서리 바깥에 붙어 펼친 정보를 덮지 않는다. 접히면 표식·자리가 빠져 메인 줄로 돌아간다.
+                {...(showPrompt ? { [UNDO_ANCHOR_ATTR]: '' } : null)}
+                className="relative flex-none select-none cursor-pointer px-3 pt-1.5 border-t line-color bg-[var(--c-zone)]"
+                style={{ height: V2_SHEET_PEEK_PX }}
+                onClick={() => setShowPrompt(!showPrompt)}
+              >
+                {showPrompt && <UndoBarSlot tone="sheet" />}
+                <div className="mx-auto mb-1.5 h-1 w-9 rounded-full bg-[var(--c-line)]" />
+                <div className="flex items-center justify-center gap-1.5 text-[12px] text-sub">
+                  <span>자세한 정보</span>
+                  <FaChevronUp
+                    size={10}
+                    className="flex-none text-faint transition-transform duration-200"
+                    style={{ transform: showPrompt ? 'rotate(180deg)' : undefined }}
+                  />
+                </div>
+              </div>
+              {showPrompt && (
+                <div data-v2-detail-info="" className="flex-none overflow-auto px-3 py-2 bg-[var(--c-zone)] text-sm" style={{ maxHeight: '45%' }}>
+                  {renderInfo('all')}
+                  <LinkedImageWorks session={session} scene={scene} path={viewedImagePath} />
+                </div>
+              )}
+              <div className="relative flex-none" data-v2-detail-bar="">
+                <V2TierRows open={v2More} onClose={() => setV2More(false)} items={detailTier} perRow={6} />
+                <V2MainRow slots={detailSlots} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -3204,6 +3331,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
               priority={1}
               // 이미지 상세 — 전역 되돌리기 단축키 허용(D9, 바깥 이미지 그리드 창도 허용이라 함께 통과)
               allowUndo
+              headerSlot
               onEscape={() => setSelectedImageIndex(undefined)}
             >
               <ResultDetailView
@@ -3262,7 +3390,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
             </FloatView>
           )}
           {variantResult && getScenePaths(variantResult.scene).includes(variantResult.path) && (
-            <FloatView priority={1} allowUndo onEscape={() => setVariantResult(undefined)}>
+            <FloatView priority={1} allowUndo headerSlot onEscape={() => setVariantResult(undefined)}>
               <ResultDetailView
                 key={variantResult.path}
                 buttons={[]}
@@ -3373,7 +3501,7 @@ const LinkedImageWorks=observer(function LinkedImageWorks({session,scene,path}:{
       </button>)}</div>:<p className="text-faint">아직 생성된 결과가 없습니다.</p>}</article>;
     })}
     {editing&&<FloatView priority={3} onEscape={()=>setEditing(null)}><InPaintEditor editingScene={editing} onConfirm={()=>setEditing(null)} onDelete={()=>setEditing(null)}/></FloatView>}
-    {result&&<FloatView priority={2} allowUndo onEscape={()=>setResult(null)}><ResultDetailView scene={result.work} session={session} buttons={[]}
+    {result&&<FloatView priority={2} allowUndo headerSlot onEscape={()=>setResult(null)}><ResultDetailView scene={result.work} session={session} buttons={[]}
       getPaths={()=>gameService.getOutputs(session,result.work).map(name=>imageService.getOutputDir(session,result.work)+'/'+name)}
       initialSelectedIndex={gameService.getOutputs(session,result.work).indexOf(result.file.split('/').pop()!)} onClose={()=>setResult(null)}/></FloatView>}
   </section>;

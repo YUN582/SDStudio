@@ -2,14 +2,17 @@
 
 Codex/GPT-assisted integration, 2026-11-25. Human-readable decisions: [Korean overview](UPSTREAM_5_8_INTEGRATION.ko.md). Machine-readable validation: [results](UPSTREAM_5_8_VALIDATION.json).
 
-## Follow-up review draft
+## Follow-up review and approved viewer implementation
 
-Gemini review confirmed actual merge regressions, not only source-test mismatches. Follow-up fixes are recorded separately from the viewer redesign. The user approved the prototype before production UI implementation; installation must follow verification and an installation backup.
+Gemini review confirmed actual merge regressions, not only source-test mismatches. Follow-up menu/overlay fixes and preset-editor watcher ordering are recorded separately from the viewer redesign. The user approved Gemini's prototype before Gemini implemented the production UI. Codex reviewed integration, tested it, preserved runtime dependencies and local Drive configuration, backed up the installed archive, installed the verified package and relaunched it.
 
 - Consolidate duplicate image edit, metadata/settings and history global-preset entries. Wire visible edit/metadata actions to actual handlers. History supplies scene context only for the current project.
 - Render `FloatViewPane`, propagate `headerSlot` updates, and retain per-pane `FloatViewActiveContext` so only the top overlay accepts its keyboard actions.
 - Portal `SceneQueueMenu` into the nearest theme root. Start image watching only after external editor launch succeeds.
-- Focused regression run: 4 suites, 47 tests passed. Covers rendered menus and click handlers, failed editor launch, foreign-project history, header portals, nested active panes and queue popup placement. TypeScript check passed again after adding these tests.
+- The viewer uses `ImageDetailInfo`, `buildImageDetailInfo`, `detailWideColumns` and the persisted `imageDetailInfoOpen`. Header icons retain actual image owners; transform choices use `ModalOverlay` and include all registered workflows, quick variants and the real upscale cost. Metadata restoration remains in the backend; only its viewer button was removed. History and nested result callers enable the same header slot. V2 callbacks remain explicit.
+- Rendered behavior coverage: 5 suites / 62 tests passed, including 15 new detail-view tests for owners, modal key isolation, V2 actions, stale image/metadata requests, cache invalidation, retry and unsupported-upscale pixel dimensions. TypeScript check and production builds passed.
+- Related full subset: 9 suites / 96 passed / 21 failed. Legacy assertions about source identifiers, exact JSX/CSS placement, duplicated menu entries and the old upscale button remain visible; they were not rewritten to claim a green suite. See [follow-up results](VIEWER_UI_VALIDATION_20261125.json) for exact failing names.
+- Isolated Windows runtime: synthetic project only, network requests blocked. Verified favorite/bookmark toggles, all four editable transform workflows, live upscale cost, modal Escape/background-key isolation, one-step image navigation, nested viewer activation, selectable metadata and invariant header/toolbar/image-area heights. No paid generation request was sent. Android/iOS runtime and new paid generation outputs were not exercised.
 
 The original full-run inventory below remains historical evidence. These focused fixes do not establish that all 126 failed tests are resolved. Unwired upstream viewer details, retained fork interactions and brittle source assertions need separate review.
 
