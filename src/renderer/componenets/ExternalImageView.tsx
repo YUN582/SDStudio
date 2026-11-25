@@ -69,6 +69,7 @@ interface ExternalImageViewProps {
 export const ExternalImageView = observer(
   ({ image, onClose, scene }: ExternalImageViewProps) => {
     const [job, setJob] = useState<ImportableMetadata | undefined>(undefined);
+    const [metadataState, setMetadataState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
     const [target, setTarget] = useState<string>('new-normal');
     const [importing, setImporting] = useState(false);
     const [options, setOptions] = useState<ImportOptions>({
@@ -92,21 +93,30 @@ export const ExternalImageView = observer(
     }, [target, scene]);
 
     useEffect(() => {
-      (async () => {
-        if (!image) return;
-        const newJob = await extractPromptDataFromBase64(image);
-        if (!newJob) return;
-        newJob.prompt = newJob.prompt ?? '';
-        newJob.uc = newJob.uc ?? '';
-        newJob.characterPrompts = newJob.characterPrompts ?? [];
-        setJob(newJob);
-        setOptions((prev) => ({
-          ...prev,
-          characters: (newJob.characterPrompts?.length ?? 0) > 0,
-          vibes: (newJob.vibes?.length ?? 0) > 0,
-          resolution: !!newJob.resolution,
-        }));
+      let active = true;
+      setJob(undefined);
+      setMetadataState('loading');
+      void (async () => {
+        try {
+          const newJob = image ? await extractPromptDataFromBase64(image) : undefined;
+          if (!active) return;
+          if (!newJob) { setMetadataState('empty'); return; }
+          newJob.prompt = newJob.prompt ?? '';
+          newJob.uc = newJob.uc ?? '';
+          newJob.characterPrompts = newJob.characterPrompts ?? [];
+          setJob(newJob);
+          setMetadataState('ready');
+          setOptions((prev) => ({
+            ...prev,
+            characters: (newJob.characterPrompts?.length ?? 0) > 0,
+            vibes: (newJob.vibes?.length ?? 0) > 0,
+            resolution: !!newJob.resolution,
+          }));
+        } catch {
+          if (active) setMetadataState('error');
+        }
       })();
+      return () => { active = false; };
     }, [image]);
 
     const setOpt = (key: keyof ImportOptions, value: boolean) => {
@@ -469,7 +479,9 @@ export const ExternalImageView = observer(
         </button>}>
         <div className="h-full min-h-0 flex flex-col md:flex-row overflow-hidden" data-metadata-import="">
           <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-5" data-metadata-preview="" data-selectable-text tabIndex={0}>
-            {!job && <div className="text-muted text-sm py-8 text-center">메타데이터를 추출하는 중...</div>}
+            {metadataState === 'loading' && <div role="status" className="text-muted text-sm py-8 text-center">메타데이터를 추출하는 중...</div>}
+            {metadataState === 'empty' && <div role="status" className="text-muted text-sm py-8 text-center">이 이미지에는 불러올 생성 정보가 없습니다.</div>}
+            {metadataState === 'error' && <div role="alert" className="text-muted text-sm py-8 text-center">이미지의 생성 정보를 읽지 못했습니다. 이미지를 다시 열어 주세요.</div>}
             {job && <>
                   {job.naiDiagnostics && (
                     <div className="mb-4 rounded-lg border line-color p-3 bg-[var(--c-surface)]">

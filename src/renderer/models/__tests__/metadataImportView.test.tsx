@@ -138,3 +138,30 @@ test('section masks preserve source text and handle folded destinations and sele
     .toEqual({ split: true, backPrompt: '' });
   expect(source.frontPrompt).toBe('new front');expect(source.middlePrompt).toBe('new middle');
 });
+
+test('finishes loading when the image has no generation metadata', async () => {
+  extract.mockResolvedValue(undefined);
+  render(<ExternalImageView image="plain-image" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  expect(screen.queryByText('메타데이터를 추출하는 중...')).toBeNull();
+  expect((screen.getByRole('button', { name: '적용' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('ignores late metadata from the previous image', async () => {
+  let finishOld!: (value: any) => void;
+  extract.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  const view = render(<ExternalImageView image="old-image" onClose={close} />);
+  extract.mockResolvedValueOnce(undefined);
+  view.rerender(<ExternalImageView image="new-image" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  finishOld({ prompt: 'stale prompt', uc: '', characterPrompts: [] });
+  await waitFor(() => expect(screen.queryByText('stale prompt')).toBeNull());
+  expect(screen.queryByLabelText('적용할 프리셋')).toBeNull();
+});
+
+test('shows a terminal failure instead of an endless loading message', async () => {
+  extract.mockRejectedValue(new Error('broken image'));
+  render(<ExternalImageView image="broken-image" onClose={close} />);
+  await screen.findByRole('alert');
+  expect(screen.queryByText('메타데이터를 추출하는 중...')).toBeNull();
+});
