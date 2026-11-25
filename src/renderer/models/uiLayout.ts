@@ -36,7 +36,10 @@ export interface ToolbarButtonMeta {
   // (overflow 버튼에 group 이 있어도 기본은 ⋯ 메뉴 그대로, 사용자가 툴바로 꺼낼 때만 그룹에 들어간다).
   // 'other' 는 레지스트리에 직접 적지 않는다 — group 이 없으면 저절로 「기타」.
   group?: Exclude<ToolbarButtonGroup, 'other'>;
-  // PC 프로젝트 바 영역(2026-11-10 아이콘 직관화 묶음 1-b, 「영역 바닥 선」). 프로젝트 바 인라인 버튼 아래 옅은 색 선의
+  // PC 씬 툴바 아이콘 아래 작은 이름(2026-11-18 버튼 이름 표시). 없으면 label 을 쓴다(sceneToolbarLabelOf) —
+  // label 이 프로젝트 바용으로 너무 긴 버튼(프롬프트조각 → 「조각」)과 label 이 없는 씬 버튼만 적는다.
+  // 둘 다 없는 버튼(글자형 WebP 변환)은 이름을 달지 않는다. 툴팁은 계속 name.
+  sceneLabel?: string;
 }
 
 
@@ -62,26 +65,26 @@ export const TOOLBAR_GROUP_OTHER_HINT = `더보기에서 꺼낸 버튼 중 그�
 
 // 씬 툴바 (이미지생성/이미지변형 탭 상단) — SceneQueueControl.tsx 가 사용
 export const sceneToolbarRegistry: ToolbarButtonMeta[] = [
-  { id: 'add-scene', name: '씬 추가', tier: 'primary', group: 'create' },
-  { id: 'queue-add', name: '예약 추가', tier: 'primary', group: 'create' },
-  { id: 'export-images', name: '이미지 내보내기', tier: 'secondary', group: 'export' },
-  { id: 'quick-export', name: '빠른 내보내기', tier: 'primary', group: 'export' },
-  { id: 'batch-process', name: '대량 작업', tier: 'primary', group: 'create' },
-  { id: 'multi-select', name: '다중 선택', tier: 'primary', group: 'navigate' },
-  { id: 'change-resolution', name: '해상도 변경', tier: 'secondary', group: 'edit' },
+  { id: 'add-scene', name: '씬 추가', sceneLabel: '씬 추가', tier: 'primary', group: 'create' },
+  { id: 'queue-add', name: '예약 추가', sceneLabel: '예약', tier: 'primary', group: 'create' },
+  { id: 'export-images', name: '이미지 내보내기', sceneLabel: '내보내기', tier: 'secondary', group: 'export' },
+  { id: 'quick-export', name: '빠른 내보내기', sceneLabel: '빠른 내보내기', tier: 'primary', group: 'export' },
+  { id: 'batch-process', name: '대량 작업', sceneLabel: '대량 작업', tier: 'primary', group: 'create' },
+  { id: 'multi-select', name: '다중 선택', sceneLabel: '선택', tier: 'primary', group: 'navigate' },
+  { id: 'change-resolution', name: '해상도 변경', sceneLabel: '해상도', tier: 'secondary', group: 'edit' },
   // pcOnly 해제(2026-07-18): 모바일도 wasm libwebp 로 일괄 변환 지원(경고+취소 포함)
   // 그룹 없음(T5): 프로젝트 안 이미지를 바꾸는 저장 작업이라 「내보내기(앱→파일)」·「편집 도구」 어느 쪽에도 맞지 않는다.
   { id: 'webp-convert', name: 'WebP 변환', tier: 'overflow' },
   // 모바일 실사용 빈도가 높아 모바일만 인라인 (PC 는 기존대로 ⋯ 메뉴)
-  { id: 'import-image', name: '이미지 프롬프트 추출', tier: 'mobile-primary', v2Label: '프롬프트 추출', group: 'edit' },
+  { id: 'import-image', name: '이미지 프롬프트 추출', sceneLabel: '추출', tier: 'mobile-primary', v2Label: '프롬프트 추출', group: 'edit' },
   // B군 승격(퀵 메뉴 P2, 2026-07-18): 로컬 모달 → appState 전역 오버레이 — portable 전환
   { id: 'artist-tag', name: '아티스트 태깅', label: '작가 태깅', pcOnly: true, tier: 'overflow', portable: true, group: 'edit' },
   { id: 'scene-find', name: '씬 찾기', tier: 'overflow', group: 'navigate' },
   { id: 'image-review', name: '이미지 검수', tier: 'overflow', group: 'navigate' },
   { id: 'artist-breakdown', name: '작가 분해', tier: 'overflow', group: 'edit' },
   // 작가 태그 artist: 접두 전환(2026-09-26, 공통) — 긍정 프롬프트 칸 전체, 구획마다 있으면 떼고 없는 작가엔 붙임. SPEC_GUIDE 「작가 태그 접두 계약」
-  { id: 'artist-prefix-toggle', name: '작가 접두 전환', tier: 'overflow', v2Label: '접두 전환', group: 'edit' },
-  { id: 'bookmark-jump', name: '북마크된 씬으로 이동', tier: 'secondary', v2Label: '북마크 이동', group: 'navigate' },
+  { id: 'artist-prefix-toggle', name: '작가 접두 전환', sceneLabel: '접두 전환', tier: 'overflow', v2Label: '접두 전환', group: 'edit' },
+  { id: 'bookmark-jump', name: '북마크된 씬으로 이동', sceneLabel: '북마크', tier: 'secondary', v2Label: '북마크 이동', group: 'navigate' },
   // B군 승격(퀵 메뉴 P2, 2026-07-18): 로컬 모달 → appState 전역 오버레이 — portable 전환
   // 그룹 없음(T5): 휴지통 열기·삭제 이미지 비우기·단축키 도움말은 어느 그룹에도 맞지 않아 ⋯ 메뉴 유지.
   { id: 'scene-trash', name: '씬 휴지통', label: '씬 휴지통', tier: 'overflow', portable: true },
@@ -92,7 +95,7 @@ export const sceneToolbarRegistry: ToolbarButtonMeta[] = [
   // 일괄 삽입 독립 창(2026-11-14 A-3 사용자 결정) — 종전 찾기 및 변환 창의 탭을 떼어 냄. 「찾기·변환」 옆 같은 등급·그룹·portable
   // (증식 차단 규칙의 의도된 예외 — 기존 기능의 창 분리라 같은 자리를 받음). 단축키 없음.
   { id: 'batch-insert', name: '일괄 삽입', label: '일괄 삽입', tier: 'secondary', portable: true, v2Label: '일괄 삽입', group: 'navigate' },
-  { id: 'shortcut-help', name: '단축키 도움말', pcOnly: true, tier: 'overflow' },
+  { id: 'shortcut-help', name: '단축키 도움말', sceneLabel: '단축키', pcOnly: true, tier: 'overflow' },
   // 'undo'·'redo'(2026-11-01 U1 임시 ⋯ 메뉴 배치)는 2026-11-03 U6(D19)에서 제거 — 되돌리기/다시 실행은 하단 막대 위
   // 상시 버튼 바(componenets/UndoRedoBar.tsx)가 맡는다. 퀵 메뉴(globalActions GLOBAL_ACTIONS)의 같은 id 는 유지.
   // 저장된 배치에 남은 두 id 는 레지스트리에 없는 id 라 조용히 무시된다(resolveToolbar·resolveToolbarView·동반 슬롯 공통).
@@ -113,10 +116,14 @@ export const projectToolbarRegistry: ToolbarButtonMeta[] = [
   // 주 진입점으로 승격. 프로젝트 바 관례(전부 primary 인라인)를 따른다(§6 overflow
   // 기본 규칙은 "신규 버튼 증식" 차단용 — 이 건은 기존 버튼의 영역 이동+승격 확정).
   { id: 'scene-template', name: '씬 템플릿', label: '씬 템플릿', tier: 'primary', portable: true },
-  { id: 'backup-export', name: '프로젝트 백업/내보내기', label: '백업', tier: 'primary', portable: true },
+  // 2026-11-19 백업 메뉴 분할(사용자 결정): 종전 「백업/내보내기」 한 버튼(불러오기·내보내기·복제·이름·즐겨찾기 8개)을
+  // 불러오기·내보내기 두 버튼으로 나눴다. backup-export 는 id 그대로 뜻만 「내보내기」로 좁히고, backup-import 를 바로 앞에 둔다.
+  // 저장된 배치에 backup-import 가 없으면 backup-export 를 따라간다(TOOLBAR_FOLLOWERS — 아래 applyToolbarFollowers).
+  { id: 'backup-import', name: '프로젝트 불러오기', label: '불러오기', tier: 'primary', portable: true },
+  { id: 'backup-export', name: '프로젝트 내보내기', label: '내보내기', tier: 'primary', portable: true },
   { id: 'delete-session', name: '프로젝트 삭제', label: '삭제', tier: 'primary', portable: true },
   { id: 'project-trash', name: '프로젝트 휴지통', label: '휴지통', tier: 'primary', portable: true },
-  { id: 'piece-editor', name: '프롬프트조각', label: '프롬프트조각', tier: 'primary', portable: true },
+  { id: 'piece-editor', name: '프롬프트조각', label: '프롬프트조각', sceneLabel: '조각', tier: 'primary', portable: true },
   // 새 창(멀티 윈도우 W6) — 데스크톱 전용(모바일 미노출). portable 로 크로스 영역 이동 허용.
   { id: 'new-window', name: '새 창', label: '새 창', pcOnly: true, tier: 'primary', portable: true },
 ];
@@ -128,6 +135,79 @@ export const projectToolbarRegistry: ToolbarButtonMeta[] = [
 // classic 은 이전 배치 100% 계약이라 제외).
 export const MOBILE_PROJECT_TOPROW_IDS = ['project-browser', 'project-trash'];
 
+// ── 따라가는 버튼(2026-11-19 백업 메뉴 분할) ────────────────────────────────
+// 한 버튼을 둘로 나눌 때 새로 생긴 쪽(id)은, 저장된 설정이 그 id 를 한 번도 적지 않았으면 짝(leader)을 따라간다:
+// leader 가 있는 목록(영역·inline/menu/hidden)마다 바로 앞에 끼우고, v1 buttons 값도 leader 것을 쓴다.
+// 그래서 사용자가 바꿔 둔 배치에서도 새 버튼이 숨거나 영역 끝으로 밀리지 않고 leader 옆(같은 상태)에 나온다.
+// 해석 단계의 가상 적용일 뿐 저장 파일은 고쳐 쓰지 않는다(구버전은 모르는 id 를 무시 — 롤백 안전).
+// 사용자가 버튼을 한 번이라도 옮기면 moveToolbarButton 이 전 영역 배열을 써서 그때부터는 저장된 자리가 우선이다.
+// 퀵 메뉴(globalActions)·동반 슬롯(companionSlots)도 같은 표를 쓴다.
+export const TOOLBAR_FOLLOWERS: readonly { id: string; leader: string }[] = [
+  { id: 'backup-import', leader: 'backup-export' },
+];
+
+// 목록 하나에 따라가기 적용: follower 가 목록에 없고 leader 가 있으면 leader 바로 앞에 끼운다(새 배열).
+// skip(follower) 이 참이면 그 follower 는 건너뛴다(호출부가 「이미 다른 곳에 명시됨·빼 두었음」을 판정).
+export function insertToolbarFollowers(
+  list: readonly string[],
+  skip?: (followerId: string) => boolean,
+): string[] {
+  let out = [...list];
+  for (const { id, leader } of TOOLBAR_FOLLOWERS) {
+    if (skip?.(id)) continue;
+    if (out.includes(id)) continue;
+    const at = out.indexOf(leader);
+    if (at === -1) continue;
+    out = [...out.slice(0, at), id, ...out.slice(at)];
+  }
+  return out;
+}
+
+// 툴바 설정(uiToolbar)에 따라가기 적용(순수, 원본 불변). follower 가 areas 배열 어디에도·buttons 에도 없을 때만.
+// classic 은 전 버튼 인라인이라 대상 아님.
+export function applyToolbarFollowers(
+  overrides: UiToolbarConfig | undefined,
+): UiToolbarConfig | undefined {
+  if (!overrides || overrides.classic) return overrides;
+  const mentioned = (id: string): boolean => {
+    if (overrides.buttons?.[id] !== undefined) return true;
+    for (const layout of Object.values(overrides.areas ?? {})) {
+      if (
+        layout?.inline?.includes(id) ||
+        layout?.menu?.includes(id) ||
+        layout?.hidden?.includes(id)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (TOOLBAR_FOLLOWERS.every(({ id }) => mentioned(id))) return overrides;
+  const skip = mentioned;
+  let areas = overrides.areas;
+  if (areas) {
+    const next: Record<string, UiToolbarAreaLayout> = {};
+    for (const [area, layout] of Object.entries(areas)) {
+      const fill = (ids: string[] | undefined) =>
+        ids === undefined ? undefined : insertToolbarFollowers(ids, skip);
+      next[area] = {
+        ...layout,
+        ...(layout?.inline !== undefined ? { inline: fill(layout.inline) } : {}),
+        ...(layout?.menu !== undefined ? { menu: fill(layout.menu) } : {}),
+        ...(layout?.hidden !== undefined ? { hidden: fill(layout.hidden) } : {}),
+      };
+    }
+    areas = next;
+  }
+  let buttons = overrides.buttons;
+  for (const { id, leader } of TOOLBAR_FOLLOWERS) {
+    if (skip(id)) continue;
+    const lead = buttons?.[leader];
+    if (lead !== undefined) buttons = { ...buttons, [id]: lead };
+  }
+  return { ...overrides, areas, buttons };
+}
+
 // 레지스트리 + 사용자 설정 → 실제 배치를 해석하는 단일 출처(순수 함수).
 // - classic=true: 계층화 이전과 100% 동일 렌더 — 전 버튼을 레지스트리 순서로 인라인,
 //   buttons 오버라이드 무시. pcOnly 도 필터하지 않는다(기존 렌더는 pcOnly id 도 map 하고
@@ -138,9 +218,11 @@ export const MOBILE_PROJECT_TOPROW_IDS = ['project-browser', 'project-trash'];
 //   소스오브트루스.
 export function resolveToolbar(
   registry: ToolbarButtonMeta[],
-  overrides: UiToolbarConfig | undefined,
+  savedOverrides: UiToolbarConfig | undefined,
   isMobile: boolean,
 ): { inline: string[]; menu: string[] } {
+  // 따라가는 버튼(TOOLBAR_FOLLOWERS) — 저장에 없는 새 버튼은 짝의 v1 배치를 따른다(레지스트리에서 짝 바로 앞).
+  const overrides = applyToolbarFollowers(savedOverrides);
   if (overrides?.classic) {
     return { inline: registry.map((b) => b.id), menu: [] };
   }
@@ -221,6 +303,17 @@ export function toolbarLabelOf(id: string): string | undefined {
   for (const { registry } of TOOLBAR_VIEW_MAIN) {
     const found = registry.find((b) => b.id === id);
     if (found) return found.label;
+  }
+  return undefined;
+}
+
+// PC 씬 툴바 아이콘 아래 이름(2026-11-18 버튼 이름 표시) 조회 — sceneLabel 우선, 없으면 label(크로스 영역 portable 포함).
+// 없으면 undefined(그 버튼에는 이름을 달지 않는다). ⋯ 더보기는 레지스트리 밖이라 SCENE_TOOLBAR_MORE_LABEL.
+export const SCENE_TOOLBAR_MORE_LABEL = '더보기';
+export function sceneToolbarLabelOf(id: string): string | undefined {
+  for (const { registry } of TOOLBAR_VIEW_MAIN) {
+    const found = registry.find((b) => b.id === id);
+    if (found) return found.sceneLabel ?? found.label;
   }
   return undefined;
 }
@@ -313,9 +406,11 @@ export function resolveToolbarView(
 
 function resolveToolbarViewBase(
   registries: ToolbarRegistryEntry[],
-  overrides: UiToolbarConfig | undefined,
+  savedOverrides: UiToolbarConfig | undefined,
   isMobile: boolean,
 ): ToolbarAreaResolved[] {
+  // 따라가는 버튼(TOOLBAR_FOLLOWERS) — 저장에 없는 새 버튼을 짝이 있는 목록마다 바로 앞에(가상 적용, 저장 불변).
+  const overrides = applyToolbarFollowers(savedOverrides);
   // classic 은 크로스 무시하고 각자 홈에 전부 inline(v1 위임과 동일).
   if (overrides?.classic) {
     return registries.map(({ area, registry }) => {
@@ -443,8 +538,10 @@ export interface ToolbarMove {
 // pcOnly 도 포함(저장 데이터는 항상 PC 기준 전체 — 모바일 필터는 렌더 시점에만).
 function canonicalizeView(
   registries: ToolbarRegistryEntry[],
-  overrides: UiToolbarConfig | undefined,
+  savedOverrides: UiToolbarConfig | undefined,
 ): Map<string, { inline: string[]; menu: string[]; hidden: string[] }> {
+  // 따라가는 버튼 — 화면에 보이던 자리 그대로 전개해야 이동 뒤에도 새 버튼이 짝 옆에 남는다(이때부터 저장에 명시됨).
+  const overrides = applyToolbarFollowers(savedOverrides);
   // id → 홈 영역·meta(View 전역, 먼저 등장한 레지스트리가 홈).
   const homeByeId = new Map<string, string>();
   const metaByeId = new Map<string, ToolbarButtonMeta>();

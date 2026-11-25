@@ -536,17 +536,19 @@ const Cell = memo(
       // 늦게 도착한 이전 요청이 새 셀 내용 위에 덮어써 잔상이 남지 않도록
       // 언마운트/의존성 변경 시 진행 중 요청 결과를 버린다.
       let cancelled = false;
-      const refreshImage = async () => {
+      let request = 0;
+      const refreshImage = async ({ keepOnError = false }: { keepOnError?: boolean } = {}) => {
+        const currentRequest = ++request;
         try {
           const base64Image = await imageService.fetchImageSmall(
             path,
             imageSize,
           )!;
-          if (cancelled) return;
-          setImage(base64Image!);
+          if (cancelled || currentRequest !== request) return;
+          if (base64Image || !keepOnError) setImage(base64Image!);
         } catch (e: any) {
-          if (cancelled) return;
-          setImage(undefined);
+          if (cancelled || currentRequest !== request) return;
+          if (!keepOnError) setImage(undefined);
         }
         forceUpdate({});
       };
@@ -858,7 +860,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
     const { curSession } = appState;
     const [containerWidth, setContainerWidth] = useState(0);
     const [containerHeight, setContainerHeight] = useState(0);
-    const refreshImageFuncs = useRef(new Map<string, () => void>());
+    const refreshImageFuncs = useRef(new Map<string, (options?: { keepOnError?: boolean }) => void>());
     const draggedIndex = useRef<number | null>(null);
     const hoveredIndexRef = useRef<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -911,6 +913,16 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
         resizeObserver.observe(containerRef.current);
       }
       return () => resizeObserver.disconnect();
+    }, []);
+
+    useEffect(() => {
+      const onInvalidated = (event: Event) => {
+        for (const refresh of pickInvalidatedEntries(refreshImageFuncs.current, (event as CustomEvent).detail)) {
+          refresh({ keepOnError: true });
+        }
+      };
+      imageService.addEventListener('image-cache-invalidated', onInvalidated);
+      return () => imageService.removeEventListener('image-cache-invalidated', onInvalidated);
     }, []);
 
     let columnWidth = isMobile ? imageSize / 2.5 : imageSize;
@@ -1341,8 +1353,7 @@ export const ResultDetailView = observer(
         }
       };
       const onImageInvalidated = (event: Event) => {
-        const detail = (event as CustomEvent<{ path: string; paths?: string[] }>).detail;
-        if (detail?.path === viewedImagePath || detail?.paths?.includes(viewedImagePath)) {
+        if (isImageCacheInvalidationFor((event as CustomEvent).detail, viewedImagePath)) {
           void fetchImage();
         }
       };
@@ -3367,3 +3378,4 @@ const LinkedImageWorks=observer(function LinkedImageWorks({session,scene,path}:{
       initialSelectedIndex={gameService.getOutputs(session,result.work).indexOf(result.file.split('/').pop()!)} onClose={()=>setResult(null)}/></FloatView>}
   </section>;
 });
+import { isImageCacheInvalidationFor, pickInvalidatedEntries } from '../models/imageCacheInvalidation';

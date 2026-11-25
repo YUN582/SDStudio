@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import ModalOverlay from './ModalOverlay';
@@ -8,6 +9,8 @@ import {
 } from '../models';
 import { appState } from '../models/AppService';
 import { platform } from '../models/platform';
+import Tooltip from './Tooltip';
+import { ActionIcon } from './ActionIcon';
 
 // 고용량 하이라이트 기준 (3GB)
 const HIGHLIGHT_BYTES = 3 * 1024 * 1024 * 1024;
@@ -45,6 +48,8 @@ const StorageManageModal = observer(
     onJump: (name: string) => void;
   }) => {
     const [names, setNames] = useState<string[]>([]);
+    // 숨김 목록이 바뀌면(다른 창 저장 재로드 등 — 2026-11-18 T4) 다시 거른다. observer 렌더에서 읽어 의존성으로 쓴다
+    const hiddenNames = templateService.hiddenNames;
 
     useEffect(() => {
       if (!isOpen) return;
@@ -58,7 +63,7 @@ const StorageManageModal = observer(
       } catch {
         setNames([]);
       }
-    }, [isOpen]);
+    }, [isOpen, hiddenNames]);
 
     const entries = projectSizeService.entries;
     const calced = names.filter((n) => entries[n]);
@@ -182,15 +187,17 @@ const StorageManageModal = observer(
                       계산 안 됨
                     </span>
                   )}
-                  <button
-                    className="text-xs btn back-gray px-2 py-1 rounded flex-none disabled:opacity-50"
-                    disabled={busy || !!bulk}
-                    onClick={() => projectSizeService.calculate(n)}
-                    aria-label={busy ? '계산 중' : e ? '다시 계산' : '계산'}
-                    title={busy ? '계산 중' : e ? '다시 계산' : '계산'}
-                  >
-                    {busy ? '...' : e ? '↻' : '계산'}
-                  </button>
+                  <Tooltip content={busy ? '계산 중' : e ? '다시 계산' : '계산'}>
+                    <button
+                      className="text-xs btn back-gray px-2 py-1 rounded flex-none disabled:opacity-50"
+                      disabled={busy || !!bulk}
+                      onClick={() => projectSizeService.calculate(n)}
+                      aria-label={busy ? '계산 중' : e ? '다시 계산' : '계산'}
+                    >
+                      {/* 「다시 계산」 = 사전 refresh 아이콘(2026-11-20 그룹 1-c, 종전 기호 글자 ↻) — 버튼 모양·이름표는 그대로 */}
+                      {busy ? '...' : e ? <ActionIcon id="refresh" size={14} className="block my-px" /> : '계산'}
+                    </button>
+                  </Tooltip>
                   {platform.supportsWebpConvert && (
                     <button
                       className="text-xs btn back-green px-2 py-1 rounded flex-none"
@@ -210,9 +217,9 @@ const StorageManageModal = observer(
               );
             })}
             {names.length === 0 && (
-              <div className="text-sm text-faint text-center py-6">
+              <EmptyState className="py-6">
                 프로젝트가 없습니다.
-              </div>
+              </EmptyState>
             )}
           </div>
         </div>

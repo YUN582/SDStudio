@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { v4 } from 'uuid';
@@ -16,14 +17,25 @@ import {
   FaChevronUp,
 } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_PRIMARY_BTN } from './ModalOverlay';
 import Tooltip from './Tooltip';
 import PromptEditTextArea from './PromptEditTextArea';
 import { CharacterPresetInnerEditor } from './CharacterPresetInnerEditor';
-import { PresetImageBackend, VibeImage } from './CharacterPresetCards';
+import { PresetImageBackend, storeWithSourceSize, VibeImage } from './CharacterPresetCards';
+import { getImageDimensions } from './BrushTool';
+import { effectiveSameOutfit } from '../backends/genVendors/naiReference';
+import {
+  REFERENCE_EDITOR_TEXT,
+  referenceEditorSpec,
+  referenceTypeLabel,
+  referenceTypeOptions,
+  showCostumeUnsupported,
+  showSameOutfitToggle,
+} from '../models/referenceEditorSpec';
 import { BatchCreatePanel, BatchCreateController } from './BatchCreateModal';
 import { GlobalPresetPicker } from './GlobalPresetPicker';
 import { EditableSliderValue } from './VibeEditor';
+import { ReferenceStrengthSlider } from './ReferenceStrengthSlider';
 import { FileUploadBase64 } from './UtilComponents';
 import {
   backend,
@@ -43,6 +55,9 @@ import {
 import { CharacterPreset, CharacterPrompt } from '../models/types';
 import { Sampling, NoiseSchedule, ModelVersion } from '../backends/imageGen';
 import HelpIcon from './HelpIcon';
+import { SettingField, SettingGroup } from './SettingControls';
+import { HelpPanelButton } from './HelpPanel';
+import { TEMPLATE_MANAGER_HELP } from '../models/helpPanelTexts';
 import { renameTemplateRecorded } from '../models/globalLibraryUndo';
 import { V5MediumNegativeNotice } from './PreSetEdtior';
 import { normalizeModelVersion } from '../backends/genVendors/naiModelCapabilities';
@@ -78,7 +93,8 @@ import {
 // 템플릿 이미지 디렉터리 기반 캐릭터 편집기 백엔드
 const templateImageBackend: PresetImageBackend = {
   storeVibe: (b) => projectTemplateService.storeImageForEditor(b),
-  storeReference: (b) => projectTemplateService.storeImageForEditor(b),
+  storeReference: (b) =>
+    storeWithSourceSize((x) => projectTemplateService.storeImageForEditor(x), b),
   vibePath: (t) => projectTemplateService.getImagePath(t),
   referencePath: (t) => projectTemplateService.getImagePath(t),
 };
@@ -91,7 +107,7 @@ const rowCls =
   'flex items-center gap-2 px-2 py-1.5 rounded-md bg-[var(--c-surface-2)] border line-color';
 const addBtnCls =
   'px-2 py-1 rounded-md text-xs btn-neutral text-body whitespace-nowrap';
-const iconBtnCls = 'btn-ghost p-1.5 rounded-md text-faint';
+const iconBtnCls = 'btn-ghost p-1.5 rounded-md text-muted'; // 아이콘만 버튼 = muted(SPEC §2 R2, 그룹 2-a)
 // 백업/복원(드라이브 동기화 ④) — 글로벌 프리셋 탭 모바일 툴바 버튼과 같은 모양(작은 알약)
 const backupBtnCls =
   'round-button back-gray h-8 px-3 text-sm flex items-center gap-1.5';
@@ -100,6 +116,10 @@ const numCls =
   'mt-1 w-full px-2 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default';
 // 모델이 고정·미사용으로 두는 샘플링 칸(V5M 스텝·샘플러·CFG 리스케일, V5 계열 노이즈 스케줄) — 표시만 고정, 저장값은 보존
 const lockedCls = ' opacity-60 cursor-not-allowed';
+// 선택 칸(샘플링·노이즈 스케줄, 2026-11-20 UI 정돈 그룹 1-c) = .app-select. 숫자 칸(numCls)과 같은 높이(위아래 6px + 글자 20 + 테두리).
+// 잠금 표시는 .app-select:disabled 의 흐림(0.5)만 쓴다 — lockedCls 의 opacity-60 을 겹치면 0.3 까지 흐려진다.
+const selectCls = 'mt-1 w-full app-select';
+const selectLockedCls = ' cursor-not-allowed';
 // PC 두 열 본문의 열(2026-11-15 C-3b) — 열마다 세로 스크롤 하나(SPEC 높이 규칙 우선순위 (2)). 일괄 생성 패널(BatchCreateModal batchColCls)과 같은 값.
 const templateColCls =
   'flex-1 min-w-0 min-h-0 overflow-y-auto flex flex-col gap-4';
@@ -159,6 +179,8 @@ const TemplateWorkflowBody = observer(
     const [backPrompt, setBackPrompt] = useState('');
     const [uc, setUc] = useState('');
     const promptRef = useRef({ frontPrompt: '', backPrompt: '', uc: '' });
+    // 마지막으로 템플릿에서 읽어 온(동기화한) 프롬프트 값 — 커밋할 칸을 가린다
+    const syncedPromptRef = useRef({ frontPrompt: '', backPrompt: '', uc: '' });
     // 외부 변경(불러오기·비우기) 후 인라인 필드 재동기화 트리거
     const [syncKey, setSyncKey] = useState(0);
     // 글로벌 프리셋 카드 선택 모달 (프롬프트 영역 불러오기)
@@ -194,6 +216,8 @@ const TemplateWorkflowBody = observer(
     const samplingFamily: ModelSamplingFamily =
       pickedFamily ?? initialTemplateSamplingFamily(entry?.preset, globalModel);
     const samplingLocks = templateSamplingLocks(samplingFamily);
+    // 캐릭터 레퍼런스 편집 규칙 — 템플릿을 적용한 뒤 생성은 전역 모델로 가므로 전역 모델 기준(referenceEditorSpec).
+    const refSpec = referenceEditorSpec(globalModel);
 
     const asStr =(v: any) => (typeof v === 'string' ? v : '');
 
@@ -210,26 +234,32 @@ const TemplateWorkflowBody = observer(
       setBackPrompt(next.backPrompt);
       setUc(next.uc);
       promptRef.current = next;
+      syncedPromptRef.current = { ...next };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [templateId, syncKey, syncSignal]);
 
     // 프롬프트 로컬 편집값을 템플릿에 반영 — [저장]·언마운트 등 명시적
     // 시점에만 호출한다 (타이핑 중 자동 저장 없음).
+    // 커밋은 이 창에서 실제로 고친 칸만 — 마지막 동기화 때 값과 다른 칸. 다른 창 저장으로 목록이 다시 읽혀 바뀐 칸을
+    // 손대지 않은 초안 값으로 되돌려 덮지 않게 한다(2026-11-17 여러 창 동기화).
     const commitPrompts = () => {
       const e = projectTemplateService.get(templateId);
       if (!e) return;
       const v = promptRef.current;
       // 빈 템플릿에 빈 값 커밋 → 불필요한 골격 생성 방지
       if (!e.preset && !v.frontPrompt && !v.backPrompt && !v.uc) return;
-      if (
-        e.preset &&
-        asStr(e.preset.frontPrompt) === v.frontPrompt &&
-        asStr(e.preset.backPrompt) === v.backPrompt &&
-        asStr(e.preset.uc) === v.uc
-      ) {
-        return; // 변경 없음
+      const synced = syncedPromptRef.current;
+      const patch: Partial<typeof v> = {};
+      for (const k of ['frontPrompt', 'backPrompt', 'uc'] as const) {
+        if (v[k] !== synced[k] && asStr(e.preset?.[k]) !== v[k]) patch[k] = v[k];
       }
-      projectTemplateService.patchPreset(templateId, { ...v }).catch(() => {});
+      if (Object.keys(patch).length === 0) return; // 변경 없음
+      projectTemplateService
+        .patchPreset(templateId, patch)
+        .then(() => {
+          syncedPromptRef.current = { ...syncedPromptRef.current, ...patch };
+        })
+        .catch(() => {});
     };
     const commitPromptsRef = useRef(commitPrompts);
     commitPromptsRef.current = commitPrompts;
@@ -654,7 +684,11 @@ const TemplateWorkflowBody = observer(
               </div>
               {/* 샘플링 설정 (인라인 — 변경 즉시 저장). 2026-11-15 B안: 머리 알약으로 고칠 모델 계열을 고른다
                   — 앱 모델은 바꾸지 않고, 선택 계열의 값(samplingProfiles[계열])을 읽고 쓴다.
-                  모바일은 알약을 둘째 줄로(줄바꿈 허용, 가로 스크롤 없음). */}
+                  모바일은 알약을 둘째 줄로(줄바꿈 허용, 가로 스크롤 없음).
+                  2026-11-20 UI 정돈 그룹 1-c: 구획을 묶음 상자(SettingGroup 「샘플링」)로 — 제목은 상자 제목 한 번만이라
+                  머리 줄의 「샘플링」 글자는 뺐다(모바일 첫 줄 = 도움말만, PC = 알약 줄 끝 도움말 그대로). */}
+              <SettingGroup title="샘플링">
+              <SettingField>
               <div
                 className={
                   isMobile
@@ -663,14 +697,14 @@ const TemplateWorkflowBody = observer(
                 }
                 data-template-sampling-head={isMobile ? 'stacked' : 'row'}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted">샘플링</span>
-                  {isMobile && (
+                {isMobile && (
+                  <div className="flex items-center gap-2">
                     <HelpIcon content={TEMPLATE_SAMPLING_TEXT.familyHelp} size={13} />
-                  )}
-                </div>
+                  </div>
+                )}
+                {/* 택일 묶음 .seg-group(UI 정돈 그룹 2-c — 종전 작은 알약 칩). 칩 자리라 작은 칸(.seg-sm 28px). */}
                 <div
-                  className="flex items-center gap-1 flex-wrap"
+                  className="seg-group seg-sm inline-flex flex-wrap"
                   role="group"
                   aria-label="샘플링 값을 고칠 모델 계열"
                   data-template-sampling-family={samplingFamily}
@@ -682,8 +716,7 @@ const TemplateWorkflowBody = observer(
                         key={f}
                         type="button"
                         className={
-                          'btn text-xs px-2 py-0.5 rounded-full ' +
-                          (selected ? 'back-sky' : 'btn-ghost text-default')
+                          'seg-item text-xs' + (selected ? ' seg-on' : '')
                         }
                         data-family={f}
                         aria-pressed={selected}
@@ -699,6 +732,8 @@ const TemplateWorkflowBody = observer(
                   <HelpIcon content={TEMPLATE_SAMPLING_TEXT.familyHelp} size={13} />
                 )}
               </div>
+              </SettingField>
+              <SettingField>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm text-default">
                   스탭 수
@@ -780,7 +815,7 @@ const TemplateWorkflowBody = observer(
                         : undefined
                     }
                     className={
-                      numCls + (samplingLocks.fixedSampler !== undefined ? lockedCls : '')
+                      selectCls + (samplingLocks.fixedSampler !== undefined ? selectLockedCls : '')
                     }
                   >
                     {Object.values(Sampling).map((s) => (
@@ -804,8 +839,8 @@ const TemplateWorkflowBody = observer(
                     onChange={(e) => patchSampling('noiseSchedule', e.target.value)}
                     disabled={samplingLocks.forcedNoiseSchedule !== undefined}
                     className={
-                      numCls +
-                      (samplingLocks.forcedNoiseSchedule !== undefined ? lockedCls : '')
+                      selectCls +
+                      (samplingLocks.forcedNoiseSchedule !== undefined ? selectLockedCls : '')
                     }
                   >
                     {Object.values(NoiseSchedule).map((s) => (
@@ -823,11 +858,15 @@ const TemplateWorkflowBody = observer(
                   )}
                 </label>
               </div>
+              </SettingField>
               {samplingLocks.negativeUnused && (
+                <SettingField>
                 <div className="text-xs text-sub" data-template-v5m-notice="">
                   {V5_MEDIUM_TEXT.modelNotice}
                 </div>
+                </SettingField>
               )}
+              </SettingGroup>
             </div>
             );
             // 캐릭터 프리셋 목록 — 편집 탭 전용 (배치 탭은 이 자리에 캐릭터 축)
@@ -1144,8 +1183,18 @@ const TemplateWorkflowBody = observer(
                 disabled={false}
                 onFileSelect={(b64: string) => {
                   if (b64)
-                    projectTemplateService
-                      .addCharacterReference(entry.id, b64)
+                    // 원본을 직접 넣는 경로 — 원본 크기를 항목에 적는다(V5 로 보낼 때 여백 자르기).
+                    getImageDimensions(b64)
+                      .catch(() => undefined)
+                      .then((size) =>
+                        projectTemplateService.addCharacterReference(
+                          entry.id,
+                          b64,
+                          size && size.width > 0 && size.height > 0
+                            ? { srcWidth: size.width, srcHeight: size.height }
+                            : undefined,
+                        ),
+                      )
                       .catch((e: any) =>
                         appState.pushMessage(e.message || '추가에 실패했습니다.'),
                       );
@@ -1217,25 +1266,21 @@ const TemplateWorkflowBody = observer(
                         Strength:
                       </div>
                       <div className="flex flex-1 md:w-auto w-full gap-1">
-                        <input
-                          className="flex-1 min-w-0"
-                          type="range"
-                          step="0.01"
-                          min="0"
-                          max="2"
+                        <ReferenceStrengthSlider
                           value={r.strength}
-                          onChange={(e) =>
+                          max={refSpec.strengthMax}
+                          onChange={(val) =>
                             projectTemplateService.updateCharacterReference(
                               entry.id,
                               i,
-                              { strength: parseFloat(e.target.value) },
+                              { strength: val },
                             )
                           }
                         />
                         <EditableSliderValue
                           value={r.strength}
                           min={0}
-                          max={2}
+                          max={refSpec.strengthMax}
                           onChange={(val: number) =>
                             projectTemplateService.updateCharacterReference(
                               entry.id,
@@ -1246,7 +1291,8 @@ const TemplateWorkflowBody = observer(
                         />
                       </div>
                     </div>
-                    {/* Fidelity */}
+                    {/* Fidelity — 모델이 받지 않으면 숨김(저장값은 그대로) */}
+                    {refSpec.showFidelity && (
                     <div className="flex w-full items-center md:flex-row flex-col">
                       <div className="whitespace-nowrap flex-none mr-auto md:mr-2 gray-label">
                         Fidelity:
@@ -1281,9 +1327,10 @@ const TemplateWorkflowBody = observer(
                         />
                       </div>
                     </div>
+                    )}
                     {/* 레퍼런스 타입 */}
                     <div className="flex items-center gap-4 flex-wrap">
-                      {(['character', 'style', 'character&style'] as const).map(
+                      {referenceTypeOptions(refSpec, r.referenceType).map(
                         (t) => (
                           <label
                             key={t}
@@ -1297,22 +1344,37 @@ const TemplateWorkflowBody = observer(
                                 projectTemplateService.updateCharacterReference(
                                   entry.id,
                                   i,
-                                  { referenceType: t },
+                                  // 종류를 바꾸면 「같은 의상 선호」 명시 값을 지워 그 종류의 기본으로
+                                  { referenceType: t, preferSameOutfit: undefined },
                                 )
                               }
                               className="accent-sky-500"
                             />
-                            <span className="gray-label">
-                              {t === 'character'
-                                ? '캐릭터'
-                                : t === 'style'
-                                  ? '스타일'
-                                  : '캐릭터+스타일'}
-                            </span>
+                            <span className="gray-label">{referenceTypeLabel(t)}</span>
                           </label>
                         ),
                       )}
+                      {showSameOutfitToggle(refSpec, r.referenceType) && (
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!effectiveSameOutfit(r.referenceType, r.preferSameOutfit)}
+                            onChange={(e) =>
+                              projectTemplateService.updateCharacterReference(
+                                entry.id,
+                                i,
+                                { preferSameOutfit: e.target.checked },
+                              )
+                            }
+                            className="setting-check setting-check-sm"
+                          />
+                          <span className="gray-label">{REFERENCE_EDITOR_TEXT.sameOutfit}</span>
+                        </label>
+                      )}
                     </div>
+                    {showCostumeUnsupported(refSpec, r.referenceType) && (
+                      <div className="text-xs text-muted">{REFERENCE_EDITOR_TEXT.costumeUnsupported}</div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1522,9 +1584,10 @@ export function useTemplateWorkflowPanel(
 
   const show = !!templateId && !charEditing;
 
-  // 탭 머리 — tab-seg 마커 계약 (SPEC_GUIDE §2, back-llgray/rounded-md 는 클래식 마감 복원용 병기)
+  // 탭 머리 = 작업 탭(본문이 템플릿 편집 ↔ 일괄 생성으로 통째로 바뀜) — 밑줄 탭 .tab-line(UI 정돈 그룹 2-c).
+  // 창 도구줄에 이미 아래 테두리가 있어 줄 아래 가는 선은 빼고(.tab-line-bare) 도구줄 높이에 맞춰 32px(.tab-line-compact).
   const tabs = show ? (
-    <div className="tab-seg flex gap-2" data-template-tabs="">
+    <div className="tab-line tab-line-bare tab-line-compact flex" data-template-tabs="">
       {(
         [
           ['template', '템플릿'],
@@ -1534,8 +1597,7 @@ export function useTemplateWorkflowPanel(
         <button
           key={key}
           className={
-            'active:brightness-90 hover:brightness-95 select-none h-8 px-4 text-sm rounded-md transition-colors ' +
-            (tab === key ? 'back-sky' : 'back-llgray tab-seg-off')
+            'tab-line-item text-sm' + (tab === key ? ' tab-line-on' : '')
           }
           aria-pressed={tab === key}
           onClick={() => selectTab(key)}
@@ -1568,7 +1630,7 @@ export function useTemplateWorkflowPanel(
   if (show && tab === 'template') {
     footer = (
       <button
-        className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+        className={DIALOG_PRIMARY_BTN}
         data-template-save=""
         onClick={() => {
           saveRef.current();
@@ -1806,7 +1868,7 @@ export const TemplateManagerModal = observer(
           data-template-select-row=""
         >
           <select
-            className="gray-input flex-1 min-w-[140px]"
+            className="app-select flex-1 min-w-[140px]"
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
           >
@@ -1887,15 +1949,15 @@ export const TemplateManagerModal = observer(
       >
         <button
           onClick={createTemplate}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed line-color hover:border-sky-400 dark:hover:border-sky-500 text-muted hover:text-sky-500 transition-colors text-sm"
+          className="add-slot w-full flex items-center gap-2 px-3 py-2 text-sm"
           data-template-new=""
         >
           <FaPlus size={12} />새 템플릿
         </button>
         {templates.length === 0 ? (
-          <div className="text-xs text-faint text-center py-6">
+          <EmptyState className="py-6">
             템플릿이 없습니다
-          </div>
+          </EmptyState>
         ) : (
           <div className="border line-color rounded-lg divide-y divide-[color:var(--c-line)] overflow-hidden">
             {templates.map((t) => {
@@ -1908,8 +1970,8 @@ export const TemplateManagerModal = observer(
                   onClick={() => setSelectedId(t.id)}
                   className={`px-3 py-2 cursor-pointer flex justify-between items-center gap-2 ${
                     selected
-                      ? 'bg-sky-50 dark:bg-sky-900/30 border-l-2 border-sky-500'
-                      : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'
+                      ? 'list-row-selected'
+                      : 'hover-row'
                   }`}
                 >
                   <span className="min-w-0 text-sm font-medium text-default truncate">
@@ -1979,13 +2041,8 @@ export const TemplateManagerModal = observer(
         title={
           <span className="inline-flex items-center gap-1.5">
             템플릿 관리
-            <HelpIcon
-              content={
-                '새 프로젝트를 만들 때 시작 구성(프리셋, 캐릭터, 바이브, 레퍼런스, 씬)을 미리 세팅하는 워크플로우입니다.\n' +
-                '모든 영역은 직접 편집할 수 있고, 복사해 오기는 설정을 1회 덮어쓰는 편의 기능입니다.\n' +
-                '프롬프트 수정은 바닥의 [저장] 버튼 또는 창을 닫을 때 저장되고, 그 외 변경(복사해 오기·캐릭터·씬)은 즉시 저장됩니다.'
-              }
-            />
+            {/* 도움말 패널(2026-11-20 그룹 1-b — 종전 3줄 툴팁). 문구 = models/helpPanelTexts.ts */}
+            <HelpPanelButton data={TEMPLATE_MANAGER_HELP} width={420} exampleWidth={110} />
           </span>
         }
         // xl(1280 고정, 2026-11-15 사용자 실기 피드백 — 작업 밀도가 높아 l 1000 은 좁음). 폴더 기본 템플릿은 l.
@@ -1998,7 +2055,7 @@ export const TemplateManagerModal = observer(
         bodyPadding={panel.charEditing && !isMobile ? 'none' : 'normal'}
       >
         {!entry ? (
-          <div className="text-sm text-default py-6 text-center">
+          <EmptyState size="lg" className="py-6">
             {isMobile ? (
               <>
                 템플릿이 없습니다. <b>+</b> 버튼으로 새 템플릿을 만들거나{' '}
@@ -2010,7 +2067,7 @@ export const TemplateManagerModal = observer(
               </>
             )}
             <b>[백업 불러오기]</b>로 백업 파일에서 불러와 주세요.
-          </div>
+          </EmptyState>
         ) : (
           panel.body
         )}

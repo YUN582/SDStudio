@@ -156,8 +156,8 @@ describe('내장 취소 단일화(D3)', () => {
       Array.from(document.querySelectorAll('.confirm-window button')).find(
         (b) => b.textContent === label,
       ) as HTMLButtonElement;
-    expect(btn('건너뛰기').className).toContain('back-sky');
-    expect(btn('덮어쓰기').className).toContain('back-red');
+    expect(btn('건너뛰기').className).toContain('btn-solid-sky'); // 그룹 2-b: 솔리드 알약(종전 back-sky)
+    expect(btn('덮어쓰기').className).toContain('btn-solid-red');
   });
 });
 

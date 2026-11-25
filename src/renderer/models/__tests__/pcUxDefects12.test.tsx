@@ -105,7 +105,8 @@ describe('App.css 상태 표시(D10·S3·S2·D11·W1)', () => {
   test('포커스 링 토큰 --c-focus-ring — 라이트 sky-700, 다크 종전 sky-400, 공용 :focus-visible 가 토큰 사용', () => {
     expect(css).toMatch(/:root\s*\{[^}]*--c-focus-ring:\s*#0369a1/);
     expect(css).toMatch(/\.dark\s*\{[^}]*--c-focus-ring:\s*rgb\(56,\s*189,\s*248\)/);
-    expect(css).toMatch(/\.btn-link:focus-visible\s*\{\s*outline:\s*2px solid var\(--c-focus-ring\)/);
+    // 그룹 2-b: 공용 목록 끝에 솔리드 버튼([class*="btn-solid-"])이 더해짐 — .btn-link 다음 줄이 목록 끝
+    expect(css).toMatch(/\.btn-link:focus-visible,\s*\[class\*="btn-solid-"\]:focus-visible\s*\{\s*outline:\s*2px solid var\(--c-focus-ring\)/);
     expect(css).not.toMatch(/outline:\s*2px solid rgb\(56,\s*189,\s*248\)/);
   });
   test('.gray-input:focus-visible 링이 .gray-input 규칙 뒤에 있다', () => {
@@ -167,7 +168,7 @@ describe('아이콘 토글 켜짐 표시(S2)', () => {
 describe('닫기 ✕ 공용 모양(C2·S1)', () => {
   test('ModalOverlay 가 상수를 export 하고 머리줄 ✕ 가 그 상수를 쓴다', () => {
     const mo = read('ModalOverlay.tsx');
-    expect(mo).toMatch(/export const OVERLAY_CLOSE_BUTTON_CLASS =\s*'p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-muted transition-colors'/);
+    expect(mo).toMatch(/export const OVERLAY_CLOSE_BUTTON_CLASS =\s*'p-1 rounded hover:bg-\[var\(--c-hover\)\] text-muted transition-colors'/); // 그룹 2-a: hover = 덮개 토큰
     expect(mo).toContain('export const OVERLAY_CLOSE_ICON_SIZE = 16');
     expect(mo).toContain('className={OVERLAY_CLOSE_BUTTON_CLASS}');
   });
@@ -207,7 +208,8 @@ describe('국소 클래스 수정(묶음 1)', () => {
     expect(src).toContain('r-btn back-sky clickable disabled:opacity-50 disabled:cursor-not-allowed');
   });
   test('T2 파일 이름 break-all · T3 조각 이름 말줄임+Tooltip', () => {
-    expect(read('ResultViewer.tsx')).toContain('<span className="break-all">{filename}</span>');
+    // 2026-11-22 상세 보기 개편: 파일 이름 줄은 정보 칸 컴포넌트(ImageDetailInfo)의 「파일」 묶음으로 옮겨 감
+    expect(read('ImageDetailInfo.tsx')).toContain('<span className="break-all">{r.value}</span>');
     const pe = read('PieceEditor.tsx');
     expect(pe).toMatch(/<Tooltip content=\{piece\.name\}>\s*<div\s+className="font-bold text-default min-w-0 truncate"/);
   });
@@ -222,7 +224,8 @@ describe('국소 클래스 수정(묶음 1)', () => {
     ]);
   });
   test('S5 상호작용 클래스 병기', () => {
-    expect(read('PieceEditor.tsx').match(/className=\{`btn \$\{wide/g)).toHaveLength(2);
+    // UI 정돈 그룹 2-c: 로컬/전역 전환 두 버튼은 택일 칸 .seg-item(올림·누름·포커스 표시를 공용 클래스가 가짐)
+    expect(read('PieceEditor.tsx').match(/className=\{'seg-item text-sm' \+ \(scope === /g)).toHaveLength(2);
     expect(read('ProjectDrawer.tsx')).toContain('className="btn w-full flex items-center gap-2 pl-1.5 pr-2 py-2.5 rounded-md');
     expect(read('PreSetEdtior.tsx')).toContain('className="btn-link flex items-center gap-2 text-xs mt-1 relative touch-hit"');
     expect(read('SceneEditor.tsx')).toContain('className="btn-link flex items-center gap-2 text-xs relative touch-hit"');

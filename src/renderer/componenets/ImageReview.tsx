@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import {
   useCallback,
   useEffect,
@@ -28,6 +29,7 @@ import { deleteImageFilesRecorded, restoreTrashImagesRecorded } from '../models/
 import { deleteConfirmText, imageRestoreResultText } from '../models/deleteFlowRules';
 import { IMAGE_RETENTION_DAYS } from '../models/TrashService';
 import { trashNoticeText } from './TrashViews';
+import { themePortalRoot } from './themePortal';
 import { queueScene } from '../models/sceneQueueActions';
 import { GenericScene, Session } from '../models/types';
 import Tooltip from './Tooltip';
@@ -520,7 +522,7 @@ const ImageReview = ({
               <div className="text-muted">불러오는 중...</div>
             )}
             {!trashLoading && trashItems.length === 0 && (
-              <div className="text-muted">휴지통이 비어 있습니다.</div>
+              <EmptyState className="py-6">휴지통이 비어 있습니다.</EmptyState>
             )}
             {trashItems.map((entry) => (
               <div
@@ -562,7 +564,8 @@ const ImageReview = ({
         </div>
       )}
     </div>,
-    document.body,
+    // 앱 테마 루트 안(다크·커스텀 테마 토큰을 받게 — UI 정돈 그룹 1). 루트에 transform 이 없어 fixed inset-0 은 그대로 화면 전체.
+    themePortalRoot(),
   );
 };
 

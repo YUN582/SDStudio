@@ -6,7 +6,7 @@ import { Sampling, NoiseSchedule } from '../backends/imageGen';
 import PromptEditTextArea from './PromptEditTextArea';
 import { FileUploadBase64 } from './UtilComponents';
 import { useGuardedClose } from './backdropClose';
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import { NAME_INPUT_TEXT } from '../models/nameInput';
 import type { NameKind } from '../models/nameInput';
 
@@ -164,6 +164,8 @@ export const PresetEditModal = observer(
 
     const numCls =
       'mt-1 w-full px-2 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default';
+    // 선택 칸 = .app-select(2026-11-20 UI 정돈 그룹 1-c) — 숫자 칸과 같은 높이(위아래 6px + 글자 20 + 테두리)
+    const selectCls = 'mt-1 w-full app-select';
 
     // 창은 공용 ModalOverlay(2026-11-14 오버레이 묶음 D, size m) — Esc·Android 뒤로 가기(같은 backStack 한 겹)와
     // 바깥 클릭(누름·뗌 모두 배경일 때만 — 프롬프트 글자를 드래그 선택하다 바깥에서 떼도 닫히지 않게)은 래퍼 내장.
@@ -182,14 +184,14 @@ export const PresetEditModal = observer(
           <>
             {/* [확인][취소] 순서(2026-10-03 D1) — 바닥 버튼 규격은 내보내기 프리셋 관리와 같음 */}
             <button
-              className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+              className={DIALOG_PRIMARY_BTN}
               onClick={save}
               disabled={saving}
             >
               {saving ? '저장 중...' : '저장'}
             </button>
             <button
-              className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+              className={DIALOG_SECONDARY_BTN}
               onClick={requestClose}
             >
               취소
@@ -202,7 +204,7 @@ export const PresetEditModal = observer(
           <div>
             <label className="text-sm font-medium mb-1 block">이름 *</label>
             <input
-              className="w-full px-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 text-default"
+              className="w-full px-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)] text-default"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -294,7 +296,7 @@ export const PresetEditModal = observer(
               <select
                 value={sampling}
                 onChange={(e) => setSampling(e.target.value)}
-                className={numCls}
+                className={selectCls}
               >
                 {Object.values(Sampling).map((s) => (
                   <option key={s} value={s}>
@@ -308,7 +310,7 @@ export const PresetEditModal = observer(
               <select
                 value={noiseSchedule}
                 onChange={(e) => setNoiseSchedule(e.target.value)}
-                className={numCls}
+                className={selectCls}
               >
                 {Object.values(NoiseSchedule).map((s) => (
                   <option key={s} value={s}>

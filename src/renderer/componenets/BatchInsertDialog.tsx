@@ -5,12 +5,13 @@
 //   본문 = 삽입할 텍스트(태그 자동완성) + 위치 + 대상(모든 슬롯·열 n만·새 열), 바닥줄 = [적용][닫기], 왼쪽 = 상태 문구.
 // · 대상·되돌리기 규칙은 models/batchInsert.ts(이미지생성 씬·조합 변형 = slots, 단일 프롬프트 변형 = preset.prompt, [적용] 1회 = 1항목).
 // · 열려 있는 동안만 마운트(닫았다 열면 입력·선택 초기화).
+import { EmptyState } from './EmptyState';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { FaPlus } from 'react-icons/fa';
 import { appState } from '../models/AppService';
 import { backend } from '../models';
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import { SceneSelectAside, useSceneSelection, variantKey } from './SceneSelectAside';
 import type { GenericScene } from '../models/types';
 import {
@@ -24,9 +25,8 @@ import {
 } from '../models/batchInsert';
 import type { BatchInsertCounts, InsertPosition, InsertSlotTarget } from '../models/batchInsert';
 
-const PRIMARY_BUTTON =
-  'px-4 py-2 rounded-lg btn-solid-sky disabled:bg-gray-300 dark:disabled:bg-gray-600 text-sm font-medium transition-colors';
-const CLOSE_BUTTON = 'px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors';
+const PRIMARY_BUTTON = DIALOG_PRIMARY_BTN;
+const CLOSE_BUTTON = DIALOG_SECONDARY_BTN;
 
 const BatchInsertBody = observer(() => {
   const session = appState.curSession;
@@ -135,7 +135,7 @@ const BatchInsertBody = observer(() => {
   const close = () => appState.closeBatchInsert();
 
   const body = noScenes ? (
-    <div className="text-sm text-faint" data-batch-insert-panel="">씬이 없습니다.</div>
+    <EmptyState className="py-6" data-batch-insert-panel="">씬이 없습니다.</EmptyState>
   ) : (
     <div className="flex flex-col gap-4" data-batch-insert-panel="">
       {/* 삽입 텍스트 */}
@@ -147,7 +147,7 @@ const BatchInsertBody = observer(() => {
             onChange={(e) => handleInsertInput(e.target.value)}
             onKeyDown={handleInsertKeyDown}
             onBlur={() => setTimeout(closeAc, 150)}
-            className="w-full pl-9 pr-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+            className="w-full pl-9 pr-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]" />
           {acTags.length > 0 && (
             <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[var(--c-zone)] border line-color rounded-lg shadow-lg overflow-hidden">
               {acTags.map((tag, i) => (
@@ -156,7 +156,7 @@ const BatchInsertBody = observer(() => {
                   className={`px-3 py-1.5 text-sm cursor-pointer flex justify-between ${
                     i === acSelected
                       ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/10'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-[var(--c-hover)]'
                   }`}>
                   <span className="truncate">{tag.word}</span>
                   {tag.count != null && <span className="text-xs text-faint ml-2 flex-none">{tag.count}</span>}
@@ -194,7 +194,7 @@ const BatchInsertBody = observer(() => {
               setSlotTarget(v === 'all' ? 'all' : v === 'new-column' ? 'new-column' : Number(v));
               setDone(null);
             }}
-            className="text-sm rounded border line-color bg-[var(--c-input-bg)] text-default px-2 py-1"
+            className="app-select text-sm"
           >
             <option value="all">모든 슬롯</option>
             {/* 「열 n만」「새 열」은 slots 가 있는 씬(이미지생성·조합 변형)에만 — 단일 프롬프트 변형만 고르면 비활성 */}

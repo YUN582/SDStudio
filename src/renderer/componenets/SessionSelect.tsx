@@ -10,6 +10,7 @@ import { sessionService, backend, zipService, trashService, isMobile, templateSe
 import { appState } from '../models/AppService';
 import { isV2, loadV2ShelfOpen, saveV2ShelfOpen } from '../models/mobileV2';
 import { observer } from 'mobx-react-lite';
+import { reaction } from 'mobx';
 import {
   TOOLBAR_VIEW_MAIN,
   MOBILE_PROJECT_TOPROW_IDS,
@@ -110,7 +111,7 @@ export function ProjectTrashView({ onClose }: { onClose: () => void }) {
         newName,
       });
       appState.pushMessage(
-        projectRestoreResultText(displayName(item), newName, result.sidecarFailed.length > 0),
+        projectRestoreResultText(displayName(item), newName, result.sidecarFailed),
       );
       await refresh();
     } catch (e: any) {
@@ -265,8 +266,11 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
     };
     onListUpdated();
     sessionService.addEventListener('listupdated', onListUpdated);
+    // 숨김 목록이 바뀌면(지정 목록 로드·다른 창 저장 재로드 — 2026-11-18 T4) 다시 거른다. listupdated 만 보면 낡은 목록을 든다
+    const disposeHidden = reaction(() => templateService.hiddenNames, onListUpdated);
     return () => {
       sessionService.removeEventListener('listupdated', onListUpdated);
+      disposeHidden();
     };
   }, []);
   const selectSession = (opt: Option<string>) => {
@@ -283,7 +287,7 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
   // 구성·배치는 TOOLBAR_VIEW_MAIN 의 'project' 영역 + resolveToolbarView 가 결정한다.
   // 프로젝트 버튼은 전부 portable(shared)로 승격됨 — 로컬 전용 노드는 없다.
   const toolbarButtons: Record<string, React.ReactNode> = {};
-  // portable 공유 버튼(add-session·delete-session·project-trash·backup-export·
+  // portable 공유 버튼(add-session·delete-session·project-trash·backup-import·backup-export·
   // character-presets·piece-editor) — 크로스 영역 렌더용.
   // 프로젝트 바는 모바일 아이콘 축약 개념이 없어 mobileIcon=false(현 렌더와 동일).
   // variant='project': 타 영역발 버튼도 프로젝트 바 표준(무배경 icon-button)으로 적응.
@@ -314,7 +318,7 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
     TOOLBAR_VIEW_MAIN,
     appState.uiToolbar,
     isMobile,
-    companionAssignedIds(appState.uiCompanionSlots),
+    companionAssignedIds(appState.companionSlotsView),
   );
   const projectAreaResolved = projectView.find((a) => a.area === 'project');
   const toolbarLayout = {
@@ -496,7 +500,7 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
           <>
             <Tooltip content="프로젝트 목록 열기 (폴더 드로어)">
               <button
-                className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/40 text-default hover:bg-sky-100 dark:hover:bg-sky-900/70 transition-colors"
+                className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 md:h-8 rounded-lg border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/40 text-default hover:bg-sky-100 dark:hover:bg-sky-900/70 transition-colors"
                 onClick={() => {
                   appState.projectDrawerOpen = true;
                 }}
@@ -518,7 +522,7 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
       {/* 읽기 전용 미러 배지 — flex-none 으로 좁은 폭에서도 레이아웃을 밀지 않는다 */}
       {isMirrorCur && (
         <Tooltip content={mirrorTooltip}>
-          <span className="flex-none titlebar-no-drag inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 text-xs font-medium max-w-[9rem]">
+          <span className="flex-none titlebar-no-drag warn-badge max-w-[9rem]">
             <FaEye size={11} className="flex-none" />
             <span className="truncate">읽기 전용 미러</span>
           </span>
@@ -560,15 +564,17 @@ const SessionSelect = observer(({ variant = 'bar', side = 'left', mobileLead }: 
         </Tooltip>
       )}
       {v2Shelf && (
-        <button
-          type="button"
-          aria-label={shelfOpen ? '프로젝트 도구 접기' : '프로젝트 도구 펼치기'}
-          aria-expanded={shelfOpen}
-          className={`titlebar-no-drag icon-button touch-hit relative flex-none ${shelfOpen ? 'back-sky' : ''}`}
-          onClick={() => setShelfOpen(!shelfOpen)}
-        >
-          {shelfOpen ? <FaChevronUp size={14} /> : <FaChevronDown size={14} />}
-        </button>
+        <Tooltip content={shelfOpen ? '프로젝트 도구 접기' : '프로젝트 도구 펼치기'}>
+          <button
+            type="button"
+            aria-label={shelfOpen ? '프로젝트 도구 접기' : '프로젝트 도구 펼치기'}
+            aria-expanded={shelfOpen}
+            className={`titlebar-no-drag icon-button touch-hit relative flex-none ${shelfOpen ? 'back-sky' : ''}`}
+            onClick={() => setShelfOpen(!shelfOpen)}
+          >
+            {shelfOpen ? <FaChevronUp size={14} /> : <FaChevronDown size={14} />}
+          </button>
+        </Tooltip>
       )}
       <div
         className={mobileTwoRow ? 'w-full min-w-0 flex items-center' : 'contents'}

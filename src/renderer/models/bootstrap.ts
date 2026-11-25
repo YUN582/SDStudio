@@ -15,6 +15,8 @@ import {
   backgroundKeepAliveService,
   templateService,
   imageHistoryService,
+  projectTemplateService,
+  flushGlobalStoresNow,
 } from '.';
 import { reaction } from 'mobx';
 import { appState } from './AppService';
@@ -26,6 +28,9 @@ import { applyMobileV2Default, StorageDetectKind } from './mobileV2Default';
 import { isWorkspaceLayout, setWorkspaceLayoutActive } from './storageLayout';
 import { WORKSPACE_ROOT } from './projectPaths';
 import type { Session } from './types';
+import { installGlobalStoreHiddenFlush } from './globalStoreFlush';
+import { GLOBAL_STORE_SYNC_KEYS } from './storeFile';
+import { GLOBAL_LIBRARY_TRASH_CLEANUP_DELAY_MS } from './globalLibraryTrash';
 
 // ── 명시적 부트 시퀀스 ──
 // 앱의 모든 비동기 초기화가 여기서 "정해진 순서"로 일어난다.
@@ -181,8 +186,17 @@ export async function bootstrapApp(): Promise<void> {
         // main 의 config 는 이미 최신 — config-changed 경로(App.tsx 구독)가
         // get-config 재조회 + appState 미러 재적용을 수행한다.
         sessionService.configChanged();
-      } else if (key === 'global-character-presets') {
-        await globalCharacterPresetService.load();
+      } else if (key === GLOBAL_STORE_SYNC_KEYS.globalCharacterPresets) {
+        // 글로벌 저장소(2026-11-17 묶음 2): 저장 안 된 변경이 없으면 교체, 있으면 항목 단위 병합(종전 = load() 통째 교체로
+        // 2초 저장 대기 중 편집이 사라짐). 아직 읽지 않았거나 읽기 실패 상태면 무동작(종전 재시도 경로).
+        await globalCharacterPresetService.reloadExternal();
+      } else if (key === GLOBAL_STORE_SYNC_KEYS.globalPresets) {
+        await globalPresetService.reloadExternal();
+      } else if (key === GLOBAL_STORE_SYNC_KEYS.projectTemplates) {
+        await projectTemplateService.reloadExternal();
+      } else if (key === GLOBAL_STORE_SYNC_KEYS.sceneTemplates) {
+        // 씬 템플릿 지정 목록(2026-11-18 T4) — 같은 규칙(교체/필드별 병합, 재로드만으로는 쓰지 않음)
+        await templateService.reloadExternal();
       } else if (key === 'trash') {
         await trashService.reloadExternal();
       } else if (key === 'session-meta') {
@@ -396,6 +410,20 @@ export async function bootstrapApp(): Promise<void> {
       console.error('씬 템플릿 숨김 이관 실패:', e);
     });
   }
+  // 글로벌 프리셋·글로벌 캐릭터 휴지통 만료 정리(2026-11-24, 30일) — 기존 휴지통 자동 정리(TrashService.autoCleanup)처럼
+  // 시작 10초 뒤 조용히. 생성 호스트(주) 창에서만(여러 창 중복 정리 방지 — 다른 창은 저장 알림으로 받는다).
+  // 각 서비스가 저장소를 이 세션에서 정상으로 읽은 경우에만 지운다(읽기 실패·저장 차단·사본 복구면 무동작).
+  // 프로젝트 저장 경로(withLock·persist 큐)와는 무관한 글로벌 저장소 저장 줄(storeFile)만 쓴다.
+  if (taskQueueService.isGenerationHost) {
+    setTimeout(() => {
+      globalPresetService.purgeExpiredTrash().catch((e) => {
+        console.error('글로벌 프리셋 휴지통 만료 정리 실패:', e);
+      });
+      globalCharacterPresetService.purgeExpiredTrash().catch((e) => {
+        console.error('글로벌 캐릭터 프리셋 휴지통 만료 정리 실패:', e);
+      });
+    }, GLOBAL_LIBRARY_TRASH_CLEANUP_DELAY_MS);
+  }
   // 기존 TOKEN.txt를 빈 다중 토큰 목록에 먼저 복사한 뒤 로그인 검증을 시작한다.
   // 복사는 원본 토큰을 바꾸지 않으며 실패해도 기존 로그인 검증은 계속한다.
   const tokenProfilesReady = taskQueueService.isGenerationHost
@@ -415,17 +443,23 @@ export async function bootstrapApp(): Promise<void> {
   runMobilePermissionOnboarding().catch(() => {});
 }
 
+// 글로벌 저장소 다섯 개 + 씬 템플릿 지정 목록의 「바뀐 것만」 저장 = models/index 의 flushGlobalStoresNow(목록 단일 출처 —
+// 전체 백업도 같은 것을 쓴다, 2026-11-18 T1). 종료 저장과 백그라운드 전환(Android 보강 B)이 함께 쓴다.
+// 프로젝트 템플릿은 부팅 때 읽지 않고(필요 시 ensureLoaded) 종전엔 종료 저장도 없었다 — 2초 대기 중 편집이
+// 닫기로 사라지지 않게 함께 비운다. 바뀐 것이 없거나 읽지 않았으면 아무것도 쓰지 않는다(storeFile flush).
+
 // 앱 종료 시 저장되지 않은 편집을 마지막으로 저장한다.
 // (기존 models/index.ts 모듈 평가 시점 등록에서 이동 — 동작 동일)
+// 같은 조건(설정 읽기 실패 게이트 뒤)에서 백그라운드 전환 때 글로벌 저장소 저장 훅도 설치한다 — Android 는 종료 훅이
+// no-op 이라 이것이 유일한 마지막 저장 기회다(PC 도 같이 설치, 무변경이면 쓰지 않음). 작업 로그·persistService 전체
+// 비우기는 넣지 않는다.
 function registerOnCloseFlush() {
+  installGlobalStoreHiddenFlush(flushGlobalStoresNow);
   backend.onClose(() => {
     (async () => {
       try {
         await sessionService.flushOnClose();
-        await globalPresetService.flushSave();
-        await globalPieceService.flushSave();
-        await globalCharacterPresetService.flushSave();
-        await artistLibraryService.flushSave();
+        await flushGlobalStoresNow();
         await taskQueueService.flushSaveLogs();
         // 쓰기 파이프라인에 남아 있는(대기/진행 중) 저장까지 전부 디스크에 반영
         await persistService.flushAll();

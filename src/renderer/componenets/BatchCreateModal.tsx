@@ -1,3 +1,4 @@
+import { ProgressBar } from './ProgressIndicators';
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { FaPlus, FaUserAlt } from 'react-icons/fa';
@@ -20,6 +21,7 @@ import {
   buildBatchCombinations,
   resolveBatchName,
 } from '../models/batchCreatePlan';
+import { SettingCheckRow } from './SettingControls';
 
 // 프로젝트 일괄 생성 패널 (배치 R3 — 2026-07-17 탭 통합 스펙).
 //
@@ -246,6 +248,9 @@ export const BatchCreatePanel = observer(
     };
 
     const run = async () => {
+      // 폴더 기본 템플릿 지정·적용 기록(templates.json)을 저장할 수 없으면(읽기 실패·쓰기 충돌) 폴더·사본·자식 프로젝트를
+      // 만들기 전에 멈춘다 — 그대로 진행하면 지정·♟ 기록 없이 만들어진다(안내는 confirmWritable, 2026-11-18 T5)
+      if (!(await templateService.confirmWritable())) return;
       setRunningNotify(true);
       setResult(null);
       cancelRef.current = false;
@@ -503,13 +508,13 @@ export const BatchCreatePanel = observer(
               {visibleChars.map((e) => (
                 <label
                   key={e.id}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-1 py-0.5"
+                  className="flex items-center gap-2 cursor-pointer hover-row rounded px-1 py-0.5"
                 >
                   <input
                     type="checkbox"
                     checked={selectedChars.has(e.id)}
                     onChange={() => toggleChar(e.id)}
-                    className="rounded line-color flex-none"
+                    className="setting-check"
                   />
                   <CharThumb entry={e} />
                   <span className="text-sm text-default truncate flex-1">
@@ -555,13 +560,13 @@ export const BatchCreatePanel = observer(
               {sceneTemplates.map((s) => (
                 <label
                   key={s}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-1 py-0.5"
+                  className="flex items-center gap-2 cursor-pointer hover-row rounded px-1 py-0.5"
                 >
                   <input
                     type="checkbox"
                     checked={selectedScenes.has(s)}
                     onChange={() => toggleScene(s)}
-                    className="rounded line-color flex-none"
+                    className="setting-check"
                   />
                   <span className="text-sm text-default truncate">{s}</span>
                 </label>
@@ -572,21 +577,22 @@ export const BatchCreatePanel = observer(
 
         {/* 폴더 규칙 (캐릭터 축 있을 때만 — R2 스펙 5항) */}
         {selectedChars.size > 0 && (
-          <label className="flex items-start gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
+          // 체크 줄(2026-11-20 UI 정돈 그룹 1-c) — 실행 전 옵션. 위아래 구획 상자(p-3)의 안쪽 글자와 줄 안쪽 여백(10px)이
+          // 거의 같은 자리라 당기지 않는다.
+          <div className="select-none">
+            <SettingCheckRow
+              id="batchSubfolderByChar"
               checked={subfolderByChar}
-              onChange={(e) => setSubfolderByChar(e.target.checked)}
-              className="mt-0.5 rounded line-color"
+              onChange={setSubfolderByChar}
+              label="캐릭터별 서브폴더로 묶기"
+              description={
+                <>
+                  {displayFolder}/&#123;캐릭터 프리셋 이름&#125; 아래에
+                  생성됩니다.
+                </>
+              }
             />
-            <span className="text-sm text-default">
-              캐릭터별 서브폴더로 묶기
-              <span className="block text-xs text-muted">
-                {displayFolder}/&#123;캐릭터 프리셋 이름&#125; 아래에
-                생성됩니다.
-              </span>
-            </span>
-          </label>
+          </div>
         )}
 
         {/* 미리보기 */}
@@ -617,14 +623,7 @@ export const BatchCreatePanel = observer(
             목록 높이 상한 없음 — 창 본문 스크롤 하나가 맡는다(높이 규칙 우선순위). */}
         {running && progress && (
           <div className={sectionCls} data-batch-progress="">
-            <div className="w-full h-2 bg-[var(--c-surface-2)] rounded-full">
-              <div
-                className="h-full bg-purple-500 rounded-full transition-all"
-                style={{
-                  width: `${(progress.done / Math.max(1, progress.total)) * 100}%`,
-                }}
-              />
-            </div>
+            <ProgressBar percent={(progress.done / Math.max(1, progress.total)) * 100} />
             {progress.current && (
               <div className="text-xs text-muted truncate">
                 현재: {progress.current}

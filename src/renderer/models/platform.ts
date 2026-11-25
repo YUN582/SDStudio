@@ -16,11 +16,12 @@ const isMobile = window.electron == null;
 // 리눅스 데스크톱(Electron) 여부. 안드로이드 WebView 도 navigator.platform 이
 // 'Linux'로 시작하므로 반드시 Electron 여부와 함께 판정한다.
 const isLinux = !isMobile && window.navigator.platform.startsWith('Linux');
+// Windows 데스크톱(Electron) 여부 — navigator.platform 'Win32'(64비트도 같은 값).
+const isWindows = !isMobile && window.navigator.platform.startsWith('Win');
 
 export const platform = {
   isMobile,
   isLinux,
-  supportsCustomImageEditor: !isMobile && window.navigator.platform.startsWith('Win'),
 
   // --- 튜닝 상수 ---
   imageCacheSize: isMobile ? 64 : 256,
@@ -63,6 +64,14 @@ export const platform = {
   // 모바일=wasm libwebp(backends/wasmWebp.ts). 일괄 변환과 달리 부하가 장당
   // 단위라 저사양에서도 감당 가능(사용자 확정, 2026-07-18).
   supportsAutoWebpConvert: true,
+  // 「선호 이미지 편집기 → 사용자 지정」(실행 파일 .exe 직접 지정, 2026-11-22) — Windows 데스크톱만.
+  // mac·linux·모바일은 선택지·「실행 파일 선택」 버튼이 나오지 않는다(main 도 win32 에서만 실행).
+  supportsCustomImageEditor: isWindows,
+  // 이미지를 끌어서 다른 프로그램(탐색기·메신저 등)에 파일로 놓기(2026-11-22) — Electron webContents.startDrag 라
+  // 데스크톱만. 모바일은 헬퍼(models/imageDragOut.ts)가 아무 속성도 붙이지 않는다.
+  supportsImageDragOut: !isMobile,
+  // macOS 데스크톱 여부 — 그리드 칸의 「보조 키 + 끌기」 키 선택(mac = Option, 그 밖 = Ctrl)에 쓴다.
+  isMac: !isMobile && window.navigator.platform.startsWith('Mac'),
 };
 
 // 이미지 크기 최적화 방법 선택 옵션.

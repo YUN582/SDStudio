@@ -9,8 +9,10 @@ import {
   withoutCancelLikeItems,
 } from '../models/confirmKeys';
 import { isImeComposing } from '../models/escapeGate';
+import { SKIP_DELETE_CONFIRM_LABEL } from '../models/deleteFlowRules';
 import { observer } from 'mobx-react-lite';
-import { FaChevronDown, FaChevronRight } from 'react-icons/fa';
+import { DIALOG_DANGER_BTN, DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
+import { FaChevronRight } from 'react-icons/fa';
 import {
   groupPreview,
   loadOpenGroups,
@@ -319,7 +321,7 @@ const ConfirmWindow = observer(() => {
                         onChange={(e) => setSkipConfirm(e.target.checked)}
                         className="w-4 h-4 shrink-0 rounded accent-sky-500"
                       />
-                      이번 세션에서 다시 묻지 않음
+                      {SKIP_DELETE_CONFIRM_LABEL}
                     </label>
                   )}
                   {curDialog.confirmCheck && (
@@ -334,7 +336,7 @@ const ConfirmWindow = observer(() => {
                           setExtraChecked(e.target.checked);
                           curDialog.confirmCheck!.onChange(e.target.checked);
                         }}
-                        className="w-4 h-4 rounded accent-sky-500"
+                        className="setting-check"
                       />
                       {curDialog.confirmCheck.label}
                     </label>
@@ -352,7 +354,7 @@ const ConfirmWindow = observer(() => {
                     {curDialog.confirmText ?? '확인'}
                   </button>
                   <button
-                    className="px-4 py-2 rounded r-btn back-gray clickable"
+                    className={DIALOG_SECONDARY_BTN}
                     onClick={cancelTop}
                   >
                     {curDialog.cancelText ?? '취소'}
@@ -362,7 +364,7 @@ const ConfirmWindow = observer(() => {
               )}
               {curDialog.type === 'yes-only' && (
                 <button
-                  className="px-4 py-2 rounded r-btn back-sky clickable"
+                  className={DIALOG_PRIMARY_BTN}
                   onClick={handleConfirm}
                 >
                   확인
@@ -371,14 +373,14 @@ const ConfirmWindow = observer(() => {
               {(curDialog.type === 'input-confirm' || curDialog.type === 'textarea-confirm') && (
                 <>
                   <button
-                    className="mr-2 px-4 py-2 rounded r-btn back-sky clickable disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={'mr-2 ' + DIALOG_PRIMARY_BTN + ' disabled:opacity-50 disabled:cursor-not-allowed'}
                     onClick={handleConfirm}
                     disabled={validating}
                   >
                     확인
                   </button>
                   <button
-                    className="px-4 py-2 rounded r-btn back-gray clickable"
+                    className={DIALOG_SECONDARY_BTN}
                     onClick={cancelTop}
                   >
                     취소
@@ -394,12 +396,13 @@ const ConfirmWindow = observer(() => {
                         <button
                           key={key}
                           className={
-                            'w-full px-4 py-2 rounded r-btn clickable shrink-0 ' +
+                            // 선택지 = 확정 버튼과 같은 솔리드·중립 계열(그룹 2-b — 구조·크기는 그대로, 색·반경만)
+                            'dialog-btn w-full px-4 py-2 rounded r-btn transition-colors shrink-0 ' +
                             (item.danger
-                              ? 'back-red'
+                              ? 'btn-solid-red'
                               : curDialog.graySelect
-                                ? 'back-lgray'
-                                : 'back-sky')
+                                ? 'btn-neutral text-body'
+                                : 'btn-solid-sky')
                           }
                           data-danger={item.danger ? 'true' : undefined}
                           onClick={() => {
@@ -438,11 +441,10 @@ const ConfirmWindow = observer(() => {
                               }}
                             >
                               <span className="flex-none text-faint">
-                                {open ? (
-                                  <FaChevronDown size={10} />
-                                ) : (
-                                  <FaChevronRight size={10} />
-                                )}
+                                <FaChevronRight
+                                  size={10}
+                                  className={'transition-transform' + (open ? ' rotate-90' : '')}
+                                />
                               </span>
                               <span className="flex-1 min-w-0">
                                 <span className="block text-default font-semibold">
@@ -472,7 +474,7 @@ const ConfirmWindow = observer(() => {
                   </div>
                   {/* 내장 취소 — select 의 유일한 취소(items 에 「취소」를 넣지 않는다) */}
                   <button
-                    className="w-full px-4 py-2 clickable rounded r-btn back-gray shrink-0"
+                    className="dialog-btn w-full px-4 py-2 rounded r-btn btn-neutral text-body transition-colors shrink-0"
                     onClick={cancelTop}
                   >
                     {curDialog.cancelText ?? '취소'}
@@ -504,14 +506,14 @@ const ConfirmWindow = observer(() => {
                   </div>
                   <div className="flex gap-2 ml-auto mt-5">
                     <button
-                      className="flex-1 px-4 py-2 block rounded r-btn back-sky clickable"
+                      className="dialog-btn flex-1 px-4 py-2 block rounded r-btn btn-solid-sky transition-colors"
                       onClick={handleConfirm}
                       disabled={!inputValue}
                     >
                       확인
                     </button>
                     <button
-                      className="flex-1 px-4 py-2 block rounded r-btn back-gray clickable"
+                      className="dialog-btn flex-1 px-4 py-2 block rounded r-btn btn-neutral text-body transition-colors"
                       onClick={cancelTop}
                     >
                       {curDialog.cancelText ?? '취소'}
@@ -536,7 +538,7 @@ const ConfirmWindow = observer(() => {
                             else next.delete(item.value);
                             setCheckedItems(next);
                           }}
-                          className="w-4 h-4 flex-shrink-0"
+                          className="setting-check"
                         />
                         <span
                           className={item.danger ? 'text-red-500 dark:text-red-400' : 'text-default'}
@@ -548,13 +550,13 @@ const ConfirmWindow = observer(() => {
                   </div>
                   <div className="flex gap-2 mt-2 w-full">
                     <button
-                      className="flex-1 px-4 py-2 rounded r-btn back-sky clickable"
+                      className="dialog-btn flex-1 px-4 py-2 rounded r-btn btn-solid-sky transition-colors"
                       onClick={handleConfirm}
                     >
                       확인
                     </button>
                     <button
-                      className="flex-1 px-4 py-2 rounded r-btn back-gray clickable"
+                      className="dialog-btn flex-1 px-4 py-2 rounded r-btn btn-neutral text-body transition-colors"
                       onClick={cancelTop}
                     >
                       {curDialog.cancelText ?? '취소'}

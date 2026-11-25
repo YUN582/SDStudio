@@ -17,6 +17,13 @@ import path from 'path';
 import { copyFileUnlessSame } from './copyFileUnlessSame';
 import { openExportDirectory } from './openExportDirectory';
 import { writeImageZip } from './writeImageZip';
+import { createImageChangeDetector, isRootGoneEvent } from './imageFolderWatch';
+import { launchCustomImageEditor } from './customImageEditor';
+import {
+  buildDragOutIcon,
+  IMAGE_DRAG_OUT_CHANNEL,
+  resolveDragOutFile,
+} from './imageDragOut';
 import {
   app,
   BrowserWindow,
@@ -49,7 +56,6 @@ const { exiftool } = require('exiftool-vendored');
 const chokidar = require('chokidar');
 import webpackPaths from '../../.erb/configs/webpack.paths';
 import { Config } from './config';
-import { launchCustomImageEditor } from './customImageEditor';
 import { registerEditedImageMetadata, captureGenerationMetadata, applyGenerationMetadata, readStealthGenerationTags } from './editedImageMetadata';
 import { migrateVariantOutputs } from './variantOutputMigration';
 import { maintainWorkAssets } from './workAssetMaintenance';
@@ -78,6 +84,7 @@ import { cleanupDriveDownload, downloadDriveFileForIpc } from './googleDrive/dow
 import { listBackupsForIpc, trashBackupFileForIpc } from './googleDrive/manage';
 import { DRIVE_AUTH_CHANNEL } from '../shared/googleDriveAuth';
 import { DRIVE_FILE_CHANNEL, isDriveWebUrl } from '../shared/googleDrive';
+import { uiZoomFactorOf } from '../shared/uiZoom';
 import {
   INSIDE_INSTALL_DIR_CODE,
   SaveLocationInsideInstall,
@@ -434,6 +441,20 @@ let config: Config = {};
 let configLoadFailure: { path: string; code: string } | null = null;
 
 // 창 컨트롤 IPC — 호출한 창(event.sender)에만 작용한다(멀티 윈도우 안전).
+// PC 화면 배율(시험 기능, 2026-11-19 — shared/uiZoom.ts). Chromium 은 배율을 출처별로 기억하므로
+// 문서를 읽을 때마다·설정을 저장할 때마다 현재 config 값으로 명시해 맞춘다(같은 값이면 그대로 둔다).
+function applyUiZoom(win: BrowserWindow) {
+  if (win.isDestroyed()) return;
+  const factor = uiZoomFactorOf(config.uiZoomPercent);
+  try {
+    if (Math.abs(win.webContents.getZoomFactor() - factor) > 1e-6) {
+      win.webContents.setZoomFactor(factor);
+    }
+  } catch (e) {
+    log.warn('applyUiZoom failed', e);
+  }
+}
+
 ipcMain.handle('window-minimize', (event) => {
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
@@ -464,6 +485,8 @@ ipcMain.handle('set-config', async (event, newConfig) => {
   const tmpFile = path.join(DEFAULT_APP_DIR, uuidv4());
   await fs.writeFile(tmpFile, JSON.stringify(config), 'utf-8');
   await fs.rename(tmpFile, path.join(DEFAULT_APP_DIR, 'config.json'));
+  // 화면 배율(시험 기능): 저장한 창과 열려 있는 다른 창 모두에 바로 반영한다.
+  for (const w of BrowserWindow.getAllWindows()) applyUiZoom(w);
   // 전역 저장소 동기화(W6 P2): 설정 변경을 다른 창들에 알린다 — 각 창이
   // get-config 재조회+미러 재적용(config-changed 경로)으로 반영한다.
   broadcastGlobalStoreChanged(event.sender.id, 'config');
@@ -1568,6 +1591,32 @@ ipcMain.handle('copy-image-to-clipboard', async (event, imagePath) => {
   clipboard.writeImage(image);
 });
 
+// 이미지를 끌어서 다른 프로그램에 파일로 놓기(PC, 2026-11-22) — 렌더러가 dragstart 를 막고 보낸 저장소 상대 경로를
+// 확인(데이터 루트 안·실제 일반 파일·이미지 확장자 — imageDragOut.ts)한 뒤 OS 파일 끌기를 시작한다. 하나라도
+// 어긋나면 아무것도 하지 않는다(false). Windows 는 startDrag 가 놓을 때까지 돌아오지 않으므로 반환 = 끌기 끝.
+ipcMain.handle(IMAGE_DRAG_OUT_CHANNEL, async (event, relPath) => {
+  const file = resolveDragOutFile(APP_DIR, relPath, {
+    isFile: (p) => {
+      try {
+        return fsSync.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    },
+  });
+  if (!file) return false;
+  const icon = await buildDragOutIcon(file, {
+    fromPath: (p) => nativeImage.createFromPath(p),
+    fromBuffer: (b) => nativeImage.createFromBuffer(b),
+    thumbnailPng: (p, size) =>
+      sharp(p).resize(size, size, { fit: 'inside' }).png().toBuffer(),
+    fallbackPath: getAssetPath('icon.png'),
+  });
+  if (!icon || event.sender.isDestroyed()) return false;
+  event.sender.startDrag({ file, icon });
+  return true;
+});
+
 const util = require('util');
 const { exec } = require('child_process');
 const execPromise = util.promisify(exec);
@@ -2125,6 +2174,9 @@ const createWindow = async (opts?: {
       // 미러 브로드캐스트(300ms 스로틀)가 수 초씩 지연된다. 위임 구조에서는
       // 사용자가 보조 창에서 작업하는 동안 호스트가 항상 배경이므로 필수.
       backgroundThrottling: false,
+      // 화면 배율(시험 기능): 첫 화면부터 설정 배율로 그려 100% 로 보였다 줄어드는 깜빡임을 줄인다.
+      // 출처별 기억값이 남아 있어도 아래 dom-ready 에서 현재 설정값으로 다시 맞춘다.
+      zoomFactor: uiZoomFactorOf(config.uiZoomPercent),
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
         : path.join(__dirname, '../../.erb/dll/preload.js'),
@@ -2254,6 +2306,9 @@ const createWindow = async (opts?: {
       return [];
     },
   });
+
+  // 화면 배율(시험 기능): 문서를 읽을 때마다(첫 로드·새로고침) 현재 설정값으로 명시한다.
+  win.webContents.on('dom-ready', () => applyUiZoom(win));
 
   win.loadURL(resolveHtmlPath('index.html'));
 
@@ -2501,27 +2556,74 @@ async function initFolder() {
       }
     } catch (e) {}
   }
-  if (config.refreshImage) {
-    const publishImageChange = (changedPath: string) => {
-      const comps = path.relative(APP_DIR, changedPath).split(path.sep);
-      if (!/\.(png|webp|jpe?g)$/i.test(comps[comps.length - 1])) return;
-      if (comps[0] === 'workspace') {
-        if (!['outs', 'inpaints', 'vibes', 'references', 'inpaint_orgs', 'inpaint_masks'].includes(comps[2])) return;
-      } else if (comps[0] !== 'outs' && comps[0] !== 'inpaints') return;
-      broadcast('image-changed', comps.join('/'));
+  if (config.refreshImage && os.platform() === 'win32') {
+    // Windows: chokidar 3.6 은 파일마다 fs.watch 를 걸어 큰 저장 폴더에서 시작이 수십 초 멈추고,
+    // 폴더마다 핸들을 잡아 하위 폴더가 있는 폴더의 이름 변경을 EPERM 으로 막는다.
+    // recursive fs.watch 한 개로 감시하고, 폴더·새 파일에도 오는 알림은
+    // imageFolderWatch 의 판별기로 걸러 「기존 이미지가 바뀜」만 알린다.
+    const detector = createImageChangeDetector({
+      isFile: (rel) =>
+        fs.stat(path.join(APP_DIR, rel)).then(
+          (s: { isFile(): boolean }) => s.isFile(),
+          () => false,
+        ),
+      // 저장 경로 전역 감시 — 어느 창이 볼지 알 수 없으니 전 창 브로드캐스트.
+      emit: (rel) => broadcast('image-changed', rel),
+    });
+    let watcher: any = null;
+    const stopImageFolderWatch = (reason: string, err?: unknown) => {
+      if (!watcher) return;
+      const w = watcher;
+      watcher = null;
+      try {
+        w.close();
+      } catch (e) {}
+      detector.dispose();
+      if (err !== undefined) log.warn(`저장 경로 전역 감시 중지(${reason}):`, err);
+      else log.warn(`저장 경로 전역 감시 중지(${reason})`);
     };
-    if (process.platform === 'win32') {
-      // One recursive handle on the root leaves scene and project folders movable.
-      const handle = fsSync.watch(APP_DIR, { recursive: true }, (event: string, filename: string | null) => {
-        if (!filename) return;
-        const changedPath = path.join(APP_DIR, filename);
-        if (event === 'change' || event === 'rename') publishImageChange(changedPath);
-      });
-      handle.on('error', (error: Error) => log.warn('이미지 폴더 감시 오류:', error));
-    } else {
-      chokidar.watch(APP_DIR, { persistent: true, ignoreInitial: true, usePolling: false })
-        .on('change', publishImageChange).on('unlink', publishImageChange);
+    try {
+      watcher = fsSync.watch(
+        APP_DIR,
+        { recursive: true, persistent: true },
+        (eventType: string, filename: string | null) => {
+          if (!watcher) return;
+          if (isRootGoneEvent(filename)) {
+            // 감시 루트 자체가 사라짐 — 닫을 때까지 알림이 쏟아지므로 닫고 다시 열지 않는다.
+            stopImageFolderWatch('저장 폴더가 사라짐');
+            return;
+          }
+          detector.onRawEvent(eventType, filename);
+        },
+      );
+      watcher.on('error', (e: unknown) => stopImageFolderWatch('감시 오류', e));
+    } catch (e) {
+      watcher = null;
+      detector.dispose();
+      log.warn('저장 경로 전역 감시 시작 실패:', e);
     }
+  } else if (config.refreshImage) {
+    const handle = chokidar.watch(APP_DIR, {
+      persistent: true,
+      ignoreInitial: true,
+      usePolling: false,
+    });
+    handle.on('change', async (changedPath: string) => {
+      let curPath = path.relative(APP_DIR, changedPath);
+      const comps = curPath.split(path.sep);
+      if (comps.length === 0) return;
+      if (comps[0] === '.') {
+        comps.shift();
+      }
+      if (
+        comps[0] === 'outs' ||
+        comps[0] === 'inpaints' ||
+        comps[0] === 'workspace'
+      ) {
+        // 저장 경로 전역 감시 — 어느 창이 볼지 알 수 없으니 전 창 브로드캐스트.
+        broadcast('image-changed', comps.join('/'));
+      }
+    });
   }
 }
 

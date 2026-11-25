@@ -1,10 +1,25 @@
 import { observable, action } from 'mobx';
-import { persistService } from './PersistenceService';
 import { v4 as uuidv4 } from 'uuid';
 import { backend, imageService } from '.';
 import { Session, CharacterPreset, ICharacterPreset } from './types';
 import { dataUriToBase64 } from './ImageService';
 import { numberedName, suggestFolderCopyName, taggedName } from './nameInput';
+import { StoreFile, GLOBAL_STORE_SYNC_KEYS } from './storeFile';
+import { globalStoreDeps } from './globalStoreDeps';
+import { mergeById, mergeStringSet } from './storeMerge';
+import {
+  dropListedFromTrash,
+  isTrashExpired,
+  makeTrashItem,
+  mergeTrash,
+  splitTrashField,
+  unreferencedTokens,
+} from './globalLibraryTrash';
+import type {
+  GlobalTrashItem,
+  GlobalTrashPurgeResult,
+  GlobalTrashRestoreOutcome,
+} from './globalLibraryTrash';
 
 const GLOBAL_CHAR_PRESETS_FILE = 'global_character_presets.json';
 const GLOBAL_CHAR_IMAGES_DIR = 'global_char_images';
@@ -29,7 +44,12 @@ export interface IGlobalCharacterPresetStore {
   // ("폴더 먼저 만들고 옮기는" 워크플로). 필드 추가 = 구버전 호환 무해.
   // 구 데이터(파생 방식)는 listFolders 가 엔트리에서 자동 복구 병합한다.
   folders?: string[];
+  // 휴지통(2026-11-24, 선택 필드 — globalLibraryTrash.ts). 항목 원본(원래 폴더 = entry.folder) + 삭제 시각.
+  // 비어 있으면 쓰지 않는다. version 은 1 그대로.
+  trash?: IGlobalCharacterPresetTrashItem[];
 }
+
+export type IGlobalCharacterPresetTrashItem = GlobalTrashItem<IGlobalCharacterPresetEntry>;
 
 // 글로벌(프로젝트 공통) 캐릭터 프리셋.
 // 캐릭터 프리셋 이미지는 세션 디렉터리에 종속되므로, 글로벌은 전용 디렉터리에
@@ -39,89 +59,172 @@ export class GlobalCharacterPresetService extends EventTarget {
   // 폴더 레지스트리 — 순서가 곧 표시 순서. listFolders 로만 읽을 것
   // (파생 폴더 자동 복구 병합 포함).
   @observable accessor folders: string[] = [];
+  /** 휴지통(같은 저장소 파일의 trash 필드) */
+  @observable accessor trash: IGlobalCharacterPresetTrashItem[] = [];
   @observable accessor loaded: boolean = false;
-  private saveTimeout: any = null;
+  // 이 세션에서 본 파일을 정상(ok)으로 읽었는가 — 만료 정리는 이때만
+  private trashReadOk = false;
+
+  // 로드 판정·저장·사본 회전(storeFile.ts 단일 출처, 2026-11-17 묶음 1). 형식은 종전 그대로.
+  private store = new StoreFile<IGlobalCharacterPresetStore>(
+    {
+      file: GLOBAL_CHAR_PRESETS_FILE,
+      label: '글로벌 캐릭터 프리셋',
+      parse: (raw) => {
+        const json = JSON.parse(raw);
+        return json && typeof json === 'object' && Array.isArray(json.presets)
+          ? (json as IGlobalCharacterPresetStore)
+          : null;
+      },
+      countItems: (s) =>
+        s.presets.length +
+        (Array.isArray(s.folders) ? s.folders.length : 0) +
+        (Array.isArray(s.trash) ? s.trash.length : 0),
+      serialize: () => {
+        const store: IGlobalCharacterPresetStore = {
+          version: 1,
+          presets: this.presets,
+          folders: this.folders,
+        };
+        // 휴지통은 비어 있으면 쓰지 않는다(지금까지의 파일 형식과 같게)
+        if (this.trash.length > 0) store.trash = this.trash;
+        return JSON.stringify(store);
+      },
+      saveDelayMs: 2000,
+      // 전역 저장소 동기화(W6 P2): 다른 창들이 디스크에서 재로드하도록 알림
+      afterWrite: () => {
+        backend.notifyGlobalStoreChanged(GLOBAL_STORE_SYNC_KEYS.globalCharacterPresets).catch(() => {});
+      },
+    },
+    globalStoreDeps,
+  );
+
+  /** 파일을 읽지 못해 저장·변경이 막힌 상태(앱을 다시 시작하거나 reload 성공 시 풀림) */
+  get loadFailed(): boolean {
+    return this.store.loadFailed;
+  }
 
   // ---------- lifecycle ----------
-  async load() {
-    try {
-      const str = await backend.readFile(GLOBAL_CHAR_PRESETS_FILE);
-      const json = JSON.parse(str) as IGlobalCharacterPresetStore;
-      this.presets =
-        json && Array.isArray(json.presets)
-          ? json.presets
-              .filter(
-                (p) =>
-                  p &&
-                  typeof p.id === 'string' &&
-                  typeof p.name === 'string' &&
-                  p.preset,
-              )
-              // folder 문자열 방어 — 비문자열/빈 값은 루트로 정규화
-              .map((p) => ({
-                ...p,
-                folder:
-                  typeof p.folder === 'string' && p.folder.trim()
-                    ? p.folder
-                    : undefined,
-              }))
-          : [];
-      // 폴더 레지스트리 로드 방어 — 문자열만·trim·중복 제거
-      const rawFolders = Array.isArray((json as any)?.folders)
-        ? ((json as any).folders as unknown[])
+
+  /** 파일 내용 → 메모리 목록·폴더 레지스트리(load·다른 창 재로드·병합 기준이 같은 규칙을 쓴다) */
+  private static isEntryShape(p: any): boolean {
+    return !!p && typeof p.id === 'string' && typeof p.name === 'string' && !!p.preset;
+  }
+
+  // folder 문자열 방어 — 비문자열/빈 값은 루트로 정규화
+  private static normalizeEntryFolder(p: IGlobalCharacterPresetEntry): IGlobalCharacterPresetEntry {
+    return {
+      ...p,
+      folder: typeof p.folder === 'string' && p.folder.trim() ? p.folder : undefined,
+    };
+  }
+
+  private static normalizeStore(json: IGlobalCharacterPresetStore | null): {
+    presets: IGlobalCharacterPresetEntry[];
+    folders: string[];
+    trash: IGlobalCharacterPresetTrashItem[];
+  } {
+    const presets =
+      json && Array.isArray(json.presets)
+        ? json.presets
+            .filter((p) => GlobalCharacterPresetService.isEntryShape(p))
+            .map((p) => GlobalCharacterPresetService.normalizeEntryFolder(p))
         : [];
-      const folders: string[] = [];
-      for (const f of rawFolders) {
-        if (typeof f !== 'string') continue;
-        const t = f.trim();
-        if (t && !folders.includes(t)) folders.push(t);
-      }
-      this.folders = folders;
-    } catch (e) {
+    // 휴지통(선택 필드) — 손상 칸은 버리고, 목록과 같은 id 는 목록 우선
+    const trash = dropListedFromTrash(
+      splitTrashField<IGlobalCharacterPresetEntry>(
+        (json as any)?.trash,
+        (e) => GlobalCharacterPresetService.isEntryShape(e),
+        Date.now(),
+      ).items.map((t) => ({ ...t, entry: GlobalCharacterPresetService.normalizeEntryFolder(t.entry) })),
+      presets.map((p) => p.id),
+    );
+    // 폴더 레지스트리 로드 방어 — 문자열만·trim·중복 제거
+    const rawFolders = Array.isArray((json as any)?.folders)
+      ? ((json as any).folders as unknown[])
+      : [];
+    const folders: string[] = [];
+    for (const f of rawFolders) {
+      if (typeof f !== 'string') continue;
+      const t = f.trim();
+      if (t && !folders.includes(t)) folders.push(t);
+    }
+    return { presets, folders, trash };
+  }
+
+  async load() {
+    const res = await this.store.load();
+    if (res.keepMemory) return; // 재로드 실패 — 이미 가진 목록 유지
+    if (res.kind === 'io-failed') {
+      // 읽기 실패 — 빈 목록으로 보이되 저장·변경은 막힌다. loaded=false 로 두어 다음 진입이 다시 읽게 한다.
       this.presets = [];
       this.folders = [];
+      this.trash = [];
+      this.trashReadOk = false;
+      this.loaded = false;
+      this.dispatchEvent(new CustomEvent('changed', {}));
+      return;
     }
+    const next = GlobalCharacterPresetService.normalizeStore(
+      res.kind === 'ok' || res.kind === 'recovered' ? res.data : null,
+    );
+    this.presets = next.presets;
+    this.folders = next.folders;
+    this.trash = next.trash;
+    this.trashReadOk = res.kind === 'ok';
     this.loaded = true;
     this.dispatchEvent(new CustomEvent('changed', {}));
   }
 
+  /** 읽기 실패로 막혀 있으면 한 번 다시 읽는다(관리 화면 진입 때). 성공하면 차단이 풀린다 */
+  async reloadIfFailed(): Promise<void> {
+    if (this.store.loadFailed) await this.load();
+  }
+
+  /**
+   * 다른 창이 저장했다는 알림으로 다시 읽는다(여러 창 동기화). 아직 읽지 않았거나 읽기 실패 상태면 무동작(종전 경로).
+   * 저장 안 된 변경이 없으면 교체, 있으면 항목(id)·폴더(문자열 집합) 단위 병합 — 재로드만으로는 쓰지 않는다.
+   * 종전엔 load() 로 통째 교체해 2초 저장 대기 중이던 이 창의 편집이 사라졌다.
+   */
+  async reloadExternal(): Promise<void> {
+    if (!this.loaded) return;
+    const r = await this.store.reloadExternal({
+      replace: (remote) => {
+        const next = GlobalCharacterPresetService.normalizeStore(remote);
+        this.presets = next.presets;
+        this.folders = next.folders;
+        this.trash = next.trash;
+        this.trashReadOk = true;
+      },
+      merge: (remote, base) => {
+        const b = GlobalCharacterPresetService.normalizeStore(base);
+        const rm = GlobalCharacterPresetService.normalizeStore(remote);
+        this.presets = mergeById(b.presets, this.presets, rm.presets);
+        this.folders = mergeStringSet(b.folders, this.folders, rm.folders);
+        // 휴지통도 항목(id) 단위 3방향 병합 → 목록과 겹치는 id 는 휴지통 쪽을 버린다(목록 우선)
+        this.trash = dropListedFromTrash(
+          mergeTrash(b.trash, this.trash, rm.trash),
+          this.presets.map((p) => p.id),
+        );
+        this.trashReadOk = true;
+      },
+    });
+    if (r === 'replaced' || r === 'merged') this.dispatchEvent(new CustomEvent('changed', {}));
+  }
+
+  // 저장: tmp → rename(실패 시 직접 쓰기), 세션 첫 저장 전 .bak1~3 회전, 읽기 실패 상태면 쓰지 않음(storeFile).
+  // 성공했을 때만 다른 창에 알린다(종전 동작).
   async save() {
-    const store: IGlobalCharacterPresetStore = {
-      version: 1,
-      presets: this.presets,
-      folders: this.folders,
-    };
-    const data = JSON.stringify(store);
-    const tmp = GLOBAL_CHAR_PRESETS_FILE + '.tmp';
-    try {
-      await persistService.write(tmp, data);
-      await backend.renameFile(tmp, GLOBAL_CHAR_PRESETS_FILE);
-    } catch (e) {
-      try {
-        await persistService.write(GLOBAL_CHAR_PRESETS_FILE, data);
-      } catch (e2) {
-        console.error('Failed to save global character presets:', e2);
-        return;
-      }
-    }
-    // 전역 저장소 동기화(W6 P2): 다른 창들이 디스크에서 재로드하도록 알림
-    backend.notifyGlobalStoreChanged('global-character-presets').catch(() => {});
+    await this.store.saveNow();
   }
 
   scheduleSave() {
-    if (this.saveTimeout) clearTimeout(this.saveTimeout);
-    this.saveTimeout = setTimeout(() => {
-      this.save();
-      this.saveTimeout = null;
-    }, 2000);
+    this.store.schedule();
   }
 
+  // 종료 직전 — 바뀐 것이 있을 때만 쓴다
   async flushSave() {
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-      this.saveTimeout = null;
-    }
-    await this.save();
+    await this.store.flush();
   }
 
   // ---------- read ----------
@@ -153,6 +256,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   // at = 레지스트리 안 위치(없거나 범위 밖이면 끝) — 폴더 삭제 되돌리기가 원래 자리로 되살릴 때만 쓴다(2차 P5).
   @action
   async createFolder(name: string, at?: number): Promise<string> {
+    this.store.assertWritable();
     name = (name ?? '').trim();
     if (!name) throw new Error('폴더 이름을 입력해 주세요');
     if (this.listFolders().includes(name)) {
@@ -170,6 +274,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   // 폴더 삭제 — 소속 엔트리는 미분류로 이동, 레지스트리에서 제거.
   @action
   async deleteFolder(name: string): Promise<void> {
+    this.store.assertWritable();
     let entryChanged = false;
     this.presets = this.presets.map((p) => {
       if (p.folder !== name) return p;
@@ -187,6 +292,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   // 새 폴더 이름이 오면 레지스트리에 자동 등록한다.
   @action
   async setFolder(id: string, folder: string | null): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) return;
     const f = (folder ?? '').trim();
@@ -205,6 +311,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   // 폴더 이름 변경 — 레지스트리 이관 + 해당 폴더의 엔트리 일괄 이관.
   @action
   async renameFolder(oldName: string, newName: string): Promise<void> {
+    this.store.assertWritable();
     newName = newName.trim();
     if (!newName) throw new Error('폴더 이름을 입력해 주세요');
     if (oldName === newName) return;
@@ -269,6 +376,7 @@ export class GlobalCharacterPresetService extends EventTarget {
     session: Session,
     preset: CharacterPreset,
   ): Promise<IGlobalCharacterPresetEntry> {
+    this.store.assertWritable();
     const json: ICharacterPreset = preset.toJSON();
 
     for (const vibe of json.vibes || []) {
@@ -465,6 +573,7 @@ export class GlobalCharacterPresetService extends EventTarget {
     data: any,
     policy: 'rename' | 'skip' | 'overwrite' = 'rename',
   ): Promise<{ added: number; updated: number; skipped: number }> {
+    this.store.assertWritable();
     if (!data || !Array.isArray(data.presets)) {
       throw new Error('올바른 캐릭터 프리셋 파일이 아닙니다');
     }
@@ -588,12 +697,14 @@ export class GlobalCharacterPresetService extends EventTarget {
 
   // ---------- 편집기용 이미지 저장 (FileUploadBase64는 raw base64 제공) ----------
   async storeVibeForEditor(base64: string): Promise<string> {
+    this.store.assertWritable();
     const filename = uuidv4() + '.png';
     await backend.writeDataFile(GLOBAL_CHAR_IMAGES_DIR + '/' + filename, base64);
     return filename;
   }
 
   async storeReferenceForEditor(base64: string): Promise<string> {
+    this.store.assertWritable();
     // 글로벌 보관은 원본 유지; 실제 정규화/리사이즈는 프로젝트로 불러올 때 수행
     const filename = uuidv4() + '.png';
     await backend.writeDataFile(GLOBAL_CHAR_IMAGES_DIR + '/' + filename, base64);
@@ -621,6 +732,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   async addPresetObject(
     preset: CharacterPreset,
   ): Promise<IGlobalCharacterPresetEntry> {
+    this.store.assertWritable();
     const json: ICharacterPreset = preset.toJSON();
     const name = this.resolveNameCollision(
       (json.name || '이름없음').trim() || '이름없음',
@@ -644,6 +756,7 @@ export class GlobalCharacterPresetService extends EventTarget {
 
   @action
   async updateEntry(id: string, preset: CharacterPreset): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) throw new Error('프리셋을 찾을 수 없습니다');
     const oldTokens = new Set(this.collectImageTokens(entry.preset));
@@ -658,13 +771,19 @@ export class GlobalCharacterPresetService extends EventTarget {
     entry.updatedAt = Date.now();
     this.presets = [...this.presets];
     // 더 이상 참조되지 않는 글로벌 이미지 정리
-    for (const t of oldTokens) if (!newTokens.has(t)) await this.deleteImageData(t);
+    this.store.markDirty();
+    if (await this.store.saveNow()) {
+      for (const t of unreferencedTokens([...oldTokens].filter(t => !newTokens.has(t)), this.referencedImageTokens())) {
+        await this.deleteImageData(t);
+      }
+    }
     this.scheduleSave();
     this.dispatchEvent(new CustomEvent('changed', {}));
   }
 
   @action
   async duplicateEntry(id: string): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) return;
     const json: ICharacterPreset = JSON.parse(JSON.stringify(entry.preset));
@@ -697,6 +816,7 @@ export class GlobalCharacterPresetService extends EventTarget {
 
   @action
   reorder(from: number, to: number) {
+    if (!this.store.canWrite()) return;
     if (
       from === to ||
       from < 0 ||
@@ -716,6 +836,7 @@ export class GlobalCharacterPresetService extends EventTarget {
   // ---------- write ----------
   @action
   async rename(id: string, newName: string) {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) throw new Error('프리셋을 찾을 수 없습니다');
     newName = newName.trim();
@@ -730,18 +851,137 @@ export class GlobalCharacterPresetService extends EventTarget {
     this.dispatchEvent(new CustomEvent('changed', {}));
   }
 
+  // ---------- 휴지통(2026-11-24, globalLibraryTrash.ts) ----------
+
+  /** 목록·휴지통이 가리키는 이미지 파일 토큰 — 영구 삭제가 이 밖의 파일만 지운다 */
+  private referencedImageTokens(): string[] {
+    const out: string[] = [];
+    for (const p of this.presets) out.push(...this.collectImageTokens(p.preset));
+    for (const t of this.trash) if (t.entry?.preset) out.push(...this.collectImageTokens(t.entry.preset));
+    return out;
+  }
+
+  getTrashItem(id: string): IGlobalCharacterPresetTrashItem | undefined {
+    return this.trash.find((t) => t.entry.id === id);
+  }
+
+  /**
+   * 삭제 = 휴지통으로 이동(2026-11-24). 항목 원본(원래 폴더 entry.folder 포함)을 같은 파일의 휴지통 목록으로 옮긴다 —
+   * 목록에서 빼기와 휴지통에 넣기는 한 번의 저장으로 나간다. 첨부 이미지 파일은 지우지 않는다(영구 삭제·만료 때만).
+   */
   @action
   async delete(id: string) {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) return;
-    const imgs: string[] = [];
-    for (const v of entry.preset.vibes || []) imgs.push(v.path);
-    for (const r of entry.preset.characterReferences || []) imgs.push(r.path);
-    if (entry.preset.representativeImage)
-      imgs.push(entry.preset.representativeImage);
-    for (const f of imgs) await this.deleteImageData(f);
+    const item = makeTrashItem(entry, Date.now());
+    if (item.entry.folder === undefined) delete item.entry.folder;
     this.presets = this.presets.filter((p) => p.id !== id);
+    this.trash = [...this.trash.filter((t) => t.entry.id !== id), item];
     this.scheduleSave();
     this.dispatchEvent(new CustomEvent('changed', {}));
+  }
+
+  /**
+   * 휴지통 → 목록. at = 넣을 자리(없으면 끝). 이름이 겹치면 「X (2)」. 원래 폴더가 없어졌으면 미분류로
+   * (keepMissingFolder = 그 폴더가 이 삭제로만 사라진 파생 폴더 → 되돌리기가 그대로 되살릴 때만). 첨부 이미지 파일이 없으면
+   * 항목은 복원하되 이미지 없음 상태로 두고 missingImages 로 알린다. 같은 id 가 목록에 있으면 id-taken, 휴지통에 없으면 not-in-trash.
+   */
+  @action
+  async restoreFromTrash(
+    id: string,
+    at?: number,
+    keepMissingFolder = false,
+  ): Promise<GlobalTrashRestoreOutcome<IGlobalCharacterPresetEntry>> {
+    this.store.assertWritable();
+    if (this.get(id)) return { kind: 'id-taken' };
+    const first = this.getTrashItem(id);
+    if (!first) return { kind: 'not-in-trash' };
+    let missingImages = 0;
+    for (const token of new Set(this.collectImageTokens(first.entry.preset))) {
+      let exists = false;
+      try {
+        exists = await backend.existFile(this.getImagePath(token));
+      } catch (e) {
+        exists = false;
+      }
+      if (!exists) missingImages++;
+    }
+    // await 사이 다른 창 재로드·막힘이 있었으면 지금 상태로 다시 판단한다
+    this.store.assertWritable();
+    if (this.get(id)) return { kind: 'id-taken' };
+    const item = this.getTrashItem(id);
+    if (!item) return { kind: 'not-in-trash' };
+    const restored: IGlobalCharacterPresetEntry = JSON.parse(JSON.stringify(item.entry));
+    const original = restored.name;
+    const other = this.getByName(restored.name);
+    if (other && other.id !== restored.id) {
+      restored.name = this.resolveNameCollision(restored.name);
+      restored.preset.name = restored.name;
+    }
+    let folderDropped: string | undefined;
+    const folder = restored.folder;
+    if (folder && !this.listFolders().includes(folder) && !keepMissingFolder) {
+      restored.folder = undefined;
+      folderDropped = folder;
+    }
+    if (restored.folder === undefined) delete restored.folder;
+    const arr = [...this.presets];
+    arr.splice(at === undefined ? arr.length : Math.max(0, Math.min(at, arr.length)), 0, restored);
+    this.presets = arr;
+    this.trash = this.trash.filter((t) => t !== item);
+    this.scheduleSave();
+    this.dispatchEvent(new CustomEvent('changed', {}));
+    return {
+      kind: 'restored',
+      entry: restored,
+      ...(restored.name !== original ? { renamedFrom: original } : {}),
+      missingImages,
+      ...(folderDropped ? { folderDropped } : {}),
+    };
+  }
+
+  /** 휴지통에서 골라 영구 삭제(ids) */
+  async purgeFromTrash(ids: Iterable<string>): Promise<GlobalTrashPurgeResult> {
+    const set = new Set(ids);
+    return this.dropTrashItems((t) => set.has(t.entry.id));
+  }
+
+  /** 휴지통 비우기 */
+  async emptyTrash(): Promise<GlobalTrashPurgeResult> {
+    return this.dropTrashItems(() => true);
+  }
+
+  /** 보관 기한이 지난 휴지통 항목을 조용히 영구 삭제 — 이 세션에서 본 파일을 정상으로 읽었을 때만(아니면 0) */
+  async purgeExpiredTrash(now: number = Date.now()): Promise<number> {
+    if (!this.loaded || this.store.loadFailed || !this.trashReadOk) return 0;
+    if (!this.trash.some((t) => isTrashExpired(t, now))) return 0;
+    const r = await this.dropTrashItems((t) => isTrashExpired(t, now));
+    return r.removed;
+  }
+
+  /**
+   * 휴지통에서 빼고 → dirty 를 세워 지금 저장 → 저장이 끝났을 때만, 뺀 항목의 첨부 이미지 중 목록·휴지통 어디에서도 참조하지 않는
+   * 파일을 지운다(복제본 등 다른 항목이 같은 파일을 쓰면 남김). 저장 실패면 파일은 그대로.
+   */
+  private async dropTrashItems(
+    pick: (t: IGlobalCharacterPresetTrashItem) => boolean,
+  ): Promise<GlobalTrashPurgeResult> {
+    this.store.assertWritable();
+    const removed = this.trash.filter(pick);
+    if (removed.length === 0) return { removed: 0, filesDeleted: 0, saved: true };
+    const gone = new Set(removed);
+    this.trash = this.trash.filter((t) => !gone.has(t));
+    this.store.markDirty();
+    this.dispatchEvent(new CustomEvent('changed', {}));
+    const saved = await this.store.saveNow();
+    if (!saved) return { removed: removed.length, filesDeleted: 0, saved: false };
+    const candidates = removed.flatMap((t) => (t.entry?.preset ? this.collectImageTokens(t.entry.preset) : []));
+    let filesDeleted = 0;
+    for (const token of unreferencedTokens(candidates, this.referencedImageTokens())) {
+      await this.deleteImageData(token);
+      filesDeleted++;
+    }
+    return { removed: removed.length, filesDeleted, saved: true };
   }
 }

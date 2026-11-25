@@ -14,6 +14,11 @@ import { resolveSceneCharacterPrompts } from './sceneCharacterPrompts';
 import { variantComboMode } from './comboMode';
 import { activeRandomizerOptions, expandPromptAlternatives, promptRandomizerRanges, readPromptRandomizer, splitPromptPieceLines, splitPromptTags } from './promptRandomizer';
 import {
+  promptCommentRanges,
+  splitMultiPieceLines,
+  stripPromptComments,
+} from './promptCommentSyntax';
+import {
   makeExplicitWeightRangeRegex,
   parsePromptWeightNumber,
 } from './promptWeightSyntax';
@@ -22,15 +27,8 @@ export function cleanPARR(parr: PARR): PARR {
   return parr.map((p) => p.trim());
 }
 
-/**
- * ##주석## 블록 제거.
- * - 여러 줄, 콤마 포함 가능 (non-greedy)
- * - 짝이 맞지 않는 단일 `##` 는 리터럴로 유지
- * - API 송신 직전에만 제거. 저장 데이터는 원문 유지.
- */
-export function stripPromptComments(str: string): string {
-  return str.replace(/##[\s\S]*?##/g, '');
-}
+// ##주석## 규칙의 단일 출처는 promptCommentSyntax(2026-11-21) — 기존 import 경로(PromptService.stripPromptComments)는 유지.
+export { stripPromptComments };
 
 export function toPARR(str: string) {
   return splitPromptTags(str);
@@ -305,7 +303,7 @@ export class PromptService extends EventTarget {
         if (this.isMulti(piece, window.curSession!)) {
           txt =
             '이 중 한 줄 랜덤 선택:\n' +
-            expanded.split(/\r\n?|\n/).slice(0, 32).join('\n');
+            splitMultiPieceLines(expanded).slice(0, 32).join('\n');
         } else {
           txt = expanded;
         }
@@ -752,7 +750,7 @@ export const highlightPrompt = (
 
   // ── 가중치 하이라이트용: 각 문자 위치의 bracket depth 계산 ──
   // {}: +1 depth, []: -1 depth per pair
-  const weightDepth = new Int8Array(text.length); // 양수=강조, 음수=약화
+  const weightDepth = new Int8Array(activeText.length); // 양수=강조, 음수=약화
   {
     let curly = 0;  // {} depth
     let square = 0; // [] depth
@@ -777,10 +775,11 @@ export const highlightPrompt = (
       weight: parsePromptWeightNumber(ewMatch[1]),
     });
   }
-  /** 해당 offset 범위의 가중치 상태 반환: 'emphasis' | 'deemphasis' | 'negative' | null */
+  /**
+   * 해당 offset 범위의 가중치 상태 반환: 'emphasis' | 'deemphasis' | 'negative' | null
+   * 주석 글자에는 부르지 않는다(주석은 아래에서 syntax-comment 로 따로 그림).
+   */
   const getWeightClass = (wordStart: number, wordEnd: number): string | null => {
-    // 주석 영역 내부면 가중치 무시
-    if (overlapsComment(wordStart, wordEnd)) return null;
     // (number)::tag:: 명시적 가중치 우선 (overlap 판정 — 앞뒤 공백 포함 가능)
     for (const ew of explicitWeightRanges) {
       if (ew.start < wordEnd && ew.end > wordStart) {
@@ -793,13 +792,13 @@ export const highlightPrompt = (
     // bracket depth 기반 (단어 첫 비공백 문자 위치)
     let samplePos = wordStart;
     for (let i = wordStart; i < wordEnd; i++) {
-      const c = text[i];
+      const c = activeText[i];
       if (c !== ' ' && c !== '{' && c !== '}' && c !== '[' && c !== ']') {
         samplePos = i;
         break;
       }
     }
-    if (samplePos < text.length) {
+    if (samplePos < activeText.length) {
       const depth = weightDepth[samplePos];
       if (depth > 0) return 'syntax-weight-emphasis';
       if (depth < 0) return 'syntax-weight-deemphasis';
@@ -836,7 +835,6 @@ export const highlightPrompt = (
             }
             return word;
           }
-          // 단어가 주석 영역과 겹치면 주석 부분만 정확히 주석 스타일 적용
           const wordStart = offset;
           const wordEnd = offset + word.length;
           if (overlapsComment(wordStart, wordEnd)) {

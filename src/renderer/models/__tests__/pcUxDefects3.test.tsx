@@ -65,7 +65,8 @@ describe('D7 입력 안내 문구', () => {
 describe('D8 프롬프트 문법 색', () => {
   const pairs: [string, string, string][] = [
     ['.syntax-error', '#b91c1c', '#fca5a5'],
-    ['.syntax-comment', '#4b5563', '#d1d5db'],
+    // 2026-11-19: 주석은 본문보다 흐려야 한다 — D8 값(#4b5563·#d1d5db)은 다크에서 본문색과 같아져(대비 1.01) 회색이 사라졌다.
+    ['.syntax-comment', '#5f6875', '#9ca3af'],
     ['.syntax-wildcard', '#0369a1', '#38bdf8'],
     ['.syntax-multi-wildcard', '#166534', '#4ade80'],
     ['.syntax-global-wildcard', '#7e22ce', '#d8b4fe'],
@@ -82,6 +83,12 @@ describe('D8 프롬프트 문법 색', () => {
       expect(b).not.toContain('@apply');
       expect(b).not.toMatch(/#ff8e38|#0ea5e9|#22c55e|#a855f7|#c084fc/);
     }
+  });
+  test('주석은 취소선(2026-11-22), 바탕색은 넣지 않는다', () => {
+    const b = block('.syntax-comment');
+    expect(b).toMatch(/text-decoration:\s*line-through/);
+    expect(b).toMatch(/font-style:\s*italic/);
+    expect(b).not.toMatch(/background(-color)?:/);
   });
   test('굵기 800 유지', () => {
     expect(block('.syntax-wildcard')).toMatch(/font-weight:\s*800/);
@@ -117,6 +124,13 @@ describe('R2 작은 아이콘 버튼 — 아이콘 14px 이상, 흐린 색 미�
     expect(read('ExportPresetManager.tsx')).not.toMatch(/p-1\.5 rounded text-faint/);
     expect(read('SceneTemplateManager.tsx')).not.toContain('btn-ghost p-2 rounded-md text-faint');
     expect(read('ProjectDrawer.tsx')).not.toContain('btn-ghost p-2 rounded-md text-faint');
+    // 그룹 2-a: 사이에 flex-none 등이 끼인 자리도 잡는다(종전 고정 문자열은 ProjectDrawer 취소 ✕ 두 곳을 놓쳤다)
+    for (const f of ['ProjectDrawer.tsx', 'SceneTemplateManager.tsx', 'TemplateManagerModal.tsx']) {
+      expect(read(f)).not.toMatch(/btn-ghost[^"'`]*\btext-faint\b/);
+    }
+    expect(read('TemplateManagerModal.tsx')).toMatch(/const iconBtnCls = 'btn-ghost p-1\.5 rounded-md text-muted';/);
+    expect(read('CharacterPresetEditor.tsx')).not.toMatch(/text-faint hover:text-gray-\d+ dark:hover:text-gray-200 px-0\.5/);
+    expect(read('ProjectBrowser.tsx')).not.toMatch(/text-faint hover:text-gray-\d+ dark:hover:text-gray-200 px-0\.5/);
     expect(read('ProjectBrowser.tsx')).toContain('className="flex-none text-muted hover:text-sky-500 px-0.5"');
     const al = read('ArtistLibraryTab.tsx');
     expect(al).toContain('<button className="text-muted hover:text-red-500" aria-label={`태그 프리셋 ${t} 삭제`}');
@@ -124,7 +138,7 @@ describe('R2 작은 아이콘 버튼 — 아이콘 14px 이상, 흐린 색 미�
     const sqc = read('SceneQueueControl.tsx');
     expect(sqc).not.toContain('rounded-md clickable text-faint');
     expect(sqc).toMatch(/aria-label="검색어 지우기"[\s\S]{0,400}<FaTimes size=\{14\}/);
-    expect(sqc).toMatch(/aria-label="씬 찾기·북마크 이동"[\s\S]{0,400}<FaChevronDown size=\{14\}/);
+    expect(sqc).toMatch(/aria-label="씬 위치·북마크 이동"[\s\S]{0,400}<FaChevronDown size=\{14\}/);
     expect(read('ConfigScreen.tsx')).toMatch(/aria-label=\{`\$\{profile\.name\} 이름 변경`\}[\s\S]{0,400}<FaPen size=\{14\}/);
     expect(read('SessionSelect.tsx')).not.toContain('적용된 캐릭터 프리셋');
   });

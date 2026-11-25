@@ -387,8 +387,13 @@ export class ElectornBackend extends Backend {
     await invoke('open-path', arg);
   }
 
-  async copyToDownloads(path: string): Promise<void> {
+  async copyToDownloads(path: string, subfolder?: string): Promise<void> {
     return;
+  }
+
+  // PC 다운로드는 저장 폴더(writeDataFileAbsolute·existFileAbsolute)를 쓰므로 의도된 no-op.
+  async existInDownloads(name: string): Promise<boolean> {
+    return false;
   }
 
   async zipFiles(files: FileEntry[], outPath: string): Promise<void> {
@@ -534,7 +539,13 @@ export class ElectornBackend extends Backend {
   }
 
   async openImageEditor(inputPath: string): Promise<void> {
-    await invoke('open-image-editor', inputPath);
+    try {
+      await invoke('open-image-editor', inputPath);
+    } catch (e: any) {
+      // main 이 던진 문구만 남긴다(「Error invoking remote method '…': Error: 」 접두 제거 — 알림 한 줄용, 2026-11-22)
+      const raw = String(e?.message ?? e);
+      throw new Error(raw.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, ''));
+    }
   }
 
   async restoreEditedImageMetadata(inputPath: string): Promise<boolean> {
@@ -650,6 +661,11 @@ export class ElectornBackend extends Backend {
 
   async copyImageToClipboard(imagePath: string): Promise<void> {
     await invoke('copy-image-to-clipboard', imagePath);
+  }
+
+  // 이미지 끌어서 놓기(2026-11-22) — main 이 경로를 확인한 뒤 webContents.startDrag. 반환 = 끌기를 시작했는지.
+  async startImageDragOut(imagePath: string): Promise<boolean> {
+    return (await invoke('start-image-drag-out', imagePath)) === true;
   }
 
   // 새 창 열기(멀티 윈도우 W6) — main 이 보조 창을 캐스케이드 위치로 생성한다.

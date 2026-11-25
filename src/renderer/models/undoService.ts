@@ -187,11 +187,11 @@ export const UNDO_TEXT = {
   sceneNegative: (name: string) => `씬 전용 네거티브 편집: ${name}`,
   comboAddColumn: (name: string) => `조합 열 추가: ${name}`,
   comboAddRow: (name: string) => `조합 행 추가: ${name}`,
-  comboDuplicatePiece: (name: string) => `조합 조각 복제: ${name}`,
   comboRemovePiece: (name: string) => `조합 셀 삭제: ${name}`,
   comboMovePiece: (name: string) => `조합 셀 이동: ${name}`,
   comboTogglePiece: (name: string) => `조합 셀 활성화 변경: ${name}`,
   comboRenamePiece: (name: string) => `조합 셀 이름 변경: ${name}`,
+  comboDuplicatePiece: (name: string) => `조합 셀 복제: ${name}`,
   comboPiecePrompt: (name: string) => `조합 셀 프롬프트 편집: ${name}`,
   comboPieceCharacter: (name: string) => `조각 캐릭터 프롬프트 변경: ${name}`,
   comboQuickToggle: (name: string) => `조합 퀵 토글: ${name}`,
@@ -386,6 +386,8 @@ export const UNDO_TEXT = {
   projectRestoredElsewhere: (name: string, folder: string) =>
     `원래 폴더가 없어 프로젝트 "${name}"은(는) ${folder}에 복원했습니다`,
   projectSidecarNotRestored: (name: string) => `프로젝트 "${name}"의 즐겨찾기·북마크 일부를 되살리지 못했습니다`,
+  // 2026-11-18 T2 — 씬 템플릿 지정·적용 기록(지정 목록이 막힘 등)
+  projectTemplateNotRestored: (name: string) => `프로젝트 "${name}"의 템플릿 지정 일부를 되살리지 못했습니다`,
   folderTemplatesNotRestored: (count: number) => `폴더 기본 템플릿 지정 ${count}개를 되살리지 못했습니다`,
   // 2차 묶음 4 P5 전역 라이브러리(파일 부작용 없는 작업만, 전역 스택) — globalLibraryUndo.ts. folder null = 미분류
   globalCharacterRename: (from: string, to: string) => `글로벌 캐릭터 이름 변경: ${from} → ${to}`,
@@ -419,6 +421,20 @@ export const UNDO_TEXT = {
   exportPresetDuplicate: (name: string) => `내보내기 프리셋 복제: ${name}`,
   templateRename: (from: string, to: string) => `템플릿 이름 변경: ${from} → ${to}`,
   templateBadgeColor: (name: string) => `템플릿 배지 색 변경: ${name}`,
+  // 2026-11-18 글로벌 프리셋·글로벌 캐릭터 삭제 — globalLibraryDeleteUndo.ts. 2026-11-24 부터 삭제 = 휴지통 이동, 되돌림 = 휴지통에서 복원
+  globalPresetDelete: (names: readonly string[]) =>
+    names.length === 1 ? `글로벌 프리셋 삭제: ${names[0]}` : `글로벌 프리셋 ${names.length}개 삭제`,
+  globalCharacterDelete: (names: readonly string[]) =>
+    names.length === 1 ? `글로벌 캐릭터 삭제: ${names[0]}` : `글로벌 캐릭터 ${names.length}개 삭제`,
+  globalDeleteIdTaken: (name: string) =>
+    `"${name}"과(와) 같은 항목이 그사이 다른 곳에서 다시 만들어져 되살리지 않았습니다`,
+  globalDeleteTrashGone: (name: string) =>
+    `"${name}"이(가) 휴지통에 없습니다(그사이 영구 삭제되었거나 다른 곳에서 복원되었습니다)`,
+  globalStoreBlocked: '저장 파일을 읽지 못해 지금은 바꿀 수 없습니다(앱을 다시 시작해 주세요)',
+  // 2026-11-18 템플릿 재적용(현재 프로젝트) — templateReapplyUndo.ts
+  templateReapply: (name: string) => `템플릿 다시 적용: ${name}`,
+  templateApplicationChanged: '이 프로젝트의 템플릿 적용 기록이 그사이 바뀌었습니다',
+  templateApplicationBlocked: '템플릿 지정 목록(templates.json)을 저장할 수 없어 되돌리지 않았습니다',
   // 실패 이유(되돌릴 수 없습니다: …) — 대개 다른 창이 같은 저장소를 바꾼 경우(D15)
   globalCharacterGone: (name: string) => `글로벌 캐릭터 "${name}"이(가) 이미 없습니다`,
   globalCharacterChanged: (name: string) => `글로벌 캐릭터 "${name}"이(가) 그사이 바뀌었습니다`,

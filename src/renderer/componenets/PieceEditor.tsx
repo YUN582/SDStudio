@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import {
   createRef,
   useContext,
@@ -30,6 +31,7 @@ import { migratePieceLibrary } from '../models/legacy';
 import { stringifyExportJson } from '../models/jsonExport';
 import { observer } from 'mobx-react-lite';
 import HelpIcon from './HelpIcon';
+import { SettingSwitch } from './SettingControls';
 import { ListDragLockedHint, ListSearchBar } from './ListSearchBar';
 import { hasQuery, matchesQuery } from '../models/listSearch';
 import {
@@ -169,6 +171,7 @@ export const PieceCell = observer(
             {piece.name}
           </div>
           </Tooltip>
+          <Tooltip content="조각 삭제">
           <button
             className="ml-auto pl-2 flex-none text-red-500 dark:text-white"
             aria-label="조각 삭제"
@@ -196,6 +199,7 @@ export const PieceCell = observer(
           >
             <FaTrash size={20} />
           </button>
+          </Tooltip>
         </div>
         <div className="h-20">
           <PromptEditTextArea
@@ -213,12 +217,13 @@ export const PieceCell = observer(
         </div>
         <div className={'mt-1 gray-label'}>
           랜덤 줄 선택 모드:{' '}
-          <input
-            checked={piece.multi}
-            type="checkbox"
-            onChange={(e) => {
+          {/* 「라벨: [켬/끔] (?)」 한 줄 — 제자리에서 체크 대신 스위치 모양만(2026-11-20 그룹 1-c) */}
+          <SettingSwitch
+            checked={!!piece.multi}
+            ariaLabel="랜덤 줄 선택 모드"
+            className="align-middle"
+            onChange={(checked) => {
               if (!movePiece) return;
-              const checked = e.target.checked;
               editPieceLibrary(
                 appState.curSession,
                 curPieceLibrary,
@@ -543,7 +548,7 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
     const outPath = 'exports/global_pieces_backup_' + Date.now().toString() + '.json';
     await backend.writeFile(outPath, stringifyExportJson(allData));
     await backend.publishExport(outPath);
-    appState.pushMessage('전역 조각 전체 백업 완료');
+    appState.pushMessage('전역 조각 전체를 백업했습니다');
   };
 
   const copyToOtherScope = () => {
@@ -683,22 +688,31 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
   // 위 처리 함수 그대로 — 화면 자리만 옮겼다.
   const wide = !isMobile;
 
+  // 로컬/전역 전환 = 택일 묶음 .seg-group(UI 정돈 그룹 2-c — 캐릭터 프리셋 관리의 로컬/글로벌 전환과 같은 모양).
+  // 선택 = 로컬 .seg-on(하늘)·전역 .seg-on-purple(솔리드 보라). PC 는 칸이 줄 폭을 나눠 채움(.seg-fill).
+  // 도움말 ? 는 묶음 밖(같은 줄 오른쪽 — 자리 그대로).
   const scopeToggle = (
-    <div className={wide ? 'flex gap-1 items-center' : 'flex gap-1 mb-3'}>
-      <button
-        className={`btn ${wide ? 'flex-1 px-2' : 'px-4'} py-1.5 text-sm rounded-lg ${scope === 'local' ? 'back-sky font-bold' : 'back-llgray'}`}
-        aria-pressed={scope === 'local'}
-        onClick={() => setScope('local')}
+    <div className={wide ? 'flex gap-1 items-center' : 'flex gap-1 mb-3 items-center'}>
+      <div
+        className={wide ? 'seg-group seg-fill flex flex-1 min-w-0' : 'seg-group inline-flex'}
+        role="group"
+        aria-label="조각 범위"
       >
-        로컬 조각
-      </button>
-      <button
-        className={`btn ${wide ? 'flex-1 px-2' : 'px-4'} py-1.5 text-sm rounded-lg ${scope === 'global' ? 'bg-purple-600 text-white dark:bg-purple-400/25 dark:text-purple-300 font-bold' : 'back-llgray'}`}
-        aria-pressed={scope === 'global'}
-        onClick={() => setScope('global')}
-      >
-        전역 조각
-      </button>
+        <button
+          className={'seg-item text-sm' + (scope === 'local' ? ' seg-on' : '')}
+          aria-pressed={scope === 'local'}
+          onClick={() => setScope('local')}
+        >
+          로컬 조각
+        </button>
+        <button
+          className={'seg-item text-sm' + (scope === 'global' ? ' seg-on-purple' : '')}
+          aria-pressed={scope === 'global'}
+          onClick={() => setScope('global')}
+        >
+          전역 조각
+        </button>
+      </div>
       <span className="inline-flex items-center ml-1">
         <HelpIcon
           content={
@@ -772,12 +786,12 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
         </Tooltip>
       )}
       {scope === 'global' && (
-        <Tooltip content="전역 조각 전체 백업 내보내기">
+        <Tooltip content="전역 조각 전체를 한 파일로 백업">
           <button
             className="icon-button h-8 px-3 back-orange flex items-center gap-1"
             onClick={exportAllGlobal}
           >
-            <ActionIcon id="backup" size={14} /> <span className={labelClass}>전체 백업</span>
+            <ActionIcon id="backup" size={14} /> <span className={labelClass}>백업</span>
           </button>
         </Tooltip>
       )}
@@ -790,7 +804,7 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
       <div className="flex-none p-3 border-b line-color">{scopeToggle}</div>
       <div ref={groupListScrollRef} className="flex-1 min-h-0 overflow-auto p-2 flex flex-col gap-0.5">
         {libraryOptions.length === 0 ? (
-          <div className="text-xs text-faint text-center py-6">조각그룹이 없습니다</div>
+          <EmptyState className="py-6">조각그룹이 없습니다</EmptyState>
         ) : (
           libraryOptions.map((opt) => {
             const selected = opt.value === selectedPieceLibrary;
@@ -803,10 +817,8 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
                 className={
                   'w-full text-left px-3 py-1.5 rounded-md text-sm flex items-center gap-2 transition-colors ' +
                   (selected
-                    ? scope === 'local'
-                      ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold'
-                      : 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-semibold'
-                    : 'text-default hover:bg-gray-100 dark:hover:bg-slate-700/50')
+                    ? 'list-row-selected'
+                    : 'text-default hover-row')
                 }
               >
                 <span className="flex-1 min-w-0 truncate">{opt.label}</span>
@@ -935,9 +947,9 @@ const PieceEditor = observer(({ onClose }: { onClose: () => void }) => {
             />
           ))}
           {pieceSearching && shownPieces.length === 0 && (
-            <div className="text-sm text-faint text-center py-6" data-list-no-hits="">
+            <EmptyState className="py-6" data-list-no-hits="">
               검색 결과가 없습니다
-            </div>
+            </EmptyState>
           )}
           <Tooltip content="조각 추가">
             <button

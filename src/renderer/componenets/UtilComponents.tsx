@@ -13,6 +13,7 @@ import { isMobile } from '../models';
 import { Scrollbars } from 'react-custom-scrollbars-2';
 import { ActionIcon } from './ActionIcon';
 import { FloatView } from './FloatView';
+import { themePortalRoot } from './themePortal';
 import MobilePromptSheet from './MobilePromptSheet';
 import { V2MainRow } from './MobileV2Bars';
 import {
@@ -62,7 +63,9 @@ export const DropdownSelect = <T,>({
       options={options}
       onChange={handleChange}
       menuPlacement={menuPlacement}
-      menuPortalTarget={document.body}
+      // 목록은 앱 테마 루트 안에 그린다(body 면 .dark·커스텀 테마 변수를 못 받아 다크에서 흰 목록 — UI 정돈 그룹 1).
+      // 테마 루트는 #root 의 유일한 자식이라 문서 원점(0,0)에 있어, 기본 absolute 위치 계산(컨트롤 rect + pageYOffset)이 body 때와 같다.
+      menuPortalTarget={themePortalRoot()}
       styles={{ menuPortal: (base) => ({ ...base, zIndex: 'var(--z-tooltip)' }) }}
       isDisabled={disabled}
       isSearchable={!isMobile}
@@ -242,21 +245,20 @@ export const TabComponent: React.FC<TabComponentProps> = ({
     <div className={`h-full flex flex-col px-1 md:p-2${v2 ? ' relative' : ''}`}>
       <div
         className={
-          'flex p-1 md:p-0 md:py-2 flex-none gap-2 items-center w-full mb-1 md:mb-0' +
+          'flex p-1 md:p-0 md:pb-2 flex-none gap-2 items-center w-full mb-1 md:mb-0' +
           // 하단 탭 바 배치에서는 모바일 상단 줄을 통째로 숨긴다(PC 스트립은 md 이상에서 그대로)
           (bottomTabs || (isMobile && mobileTabsHidden) ? ' hidden md:flex' : '')
         }
       >
-        {/* tab-seg/tab-seg-off: 탭 세그먼트 마감(App.css) — 클래식이면 기존 클래스 그대로 렌더 */}
+        {/* PC 작업 탭 = 밑줄 탭(.tab-line, UI 정돈 그룹 2-c — App.css). 모바일 아이콘 탭(아래)은 종전 .tab-seg 그대로. */}
         {/* 좁은 폭(좁은 창 또는 두꺼운 좌우 패널) 대응: 버튼은 flex-none 으로 눌리지 않게
             하고 컨테이너가 가로 스크롤 — 글자가 세로로 깨지는 문제 방지(모바일 변형과 동일 기법) */}
-        <div className="tab-seg md:flex gap-2 w-full max-w-full min-w-0 overflow-x-auto no-scrollbar hidden">
+        <div className="tab-line md:flex w-full max-w-full min-w-0 overflow-x-auto no-scrollbar hidden" data-tab-line="main">
           {tabs.map((tab, index) => (
             <button
               key={index}
               className={
-                'active:brightness-90 hover:brightness-95 select-none h-8 px-3 text-sm rounded-md transition-colors flex-none whitespace-nowrap ' +
-                (index === activeTab ? `back-sky` : 'back-llgray tab-seg-off')
+                'tab-line-item text-sm' + (index === activeTab ? ' tab-line-on' : '')
               }
               onClick={() => handleTabClick(index)}
             >

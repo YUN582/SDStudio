@@ -1,3 +1,6 @@
+import { EmptyState } from './EmptyState';
+import HelpIcon from './HelpIcon';
+import { ProgressBar } from './ProgressIndicators';
 import * as React from 'react';
 import { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { observer } from 'mobx-react-lite';
@@ -28,13 +31,13 @@ import {
   templateService,
 } from '../models';
 import { appState } from '../models/AppService';
-import { nameErrorMessage, NAME_INPUT_TEXT, numberedName, promptName, suggestFolderCopyName } from '../models/nameInput';
+import { nameErrorMessage, NAME_INPUT_TEXT, promptName, suggestFolderCopyName } from '../models/nameInput';
 import { FaPlay, FaPause, FaStop, FaSync, FaGlobe, FaUsers } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
 import type { IGlobalCharacterPresetEntry } from '../models/GlobalCharacterPresetService';
 import { saveJsonFile } from '../models/exportUtil';
 import { syncFileName } from '../models/driveSync';
-import { importGlobalCharacterPresetsText } from '../models/characterPresetImport';
+import { importGlobalCharacterPresetsText, importLocalCharacterPresetsText } from '../models/characterPresetImport';
 import { interceptFileImportClick } from '../models/driveImport';
 import { stringifyExportJson } from '../models/jsonExport';
 import { FileUploadBase64 } from './UtilComponents';
@@ -48,16 +51,12 @@ import {
   GlobalCharacterPresetCard,
 } from './CharacterPresetCards';
 import { CharacterPresetInnerEditor } from './CharacterPresetInnerEditor';
-import HelpIcon from './HelpIcon';
+import { HelpPanelButton } from './HelpPanel';
+import { SettingCheckRow } from './SettingControls';
+import { CHARACTER_PRESET_HELP } from '../models/helpPanelTexts';
 import { ListDragLockedHint, ListSearchBar } from './ListSearchBar';
 import { hasQuery, matchesQuery } from '../models/listSearch';
-import { v4 } from 'uuid';
-import {
-  imageFileExt,
-  imageTokenBase,
-  isSafeImageToken,
-} from '../models/projectTemplateBackup';
-import { deleteConfirmText, safeImportedImageName } from '../models/deleteFlowRules';
+import { deleteConfirmText } from '../models/deleteFlowRules';
 import {
   addCharacterPresetRecorded,
   editCharacterPresets,
@@ -79,6 +78,9 @@ import {
   setGlobalCharacterFolderRecorded,
   setGlobalCharactersFolderRecorded,
 } from '../models/globalLibraryUndo';
+import { prepareGlobalDelete } from '../models/globalLibraryDeleteUndo';
+import { GLOBAL_LIBRARY_TRASH_DAYS } from '../models/globalLibraryTrash';
+import { GlobalLibraryTrashButton } from './GlobalLibraryTrashView';
 
 // ─── 캐릭터 프리셋 내보내기/불러오기 ─────────────────────────
 
@@ -94,7 +96,7 @@ interface ExportedPresetData {
 async function exportCharacterPresets(session: any) {
   const presets = session.getCharacterPresets() as CharacterPreset[];
   if (presets.length === 0) {
-    appState.pushMessage('내보낼 캐릭터 프리셋이 없습니다');
+    appState.pushMessage('백업할 캐릭터 프리셋이 없습니다');
     return;
   }
 
@@ -141,10 +143,10 @@ async function exportCharacterPresets(session: any) {
       stringifyExportJson(exportData),
     );
   } catch (e: any) {
-    appState.pushMessage('내보내기 실패: ' + e.message);
+    appState.pushMessage('백업 실패: ' + e.message);
     return;
   }
-  appState.pushMessage(`${presets.length}개 캐릭터 프리셋을 내보냈습니다`);
+  appState.pushMessage(`캐릭터 프리셋 ${presets.length}개를 백업했습니다`);
 }
 
 // ─── 글로벌 캐릭터 프리셋 내보내기/불러오기 (PC↔모바일 크로스, 2026-07-18) ───
@@ -155,7 +157,7 @@ async function exportCharacterPresets(session: any) {
 async function exportGlobalCharacterPresets() {
   const entries = globalCharacterPresetService.list();
   if (entries.length === 0) {
-    appState.pushMessage('내보낼 글로벌 프리셋이 없습니다');
+    appState.pushMessage('백업할 글로벌 캐릭터 프리셋이 없습니다');
     return;
   }
   try {
@@ -169,10 +171,10 @@ async function exportGlobalCharacterPresets() {
     );
     if (result === 'cancelled') return;
   } catch (e: any) {
-    appState.pushMessage('내보내기 실패: ' + e.message);
+    appState.pushMessage('백업 실패: ' + e.message);
     return;
   }
-  appState.pushMessage(`${entries.length}개 글로벌 프리셋을 내보냈습니다`);
+  appState.pushMessage(`글로벌 캐릭터 프리셋 ${entries.length}개를 백업했습니다`);
 }
 
 // 텍스트 이후 단계는 models/characterPresetImport.ts(드라이브에서 받은 파일과 공용 — 드라이브 API ③).
@@ -180,113 +182,10 @@ async function importGlobalCharacterPresets(file: File) {
   await importGlobalCharacterPresetsText(await file.text());
 }
 
+// 프로젝트 로컬 캐릭터 프리셋 파일 불러오기 — 이름이 같은 항목은 공용 정책 흐름으로 묻는다
+// (2026-11-16 M5 묶음 b R1-b, 종전 묻지 않고 「X (2)」). 본문은 models/characterPresetImport.ts.
 async function importCharacterPresets(session: any, file: File) {
-  const text = await file.text();
-  let data: ExportedPresetData;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    appState.pushMessage('올바른 캐릭터 프리셋 파일이 아닙니다');
-    return;
-  }
-
-  if (!data.presets || !Array.isArray(data.presets)) {
-    appState.pushMessage('올바른 캐릭터 프리셋 파일이 아닙니다');
-    return;
-  }
-
-  let imported = 0;
-  for (const presetJson of data.presets) {
-    // 파일 안의 이미지 파일명은 외부 입력이다(2026-10-03 X15b) — '..'·절대 경로·구분자가 섞이면
-    // 바이브/레퍼런스 폴더 밖(예: 프로젝트 파일·설정 파일)을 덮어쓸 수 있었다. 안전한 이름
-    // (projectTemplateBackup.isSafeImageToken)이 아니면 새 이름으로 저장하고 프리셋 참조를 그 이름으로 바꾼다.
-    // 저장 폴더는 항상 이 프로젝트의 vibes/·references/ 로 고정.
-    const newImageName = (orig: unknown) =>
-      v4() + '.' + imageFileExt(imageTokenBase(orig));
-    const renamedVibes = new Map<string, string>();
-    const renamedRefs = new Map<string, string>();
-    const remapRef = (path: unknown, map: Map<string, string>) => {
-      if (typeof path !== 'string') return path;
-      return map.get(path) ?? map.get(imageTokenBase(path)) ?? path;
-    };
-
-    // 바이브 이미지 복원 (원래 파일명으로 직접 저장 — 안전하지 않은 이름만 새 이름)
-    if (Array.isArray(presetJson.vibeImages)) {
-      for (const img of presetJson.vibeImages) {
-        const safe = safeImportedImageName(img?.filename, isSafeImageToken, () =>
-          newImageName(img?.filename),
-        );
-        if (safe.renamed && typeof img?.filename === 'string') {
-          renamedVibes.set(img.filename, safe.name);
-        }
-        try {
-          const path = imageService.getVibesDir(session) + '/' + safe.name;
-          await backend.writeDataFile(path, img.data);
-        } catch (e) {}
-      }
-    }
-
-    // 레퍼런스 이미지 복원
-    if (Array.isArray(presetJson.referenceImages)) {
-      for (const img of presetJson.referenceImages) {
-        const safe = safeImportedImageName(img?.filename, isSafeImageToken, () =>
-          newImageName(img?.filename),
-        );
-        if (safe.renamed && typeof img?.filename === 'string') {
-          renamedRefs.set(img.filename, safe.name);
-        }
-        try {
-          const path = imageService.getReferenceDir(session) + '/' + safe.name;
-          await backend.writeDataFile(path, img.data);
-        } catch (e) {}
-      }
-    }
-
-    // 대표 이미지 복원
-    if (presetJson.representativeImageData && presetJson.representativeImage) {
-      const safe = safeImportedImageName(
-        presetJson.representativeImage,
-        isSafeImageToken,
-        () => newImageName(presetJson.representativeImage),
-      );
-      if (safe.renamed) {
-        renamedVibes.set(String(presetJson.representativeImage), safe.name);
-        presetJson.representativeImage = safe.name;
-      }
-      try {
-        const path = imageService.getVibesDir(session) + '/' + safe.name;
-        await backend.writeDataFile(path, presetJson.representativeImageData);
-      } catch (e) {}
-    }
-
-    // 새 이름으로 저장한 이미지의 참조를 맞춘다(바이브·레퍼런스 경로)
-    if (renamedVibes.size > 0 && Array.isArray(presetJson.vibes)) {
-      presetJson.vibes = presetJson.vibes.map((v: any) =>
-        v && typeof v === 'object' ? { ...v, path: remapRef(v.path, renamedVibes) } : v,
-      );
-    }
-    if (renamedRefs.size > 0 && Array.isArray((presetJson as any).characterReferences)) {
-      (presetJson as any).characterReferences = (presetJson as any).characterReferences.map(
-        (r: any) =>
-          r && typeof r === 'object' ? { ...r, path: remapRef(r.path, renamedRefs) } : r,
-      );
-    }
-
-    // 임시 필드 제거 후 프리셋 생성
-    delete presetJson.vibeImages;
-    delete presetJson.referenceImages;
-    delete presetJson.representativeImageData;
-
-    const preset = CharacterPreset.fromJSON(presetJson as ICharacterPreset);
-
-    // 중복 이름 처리 — 가져오기·충돌 규칙 「X」→「X (2)」(2026-11-14 M2 I4, 종전 「X_1_1」 반복 접미). 묻지 않고 조용히 바꾸는 정책은 그대로
-    preset.name = numberedName(preset.name, (n) => session.hasCharacterPreset(n));
-
-    session.addCharacterPreset(preset);
-    imported++;
-  }
-
-  appState.pushMessage(`${imported}개 캐릭터 프리셋을 불러왔습니다`);
+  await importLocalCharacterPresetsText(session, await file.text());
 }
 
 // ─── 글로벌 폴더 패널 행 (그리드 탐색기 NavItem 경량판, 2026-07-16 UX 개편) ───
@@ -379,7 +278,7 @@ const GlobalFolderRow = observer(
                 e.stopPropagation();
                 onEditCancel?.();
               }}
-              className="text-faint hover:text-gray-600 dark:hover:text-gray-200 px-0.5"
+              className="text-muted hover:text-gray-800 dark:hover:text-gray-200 px-0.5"
             >
               <FaTimes size={13} />
             </span>
@@ -768,8 +667,8 @@ export function useCharacterPresetPanel({
     setEditGlobalId(null);
   };
 
-  // 글로벌 프리셋 삭제 확인 창의 덧붙임 줄 — 단건·여러 개 공통
-  const GLOBAL_PRESET_DELETE_EXTRA = '첨부 이미지도 함께 삭제되며, 모든 프로젝트에 영향을 줍니다.';
+  // 글로벌 프리셋 삭제 확인 창의 덧붙임 줄 — 단건·여러 개 공통(2026-11-24 휴지통: 첨부 이미지는 영구 삭제 때 지워진다)
+  const GLOBAL_PRESET_DELETE_EXTRA = '모든 프로젝트에 영향을 줍니다. 첨부 이미지는 휴지통에서 영구 삭제할 때 함께 지워집니다.';
 
   const handleDelete = (preset: CharacterPreset) => {
     appState.pushDialog({
@@ -918,38 +817,58 @@ export function useCharacterPresetPanel({
     }
   };
 
-  const handleDeleteGlobal = (entry: IGlobalCharacterPresetEntry) => {
+  const handleDeleteGlobal = async (entry: IGlobalCharacterPresetEntry) => {
+    // 삭제 = 글로벌 보기의 휴지통으로 이동(2026-11-24, 30일 보관). 되돌리기(Ctrl+Z) = 휴지통에서 복원
+    let plan;
+    try {
+      plan = await prepareGlobalDelete('characters', [entry.id]);
+    } catch (e: any) {
+      appState.pushMessage(e?.message || '삭제하지 못했습니다');
+      return;
+    }
     appState.pushDialog({
       type: 'confirm',
       ...deleteConfirmText({
         kind: 'globalPreset',
         name: entry.name,
-        outcome: 'permanent',
+        outcome: { trashDays: GLOBAL_LIBRARY_TRASH_DAYS },
         extra: GLOBAL_PRESET_DELETE_EXTRA,
       }),
       callback: async () => {
-        await globalCharacterPresetService.delete(entry.id);
+        const r = await plan.run();
+        if (r.failed.length > 0) appState.pushMessage(r.failed[0].error || '삭제하지 못했습니다');
       },
     });
   };
 
   // 선택 모드 일괄 삭제. 단건 삭제와 동일한 서비스 경로를 사용해 글로벌
   // 첨부 이미지 정리와 로컬 적용 상태 해제를 빠뜨리지 않는다.
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     const count = globalView
       ? selectedGlobalIds.size
       : selectedPresets.size;
     if (count === 0) return;
+    // 글로벌 선택 삭제 = 되돌리기 한 항목(2026-11-18) · 2026-11-24 부터 휴지통으로(크기와 관계없이)
+    const globalIds = Array.from(selectedGlobalIds);
+    let plan: Awaited<ReturnType<typeof prepareGlobalDelete>> | undefined;
+    if (globalView) {
+      try {
+        plan = await prepareGlobalDelete('characters', globalIds);
+      } catch (e: any) {
+        appState.pushMessage(e?.message || '삭제하지 못했습니다');
+        return;
+      }
+    }
 
     appState.pushDialog({
       type: 'confirm',
-      // 글로벌·로컬 모두 휴지통 없이 바로 사라진다 — Enter 무시(2026-10-03 E1). 글로벌 = 첨부 파일까지 지우고 기록 없음 →
-      // 영구, 로컬 = editCharacterPresets 기록 → 되돌리기 가능(2026-11-15)
+      // 글로벌 = 휴지통 갈래(2026-11-24, danger true — Enter 확인). 로컬 = 휴지통 없이 바로 사라지되
+      // editCharacterPresets 기록 → 되돌리기 가능(2026-11-15, Enter 무시)
       ...(globalView
         ? deleteConfirmText({
             kind: 'globalPreset',
             count,
-            outcome: 'permanent',
+            outcome: { trashDays: GLOBAL_LIBRARY_TRASH_DAYS },
             extra: GLOBAL_PRESET_DELETE_EXTRA,
           })
         : deleteConfirmText({
@@ -959,23 +878,17 @@ export function useCharacterPresetPanel({
             extra: '현재 프로젝트의 로컬 프리셋입니다.',
           })),
       callback: async () => {
-        if (globalView) {
-          const ids = Array.from(selectedGlobalIds);
-          const failed = new Set<string>();
-          for (const id of ids) {
-            try {
-              await globalCharacterPresetService.delete(id);
-            } catch (e) {
-              failed.add(id);
-            }
-          }
+        if (globalView && plan) {
+          const ids = globalIds;
+          const r = await plan.run();
+          const failed = new Set<string>(r.failed.map((f) => f.id));
           setSelectedGlobalIds(failed);
           if (failed.size > 0) {
             appState.pushMessage(
               `${ids.length - failed.size}개를 삭제하고 ${failed.size}개는 삭제하지 못했습니다`,
             );
           } else {
-            appState.pushMessage(`${ids.length}개 글로벌 프리셋을 삭제했습니다`);
+            appState.pushMessage(`${ids.length}개 글로벌 프리셋을 휴지통으로 옮겼습니다`);
           }
           return;
         }
@@ -1246,23 +1159,19 @@ export function useCharacterPresetPanel({
             {' '}({cyclingSessionService.completedPresets + 1}/{cyclingSessionService.totalPresets})
           </div>
           {/* 진행률 바 */}
-          <div className="w-full h-2 bg-[var(--c-surface)] rounded-full mb-3">
-            <div
-              className="h-full bg-sky-500 rounded-full transition-all"
-              style={{ width: `${(cyclingSessionService.completedPresets / cyclingSessionService.totalPresets) * 100}%` }}
-            />
-          </div>
+          <ProgressBar className="mb-3" percent={(cyclingSessionService.completedPresets / cyclingSessionService.totalPresets) * 100} />
           {/* 남은 프리셋 목록 */}
           {cyclingSessionService.remainingPresets.length > 0 && (
             <div className="text-xs text-muted mb-3">
               남은 프리셋: {cyclingSessionService.remainingPresets.map((p) => p.name).join(', ')}
             </div>
           )}
-          {/* 컨트롤 버튼 */}
+          {/* 컨트롤 버튼 — 색은 작업 큐 하단 바(TaskQueueControl 생성 시작 back-green·생성 중지 back-red)와 같은 규칙
+              (2026-11-21 버튼 색 정돈 2차): 재개 = back-green, 중단 = back-red, 큐에 짝이 없는 일시정지 = 중립 btn-neutral. */}
           <div className="flex gap-2">
             {cyclingState === 'running' ? (
               <button
-                className="px-4 py-1.5 rounded-lg btn-solid-yellow text-sm font-medium transition-colors flex items-center gap-1.5"
+                className="px-4 py-1.5 rounded-lg btn-neutral text-body text-sm font-medium transition-colors flex items-center gap-1.5"
                 onClick={() => {
                   taskQueueService.stop();
                 }}
@@ -1272,7 +1181,7 @@ export function useCharacterPresetPanel({
               </button>
             ) : (
               <button
-                className="px-4 py-1.5 rounded-lg btn-solid-green text-sm font-medium transition-colors flex items-center gap-1.5"
+                className="px-4 py-1.5 rounded-lg btn back-green text-sm font-medium transition-colors flex items-center gap-1.5"
                 onClick={() => cyclingSessionService.resume()}
               >
                 <FaPlay size={10} />
@@ -1280,7 +1189,7 @@ export function useCharacterPresetPanel({
               </button>
             )}
             <button
-              className="px-4 py-1.5 rounded-lg btn-solid-red text-sm font-medium transition-colors flex items-center gap-1.5"
+              className="px-4 py-1.5 rounded-lg btn back-red text-sm font-medium transition-colors flex items-center gap-1.5"
               onClick={() => {
                 taskQueueService.stop();
                 cyclingSessionService.cancel();
@@ -1318,9 +1227,7 @@ export function useCharacterPresetPanel({
     <div className="flex gap-1" role="group" aria-label="프리셋 보기" data-character-view-toggle="">
       <button
         aria-pressed={!globalView}
-        className={`flex-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
-          !globalView ? 'bg-sky-600 text-white dark:bg-sky-500' : 'btn-neutral text-body'
-        }`}
+        className={'seg-item text-sm' + (!globalView ? ' seg-on' : '')}
         onClick={() => switchView(false)}
       >
         <FaUsers size={12} />
@@ -1339,11 +1246,13 @@ export function useCharacterPresetPanel({
     </div>
   );
 
-  // [순차 생성 모드][선택]
+  // [순차 생성 모드][선택 모드] — 라벨은 켜짐·꺼짐 같음(2026-11-21 — 종전 「… 끄기」로 글자가 늘어 윗줄이 밀림).
+  // 상태는 색(켜짐 = 솔리드 하늘/보라)과 aria-pressed 로 구분한다.
   const modeButtons = (
     <>
       {(globalView ? globalEntries.length >= 2 : presets.length >= 2) && (
         <button
+          aria-pressed={cyclingMode}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
             cyclingMode
               ? 'bg-sky-600 text-white dark:bg-sky-500'
@@ -1352,12 +1261,13 @@ export function useCharacterPresetPanel({
           onClick={() => cyclingMode ? exitCyclingMode() : enterCyclingMode()}
         >
           <FaSync size={11} />
-          {cyclingMode ? '순차 생성 모드 끄기' : '순차 생성 모드'}
+          순차 생성 모드
         </button>
       )}
       {/* 일괄 선택 → 일괄 적용(양 뷰) / 폴더 이동(글로벌) — 순차 생성과 배타 */}
       {(!workspace || isMobile) && (globalView ? globalEntries.length > 0 : presets.length > 0) && (
         <button
+          aria-pressed={selectMode}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
             selectMode
               ? globalView
@@ -1368,7 +1278,7 @@ export function useCharacterPresetPanel({
           onClick={() => (selectMode ? exitSelectMode() : enterSelectMode())}
         >
           <FaCheckSquare size={11} />
-          {selectMode ? '선택 모드 끄기' : '선택'}
+          선택 모드
         </button>
       )}
     </>
@@ -1383,6 +1293,9 @@ export function useCharacterPresetPanel({
   // [모두 글로벌로 복사](로컬)·[내보내기]·[불러오기]
   const fileButtons = (
     <>
+      {globalView && (
+        <GlobalLibraryTrashButton kind="characters" className="round-button back-gray h-8 px-3 text-sm gap-1.5" />
+      )}
       {!globalView && presets.length > 0 && (
         <Tooltip content="모든 로컬 프리셋을 글로벌로 복사 (원본 유지)">
           <button
@@ -1396,21 +1309,21 @@ export function useCharacterPresetPanel({
         </Tooltip>
       )}
       {!globalView && presets.length > 0 && (
-        <Tooltip content="모든 프리셋 내보내기">
+        <Tooltip content="이 프로젝트의 캐릭터 프리셋 전체를 한 파일로 백업">
           <button
-            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 whitespace-nowrap"
             onClick={() => exportCharacterPresets(curSession)}
           >
-            <ActionIcon id="export" size={11} />
-            내보내기
+            <ActionIcon id="backup" size={11} />
+            백업
           </button>
         </Tooltip>
       )}
       {!globalView && (
-        <Tooltip content="프리셋 파일 불러오기">
-          <label className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 cursor-pointer">
+        <Tooltip content="백업 파일에서 캐릭터 프리셋 불러오기 (동명 처리 선택, 글로벌 백업 파일도 가능)">
+          <label className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
             <ActionIcon id="import" size={11} />
-            불러오기
+            백업 불러오기
             <input
               type="file"
               accept=".json"
@@ -1426,31 +1339,31 @@ export function useCharacterPresetPanel({
           </label>
         </Tooltip>
       )}
-      {/* 글로벌 내보내기/불러오기 — PC↔모바일 크로스 작업 이동용.
-          파일 형식이 로컬과 동일해 로컬 내보내기 파일도 불러올 수 있다. */}
+      {/* 글로벌 백업/백업 불러오기 — PC↔모바일 크로스 작업 이동용.
+          파일 형식이 로컬과 동일해 로컬 백업 파일도 불러올 수 있다. */}
       {globalView && globalEntries.length > 0 && (
-        <Tooltip content="모든 글로벌 프리셋 내보내기">
+        <Tooltip content="글로벌 캐릭터 프리셋 전체를 한 파일로 백업">
           <button
-            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 whitespace-nowrap"
             onClick={exportGlobalCharacterPresets}
           >
-            <ActionIcon id="export" size={11} />
-            내보내기
+            <ActionIcon id="backup" size={11} />
+            백업
           </button>
         </Tooltip>
       )}
       {globalView && (
-        <Tooltip content="프리셋 파일 불러오기 (로컬에서 내보낸 파일도 가능)">
+        <Tooltip content="백업 파일에서 글로벌 캐릭터 프리셋 불러오기 (동명 처리 선택, 로컬 백업 파일도 가능)">
           {/* PC 에서 Google 드라이브에 연결돼 있으면 출처([Google 드라이브 / 파일])를 먼저 묻는다
               (드라이브 API ③). Android·미연결은 기존처럼 바로 파일 선택기. */}
           <label
-            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1.5 rounded-lg text-sm btn-neutral text-body transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             onClick={(e) =>
               interceptFileImportClick(e, globalImportInputRef.current, 'character-presets')
             }
           >
             <ActionIcon id="import" size={11} />
-            불러오기
+            백업 불러오기
             <input
               ref={globalImportInputRef}
               type="file"
@@ -1471,7 +1384,9 @@ export function useCharacterPresetPanel({
     </>
   );
 
-  // 일괄 선택 액션 바 — 다중 선택 후 일괄 적용(양 뷰) / 폴더 이동(글로벌). PC = 도구줄 둘째 줄, 모바일 = 본문 안
+  // 일괄 선택 액션 바 — 다중 선택 후 일괄 적용(양 뷰) / 폴더 이동(글로벌). PC = 도구줄 둘째 줄, 모바일 = 본문 안.
+  // 색(2026-11-21 버튼 색 정돈 2차): 주 동작 「선택 적용」만 보기 색 솔리드(로컬 하늘·글로벌 보라 — modeButtons 켜짐과 같음),
+  // 「폴더로 이동」「선택 해제」 중립 btn-neutral, 「선택 삭제」 위험 back-red(솔리드 아님).
   const selectionBar = (className: string) => (
     <div className={className} data-character-selection-bar="">
       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -1486,7 +1401,7 @@ export function useCharacterPresetPanel({
       </button>
       <Tooltip content="선택한 프리셋을 캐릭터 프롬프트로 일괄 적용 (기존 적용에 추가)">
         <button
-          className="px-3 py-1 rounded-lg text-xs font-medium btn-solid-yellow"
+          className={`px-3 py-1 rounded-lg text-xs font-medium ${globalView ? 'btn-solid-purple' : 'btn-solid-sky'}`}
           disabled={
             (globalView ? selectedGlobalIds.size : selectedPresets.size) ===
             0
@@ -1499,7 +1414,7 @@ export function useCharacterPresetPanel({
       </Tooltip>
       {globalView && (
         <button
-          className="px-3 py-1 rounded-lg text-xs font-medium btn-solid-purple"
+          className="px-3 py-1 rounded-lg text-xs font-medium btn-neutral text-body"
           disabled={selectedGlobalIds.size === 0}
           onClick={bulkMoveToFolder}
         >
@@ -1520,7 +1435,7 @@ export function useCharacterPresetPanel({
         선택 해제
       </button>
       <button
-        className="px-3 py-1 rounded-lg text-xs font-medium btn-solid-red disabled:opacity-50"
+        className="px-3 py-1 rounded-lg text-xs font-medium btn back-red disabled:opacity-50"
         disabled={
           (globalView ? selectedGlobalIds.size : selectedPresets.size) === 0
         }
@@ -1619,7 +1534,7 @@ export function useCharacterPresetPanel({
         />
       ) : (
         <button
-          className="btn-ghost flex items-center justify-center md:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg text-sm whitespace-nowrap flex-none md:w-full border border-dashed line-color text-muted"
+          className="add-slot flex items-center justify-center md:justify-start gap-1.5 px-2.5 py-1.5 text-sm whitespace-nowrap flex-none md:w-full"
           onClick={() => {
             setNewFolderMode(true);
             setNewFolderValue('');
@@ -1690,19 +1605,16 @@ export function useCharacterPresetPanel({
         />
       ))}
       {listSearching && shownGlobalEntries.length === 0 && (
-        <div
-          className="col-span-full text-sm text-faint py-8 text-center"
-          data-list-no-hits=""
-        >
+        <EmptyState className="col-span-full py-8" data-list-no-hits="">
           검색 결과가 없습니다
-        </div>
+        </EmptyState>
       )}
       {!listSearching &&
         visibleGlobalEntries.length === 0 &&
         (cyclingMode || selectMode) && (
-          <div className="col-span-full text-sm text-faint py-8 text-center">
+          <EmptyState className="col-span-full py-8">
             이 폴더에 프리셋이 없습니다
-          </div>
+          </EmptyState>
         )}
     </div>
   );
@@ -1745,6 +1657,7 @@ export function useCharacterPresetPanel({
           {(cyclingMode || selectMode) && (
             <div
               className="absolute top-2 left-2 z-30 cursor-pointer"
+              aria-label={selectedPresets.has(preset.name) ? '선택 해제' : '선택'}
               onClick={(e) => { e.stopPropagation(); togglePresetSelection(preset.name); }}
             >
               <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
@@ -1777,12 +1690,9 @@ export function useCharacterPresetPanel({
         </div>
       ))}
       {listSearching && shownPresets.length === 0 && (
-        <div
-          className="col-span-full text-sm text-faint py-8 text-center"
-          data-list-no-hits=""
-        >
+        <EmptyState className="col-span-full py-8" data-list-no-hits="">
           검색 결과가 없습니다
-        </div>
+        </EmptyState>
       )}
     </div>
   );
@@ -1836,7 +1746,7 @@ export function useCharacterPresetPanel({
       placeholder="씬 이름 검색..."
       value={sceneFilter}
       onChange={(e) => setSceneFilter(e.target.value)}
-      className="w-full mb-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+      className="w-full mb-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
     />
   );
 
@@ -1850,12 +1760,12 @@ export function useCharacterPresetPanel({
       data-cycling-scene-list=""
     >
       {filteredScenes.map((scene) => (
-        <label key={scene.name} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-1 py-0.5">
+        <label key={scene.name} className="flex items-center gap-2 cursor-pointer hover-row rounded px-1 py-0.5">
           <input
             type="checkbox"
             checked={selectedScenes.has(scene.name)}
             onChange={() => toggleSceneSelection(scene.name)}
-            className="rounded line-color"
+            className="setting-check"
           />
           <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{scene.name}</span>
         </label>
@@ -1868,20 +1778,16 @@ export function useCharacterPresetPanel({
 
   // 프로젝트 파일 생성 모드 토글
   const projectFileToggle = (
-    <label className="flex items-start gap-2 mb-3 cursor-pointer select-none">
-      <input
-        type="checkbox"
+    // 체크 줄(2026-11-20 UI 정돈 그룹 1-c) — 실행 전 옵션이라 체크 상자. 줄 안쪽 여백(10px)만큼 당겨 주변 칸과 왼쪽을 맞춘다.
+    <div className="-mx-2.5 mb-1 select-none">
+      <SettingCheckRow
+        id="cyclingProjectFileMode"
         checked={projectFileMode}
-        onChange={(e) => setProjectFileMode(e.target.checked)}
-        className="mt-0.5 rounded line-color"
+        onChange={setProjectFileMode}
+        label={<span className="font-medium">프로젝트 파일 생성으로 동작</span>}
+        description="각 프리셋을 프리셋 이름의 새 프로젝트로 복제(이미지 미포함)해 생성합니다. 원본 프로젝트는 그대로 유지됩니다."
       />
-      <span className="text-sm text-gray-700 dark:text-gray-300">
-        <span className="font-medium">프로젝트 파일 생성으로 동작</span>
-        <span className="block text-xs text-muted">
-          각 프리셋을 프리셋 이름의 새 프로젝트로 복제(이미지 미포함)해 생성합니다. 원본 프로젝트는 그대로 유지됩니다.
-        </span>
-      </span>
-    </label>
+    </div>
   );
 
   const samplesInput = (
@@ -1893,7 +1799,7 @@ export function useCharacterPresetPanel({
         max={100}
         value={cyclingSamples}
         onChange={(e) => setCyclingSamples(Math.max(1, parseInt(e.target.value) || 1))}
-        className="w-16 px-2 py-1 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+        className="w-16 px-2 py-1 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
       />
     </div>
   );
@@ -1930,7 +1836,8 @@ export function useCharacterPresetPanel({
           {mobileViewToggle}
           {modeButtons}
         </div>
-        <div className="flex items-center gap-2">{fileButtons}</div>
+        {/* 「백업 불러오기」로 글자가 늘어 좁은 폭에서는 줄을 바꾼다(2026-11-16 R1) */}
+        <div className="flex items-center gap-2 flex-wrap">{fileButtons}</div>
       </div>
 
       {selectMode && selectionBar('mb-2 flex items-center gap-2 flex-wrap')}
@@ -2024,7 +1931,7 @@ export function useCharacterPresetPanel({
     </div>
   );
 
-  // toolbar: 왼쪽 [순차 생성 모드][선택] + 이름 검색(스크롤해도 남게), 오른쪽 파일 버튼·도움말. 선택 모드면 둘째 줄 = 선택 바.
+  // toolbar: 왼쪽 [순차 생성 모드][선택 모드] + 이름 검색(스크롤해도 남게), 오른쪽 파일 버튼·도움말. 선택 모드면 둘째 줄 = 선택 바.
   const showSearch = globalView ? globalEntries.length > 0 : presets.length > 0;
   const toolbar = workspace ? (
     <div>
@@ -2047,7 +1954,9 @@ export function useCharacterPresetPanel({
           <LibraryAction label="새 캐릭터 프리셋" tone="sky" icon={<FaPlus />} onClick={handleAddNewGlobal} />
           {modeButtons}
         </GridToolbarGroup>
-        <GridToolbarGroup id="character-files" caption="파일" separate>{fileButtons}</GridToolbarGroup>
+        <GridToolbarGroup id="character-files" caption="파일" separate>
+          {fileButtons}
+        </GridToolbarGroup>
       </LibraryToolbar>
     </div>
   ) : (

@@ -3,6 +3,7 @@ import {
   UiToolbarConfig,
 } from '../../main/config';
 import {
+  applyToolbarFollowers,
   groupToolbarIds,
   moveToolbarButton,
   TOOLBAR_GROUP_OTHER,
@@ -10,6 +11,7 @@ import {
   ToolbarButtonMeta,
   ToolbarRegistryEntry,
 } from '../models/uiLayout';
+import { SettingCheckRow, SettingField, SettingGroup } from './SettingControls';
 
 // 환경설정 → 테마 탭의 "툴바 버튼 구성" 에디터.
 // 상단 클래식 롤백 토글 + 레지스트리별 버튼 배치 select 목록.
@@ -65,6 +67,8 @@ const ToolbarLayoutEditor = ({
             : ('default' as const);
     onChange(moveToolbarButton(registries, value, { id, toArea: home.area, slot }));
   };
+  // 표시 값 — 저장에 없는 따라가는 버튼(backup-import 등)은 짝의 값을 보인다(실제 렌더와 같은 해석, 저장 불변).
+  const shownButtons = applyToolbarFollowers(value)?.buttons;
 
   // PC 씬 툴바 그룹(2026-10-04 T5): 그룹이 있는 레지스트리는 PC 에서 그룹별 소제목으로 나눠 보여 준다
   // (표시만 — 저장 형식·배치 선택은 그대로). 모바일은 툴바에 그룹이 없으므로 종전 목록 그대로.
@@ -87,34 +91,25 @@ const ToolbarLayoutEditor = ({
     }));
   };
 
+  // 묶음 상자(2026-11-20 UI 정돈 그룹 1-a): 툴바(클래식 체크) / 그룹마다 한 상자(씬 툴바·프로젝트 바).
+  // 클래식 체크는 PC 레이아웃 탭의 같은 설정(ConfigLayoutTab 「PC 화면과 툴바」)과 같은 체크 줄·같은 id. 배치 선택 칸 = .app-select.
+  // [버튼 배치 초기화]는 종전 자리 그대로(마지막 묶음 뒤, 클래식이면 함께 흐려짐). 항목·순서·문구는 그대로.
   return (
-    <div className="space-y-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="cfgClassicToolbar"
-            checked={!!value.classic}
-            onChange={(e) =>
-              onChange({ ...value, classic: e.target.checked || undefined })
-            }
-          />
-          <label htmlFor="cfgClassicToolbar" className="text-sm gray-label">
-            클래식 툴바 사용 (이전 배치로 되돌리기)
-          </label>
-        </div>
-        <p className="text-xs text-faint mt-1 ml-6">
-          켜면 모든 버튼을 예전처럼 툴바에 나란히 표시합니다(⋯ 메뉴·아래 개별
-          설정 무시). 이 설정은 저장 시 반영됩니다.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <SettingGroup title="툴바">
+        <SettingCheckRow
+          id="cfgClassicToolbar"
+          checked={!!value.classic}
+          onChange={(checked) => onChange({ ...value, classic: checked || undefined })}
+          label="클래식 툴바 사용 (이전 배치로 되돌리기)"
+          description="켜면 모든 버튼을 예전처럼 툴바에 나란히 표시합니다(⋯ 메뉴·아래 개별 설정 무시). 이 설정은 저장 시 반영됩니다."
+        />
+      </SettingGroup>
 
-      <div className={value.classic ? 'opacity-50 pointer-events-none' : ''}>
+      <div className={'space-y-4' + (value.classic ? ' opacity-50 pointer-events-none' : '')}>
         {groups.map((group) => (
-          <div key={group.title} className="mb-3">
-            <div className="text-sm font-semibold text-default mb-1.5">
-              {group.title}
-            </div>
+          <SettingGroup key={group.title} title={group.title}>
+           <SettingField>
             {sectionsOf(group).map((section) => (
               <div key={section.title ?? 'all'}>
                 {section.title !== null && (
@@ -123,7 +118,7 @@ const ToolbarLayoutEditor = ({
                   </div>
                 )}
                 {section.hint && (
-                  <p className="text-xs text-faint -mt-0.5 mb-1">{section.hint}</p>
+                  <p className="text-xs text-muted -mt-0.5 mb-1">{section.hint}</p>
                 )}
                 <div className="space-y-1">
                   {section.metas.map((b) => (
@@ -132,8 +127,9 @@ const ToolbarLayoutEditor = ({
                         {b.name}
                       </span>
                       <select
-                        className="gray-input text-sm py-1 px-2 flex-none"
-                        value={value.buttons?.[b.id] ?? 'default'}
+                        className="app-select flex-none w-36 text-sm"
+                        aria-label={`${b.name} 배치`}
+                        value={shownButtons?.[b.id] ?? 'default'}
                         onChange={(e) =>
                           setPlacement(
                             b.id,
@@ -153,23 +149,26 @@ const ToolbarLayoutEditor = ({
                 </div>
               </div>
             ))}
-          </div>
+           </SettingField>
+          </SettingGroup>
         ))}
-        {!mobileMode && (
-          <p className="text-xs text-faint mb-2">
-            PC 씬 툴바는 위 묶음 순서로 칸을 나눠 표시합니다. {TOOLBAR_GROUP_OTHER_HINT}
+        <div>
+          {!mobileMode && (
+            <p className="text-xs text-muted mb-2">
+              PC 씬 툴바는 위 묶음 순서로 칸을 나눠 표시합니다. {TOOLBAR_GROUP_OTHER_HINT}
+            </p>
+          )}
+          <button
+            className="round-button back-gray btn-sm"
+            onClick={() => onChange({ classic: value.classic })}
+          >
+            버튼 배치 초기화
+          </button>
+          <p className="text-xs text-muted mt-1">
+            위 개별 설정과 화면에서 직접 옮긴 버튼 순서까지 모두 기본 배치로
+            되돌립니다. (저장 시 반영)
           </p>
-        )}
-        <button
-          className="round-button back-gray btn-sm"
-          onClick={() => onChange({ classic: value.classic })}
-        >
-          버튼 배치 초기화
-        </button>
-        <p className="text-xs text-faint mt-1">
-          위 개별 설정과 화면에서 직접 옮긴 버튼 순서까지 모두 기본 배치로
-          되돌립니다. (저장 시 반영)
-        </p>
+        </div>
       </div>
     </div>
   );

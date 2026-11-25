@@ -73,6 +73,7 @@ const CompanionHostRowInner = observer(
         drop: (item: ToolbarDragItem, monitor) => {
           if (monitor.didDrop()) return;
           // 다른 호스트/툴바 → 이 호스트 끝에 배정. 같은 호스트 행 배경 재드롭도 끝으로(무해).
+          // 입력은 저장값 — PC 기본 동반 배치(프롬프트조각)는 그 버튼을 직접 옮길 때만 저장에 적힌다(가상 적용 유지).
           const next = assignCompanion(appState.uiCompanionSlots, hostKey, item.id);
           applyCompanionSlots(next);
         },
@@ -153,8 +154,14 @@ const CompanionButtonSlotInner = observer(
           if (item.id === id) return;
           const rect = wrapRef.current?.getBoundingClientRect();
           const before = isBeforeMidpoint(rect, monitor.getClientOffset());
+          // 기준 버튼이 기본 동반 배치로만 보이는 버튼(저장에 없음)이면 보이는 배치를 입력으로 — 그 앞/뒤 자리가 정확하게.
+          // 그 밖에는 저장값(기본 배치를 저장에 옮겨 적지 않는다).
+          const saved = appState.uiCompanionSlots;
+          const base = (saved[hostKey] ?? []).includes(id)
+            ? saved
+            : appState.companionSlotsView;
           const next = assignCompanionAt(
-            appState.uiCompanionSlots,
+            base,
             hostKey,
             item.id,
             { id, side: before ? 'before' : 'after' },
@@ -176,11 +183,12 @@ const CompanionButtonSlotInner = observer(
     }, [preview]);
     drag(dropInsert(wrapRef));
 
-    // 삽입 위치 표시 — 커서 쪽(좌/우) 보더 강조(툴바/프리셋 행과 같은 sky 시각 언어).
+    // 삽입 위치 표시 — 커서 쪽(좌/우) 한 변 강조(툴바/프리셋 행과 같은 시각 언어).
+    // 크기 불변 안쪽 선(App.css .drop-mark-*, 그룹 3-b — 종전 테두리 굵기는 2px 출렁임).
     const insertClass = isOverInsert
       ? insertBefore
-        ? ' border-l-2 border-sky-400 rounded-l'
-        : ' border-r-2 border-sky-400 rounded-r'
+        ? ' drop-mark-left'
+        : ' drop-mark-right'
       : '';
     return (
       <div

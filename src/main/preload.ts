@@ -86,6 +86,7 @@ export type Channels =
   | 'read-binary-file'
   | 'get-remain-credits'
   | 'copy-image-to-clipboard'
+  | 'start-image-drag-out'
   | 'lookup-tag'
   | 'write-data-file-absolute'
   | 'list-project-copy-entries'

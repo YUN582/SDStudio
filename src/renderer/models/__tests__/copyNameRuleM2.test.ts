@@ -194,21 +194,27 @@ describe('C4 로컬 캐릭터 프리셋 복제(CharacterPresetEditor.handleDupli
 });
 
 describe('I4 로컬 캐릭터 프리셋 파일 불러오기 중복 이름', () => {
-  test('「X」→「X (2)」(종전 「X_1_1」)', () => {
-    const src = load('componenets/CharacterPresetEditor.tsx');
-    const stmt = findNode(src, (n): n is ts.ExpressionStatement =>
-      ts.isExpressionStatement(n) && /preset\.name = numberedName\(/.test(n.getText(src)),
-    );
+  // 2026-11-16 M5 묶음 b R1-b: 본문이 models/localCharacterPresetImport.ts 로 옮겨졌다 — 「새 이름으로 추가」 정책의 이름 규칙
+  test('「X」→「X (2)」(종전 「X_1_1」)', async () => {
+    const { applyLocalCharacterPresetImport } = await import('../localCharacterPresetImport');
     const s = charSession(['K', 'K (2)']);
-    const run = (name: string) => {
-      const preset = { name };
-      compile(`() => { ${stmt.getText(src)} }`, { preset, session: s, numberedName })();
-      s.addCharacterPreset(preset);
-      return preset.name;
+    const run = async (name: string) => {
+      const added: string[] = [];
+      await applyLocalCharacterPresetImport({ presets: [{ name }] }, 'rename', {
+        has: (n) => s.hasCharacterPreset(n),
+        add: (json) => {
+          s.addCharacterPreset(json);
+          added.push(json.name);
+        },
+        replace: () => {},
+        writeVibe: async () => {},
+        writeReference: async () => {},
+      });
+      return added[0];
     };
-    expect(run('Z')).toBe('Z');
-    expect(run('K')).toBe('K (3)');
-    expect(run('K')).toBe('K (4)');
+    expect(await run('Z')).toBe('Z');
+    expect(await run('K')).toBe('K (3)');
+    expect(await run('K')).toBe('K (4)');
     expectNoOldMarker(['K (3)', 'K (4)']);
   });
 });
@@ -321,8 +327,8 @@ describe('C10 프로젝트 복제(BackupService.duplicateProject)', () => {
     const sessionService = {
       list: () => list,
       getFolderOf: () => 'F',
-      exportSessionShallow: jest.fn(async () => ({})),
-      importSessionShallow: jest.fn(async (_j: any, n: string) => {
+      // 2026-11-16: 이미지 미포함 복제는 cloneSessionShallow(변형 씬·첨부 파일 동반) 한 번으로 바뀜
+      cloneSessionShallow: jest.fn(async (_s: any, n: string) => {
         list.push(n);
       }),
       duplicateSessionDeep: jest.fn(),
@@ -341,7 +347,7 @@ describe('C10 프로젝트 복제(BackupService.duplicateProject)', () => {
       suggestFolderCopyName,
     });
     await fn();
-    expect(sessionService.importSessionShallow).toHaveBeenLastCalledWith({}, 'P 복사본 (2)');
+    expect(sessionService.cloneSessionShallow).toHaveBeenLastCalledWith({ name: 'P' }, 'P 복사본 (2)');
     expect(sessionService.moveToFolder).toHaveBeenLastCalledWith('P 복사본 (2)', 'F');
     expect(appState.pushDialogAsync).toHaveBeenCalledTimes(1); // 방식 선택만, 이름은 묻지 않음
     expectNoOldMarker(['P 복사본 (2)']);

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { ActionIcon } from './ActionIcon';
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_DANGER_BTN, DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import { useTemplateWorkflowPanel } from './TemplateManagerModal';
 import { FOLDER_COLORS } from './folderColors';
 import {
@@ -12,8 +12,11 @@ import {
 } from '../models';
 import { appState } from '../models/AppService';
 import { deleteConfirmText } from '../models/deleteFlowRules';
-import HelpIcon from './HelpIcon';
+import { HelpPanelButton } from './HelpPanel';
+import { FOLDER_TEMPLATE_HELP, TEMPLATE_BADGE_HELP } from '../models/helpPanelTexts';
 import { setTemplateBadgeColorRecorded } from '../models/globalLibraryUndo';
+import { previewReapply, reapplyTemplateToProject, reapplyUndoState } from '../models/templateReapplyFlow';
+import { REAPPLY_TEXT, reapplyPreviewLines } from '../models/templateReapplyPreview';
 
 // 프로젝트 상속 v2 (2026-07-16 합의) — 폴더 기본 템플릿 / 수동 재적용 모달.
 // 2026-11-15 오버레이 묶음 C-2: 폴더 기본 템플릿 = size l(고정 760), aside 없음. 도구줄 = 탭 + [전역 템플릿에서 복사] +
@@ -55,6 +58,12 @@ export const FolderTemplateModal = observer(
       if (!isOpen) return;
       setLocalId('');
       (async () => {
+        // 창 열기 = 명시적 진입점 — 지정 목록(templates.json)을 읽지 못해 막혀 있으면 한 번 다시 읽는다(2026-11-18 T3)
+        try {
+          await templateService.reloadIfFailed();
+        } catch (e) {
+          console.error('템플릿 지정 목록 다시 읽기 실패:', e);
+        }
         await templateService.ensureLoaded();
         await projectTemplateService.ensureLoaded();
         const existing = templateService.getFolderTemplate(folder);
@@ -65,6 +74,12 @@ export const FolderTemplateModal = observer(
         if (existingEnt?.folderLocal) {
           id = existingEnt.id;
         } else {
+          // 지정을 저장할 수 없으면(읽기 실패·쓰기 충돌) 폴더 전용 템플릿을 만들지 않고 닫는다 — 막힌 동안은 기존 지정이
+          // 비어 보이므로 그대로 만들면 지정 없는 템플릿이 쌓인다(안내는 confirmWritable 의 토스트·확인 창)
+          if (!(await templateService.confirmWritable())) {
+            onClose();
+            return;
+          }
           const created = await projectTemplateService.create(
             `폴더 기본 (${folder})`,
             { folderLocal: true },
@@ -192,7 +207,8 @@ export const FolderTemplateModal = observer(
             appState.pushDialog({
               type: 'confirm',
               danger: true,
-              text: `변경 내용을 상속 중인 자식 프로젝트 ${children.length}개에 덮어쓸까요? (템플릿에서 비어있는 영역은 건너뜁니다)`,
+              // 여러 프로젝트에 걸친 교체라 되돌리기 기록이 없다(2026-11-18) — 교체·되돌릴 수 없음을 문구로
+              text: REAPPLY_TEXT.propagateConfirm(children.length),
               callback: async () => {
                 await projectTemplateService.flushSave();
                 const failed: string[] = [];
@@ -251,13 +267,8 @@ export const FolderTemplateModal = observer(
             >
               <span className="text-sm text-muted flex-none inline-flex items-center gap-1.5">
                 배지 색 (♚/♟)
-                <HelpIcon
-                  content={
-                    '♚ = 이 폴더의 기본 템플릿(부모)\n' +
-                    '♟ = 그 템플릿을 상속받은 프로젝트\n' +
-                    '배지 색으로 어느 부모의 자식인지 구분합니다.'
-                  }
-                />
+                {/* 2026-11-20 그룹 1-b: 기호 설명 툴팁 → 「기호 칩 + 뜻」 짧은 패널(문구 = models/helpPanelTexts.ts) */}
+                <HelpPanelButton data={TEMPLATE_BADGE_HELP} width={320} exampleWidth={28} />
               </span>
               {FOLDER_COLORS.map((c) => {
                 const selected = entry.badgeColor === c;
@@ -297,7 +308,7 @@ export const FolderTemplateModal = observer(
         <>
           {controlsShown && (
             <button
-              className="px-4 py-2 rounded-lg btn-solid-red text-sm font-medium transition-colors"
+              className={DIALOG_DANGER_BTN}
               data-folder-template-clear=""
               onClick={clearDesignation}
             >
@@ -315,12 +326,8 @@ export const FolderTemplateModal = observer(
         title={
           <span className="inline-flex items-center gap-1.5">
             {`폴더 기본 템플릿 — ${folder}`}
-            <HelpIcon
-              content={
-                '이 폴더(하위 폴더 포함)에서 새 프로젝트를 만들 때 아래 구성이 자동 적용됩니다.\n' +
-                '전역 템플릿을 복사해 온 뒤 이 폴더 전용으로 세부 조정할 수 있고(전역 원본에는 영향 없음), 아무것도 세팅하지 않고 닫으면 지정이 해제됩니다.'
-              }
-            />
+            {/* 2026-11-20 그룹 1-b: 2줄 툴팁 → 누르면 열리는 짧은 패널(문구 = models/helpPanelTexts.ts) */}
+            <HelpPanelButton data={FOLDER_TEMPLATE_HELP} width={400} />
           </span>
         }
         size="l"
@@ -344,8 +351,10 @@ export const FolderTemplateModal = observer(
 
 // ===== 템플릿 수동 재적용 모달 =====
 //
-// 템플릿의 프리셋·캐릭터 프리셋을 기존 프로젝트에 추가하고 선택한다(비파괴).
-// 씬·생성 이미지는 건드리지 않는다 (씬은 씬 템플릿 가져오기 기능이 담당).
+// 템플릿의 프리셋·캐릭터 프리셋·바이브/레퍼런스를 기존 프로젝트에 적용한다. 이 템플릿으로 이전에 적용한 적이 있으면 적용 기록에
+// 적힌 **이름**의 항목을 지우고 다시 만든다(교체 — 그 이름이면 사용자가 고친 것도 교체, 비파괴 아님). 씬·생성 이미지는 건드리지
+// 않는다(씬은 씬 템플릿 가져오기 기능이 담당). 대상이 지금 열린 프로젝트면 되돌리기(Ctrl+Z) 한 항목(2026-11-18,
+// templateReapplyFlow) — 창 본문이 교체될 이름과 되돌리기 가능 여부를 보여 준다(templateReapplyPreview).
 export const ReapplyTemplateModal = observer(
   ({
     target,
@@ -367,6 +376,12 @@ export const ReapplyTemplateModal = observer(
     useEffect(() => {
       if (!isOpen) return;
       (async () => {
+        // 창 열기 = 명시적 진입점 — 막혀 있으면 지정 목록을 한 번 다시 읽는다(적용 기록·폴더 기본 템플릿 판정용)
+        try {
+          await templateService.reloadIfFailed();
+        } catch (e) {
+          console.error('템플릿 지정 목록 다시 읽기 실패:', e);
+        }
         await templateService.ensureLoaded();
         await projectTemplateService.ensureLoaded();
         // 대상이 속한 폴더의 기본 템플릿을 초기 선택으로 제안
@@ -386,14 +401,25 @@ export const ReapplyTemplateModal = observer(
         : undefined;
     const hasAny = globals.length > 0 || !!folderLocalEntry;
     const entry = selected ? projectTemplateService.get(selected) : undefined;
+    // 교체될 이름·되돌리기 가능 여부(2026-11-18) — 미리보기를 못 만들면(읽기 전 등) 줄 없이
+    let previewLines: string[] = [];
+    if (entry) {
+      try {
+        const preview = previewReapply(entry.id, target);
+        if (preview) previewLines = reapplyPreviewLines(preview, reapplyUndoState(target));
+      } catch (e) {
+        previewLines = [];
+      }
+    }
 
     const apply = async () => {
       if (!selected || busy) return;
       setBusy(true);
       try {
-        await sessionService.applyProjectTemplateToSession(selected, target);
+        const { recorded } = await reapplyTemplateToProject(selected, target);
         appState.pushMessage(
-          `"${target}"에 템플릿 "${entry?.name ?? ''}" 구성을 적용했습니다.`,
+          `"${target}"에 템플릿 "${entry?.name ?? ''}" 구성을 적용했습니다.` +
+            (recorded ? ` ${REAPPLY_TEXT.undoable}` : ''),
         );
         onClose();
       } catch (e: any) {
@@ -415,7 +441,7 @@ export const ReapplyTemplateModal = observer(
           <>
             {hasAny && (
               <button
-                className="px-4 py-2 rounded-lg btn-solid-sky disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                className={DIALOG_PRIMARY_BTN + ' disabled:opacity-50 disabled:cursor-not-allowed'}
                 disabled={!selected || busy}
                 onClick={apply}
               >
@@ -423,7 +449,7 @@ export const ReapplyTemplateModal = observer(
               </button>
             )}
             <button
-              className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+              className={DIALOG_SECONDARY_BTN}
               onClick={onClose}
             >
               {hasAny ? '취소' : '닫기'}
@@ -432,13 +458,7 @@ export const ReapplyTemplateModal = observer(
         }
       >
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted">
-            템플릿의 프리셋·캐릭터 프리셋·바이브/레퍼런스를 이 프로젝트에
-            적용합니다. 이전에 이 템플릿으로 적용된 구성은{' '}
-            <span className="font-medium text-default">새 구성으로 교체</span>
-            되고, 직접 만든 프리셋·씬·생성 이미지는 건드리지 않습니다. 템플릿에서
-            비어있는 영역은 건너뜁니다.
-          </p>
+          <p className="text-sm text-muted">{REAPPLY_TEXT.intro}</p>
           {!hasAny ? (
             <p className="text-sm text-default">
               만들어진 템플릿이 없습니다. 먼저 템플릿 관리에서 템플릿을
@@ -451,7 +471,7 @@ export const ReapplyTemplateModal = observer(
                   템플릿
                 </label>
                 <select
-                  className="gray-input w-full"
+                  className="app-select w-full"
                   value={selected}
                   onChange={(e) => setSelected(e.target.value)}
                 >
@@ -476,6 +496,16 @@ export const ReapplyTemplateModal = observer(
                   </span>
                 )}
               </div>
+              {previewLines.length > 0 && (
+                <div
+                  className="flex flex-col gap-1 text-sm text-default break-words"
+                  data-reapply-preview=""
+                >
+                  {previewLines.map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

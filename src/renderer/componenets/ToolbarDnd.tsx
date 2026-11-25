@@ -140,6 +140,7 @@ export async function applyToolbarMoveFromCompanion(
   move: ToolbarMove,
 ): Promise<void> {
   const nextToolbar = moveToolbarButton(TOOLBAR_VIEW_MAIN, appState.uiToolbar, move);
+  // 기본 동반 배치 버튼(프롬프트조각)을 빼면 removeCompanion 이 툴바 유지 표에 적는다(다시 기본 자리로 돌아가지 않게).
   const nextSlots = removeCompanion(appState.uiCompanionSlots, move.id);
   appState.uiToolbar = nextToolbar;
   appState.uiCompanionSlots = nextSlots;
@@ -344,16 +345,16 @@ export const DraggableToolbarButton = observer(
     const active = useToolbarDragActive(group);
     const armed = toolbarDragUi.armed === group;
     const armedSelf = armed && toolbarDragUi.armedId === id;
-    // 삽입 위치 표시 — 커서 쪽 보더 강조(기존 하이라이트 색조 sky 계열과 일관).
-    // 세로 스택은 위/아래 보더로.
+    // 삽입 위치 표시 — 커서 쪽 한 변 강조. 세로 스택은 위/아래 변으로.
+    // 크기 불변 안쪽 선(App.css .drop-mark-*, 그룹 3-b — 종전 테두리 굵기는 2px 출렁임).
     const insertClass = isOverInsert
       ? orientation === 'v'
         ? insertBefore
-          ? ' border-t-2 border-sky-400 rounded-t'
-          : ' border-b-2 border-sky-400 rounded-b'
+          ? ' drop-mark-top'
+          : ' drop-mark-bottom'
         : insertBefore
-          ? ' border-l-2 border-sky-400 rounded-l'
-          : ' border-r-2 border-sky-400 rounded-r'
+          ? ' drop-mark-left'
+          : ' drop-mark-right'
       : '';
     return (
       <div

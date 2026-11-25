@@ -314,15 +314,16 @@ const click = async (el: Element | null) => {
 };
 
 describe('템플릿 편집기 샘플링 알약', () => {
-  test('알약 모양: 4.5·5·5M, 선택 = back-sky·aria-pressed, 안내 문구', async () => {
+  // UI 정돈 그룹 2-c: 알약 칩 → 택일 묶음 .seg-group(작은 칸 .seg-sm). 선택 = .seg-on
+  test('택일 묶음 모양: 4.5·5·5M, 선택 = seg-on·aria-pressed, 안내 문구', async () => {
     mockTemplates.push(mkTpl('t1', threeProfiles()));
     await renderManager();
     const group = q('[data-template-sampling-family]')!;
     expect(Array.from(group.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['4.5', '5', '5M']);
-    expect(pill('v4_5').className).toContain('back-sky');
+    expect(group.className.split(' ')).toEqual(expect.arrayContaining(['seg-group', 'seg-sm']));
+    expect(pill('v4_5').className.split(' ')).toEqual(['seg-item', 'text-xs', 'seg-on']);
     expect(pill('v4_5').getAttribute('aria-pressed')).toBe('true');
-    expect(pill('v5').className).toContain('btn-ghost text-default');
-    expect(pill('v5').className).toContain('text-xs px-2 py-0.5 rounded-full');
+    expect(pill('v5').className).toBe('seg-item text-xs');
     expect(pill('v5').getAttribute('aria-pressed')).toBe('false');
     expect(q('[data-template-sampling-head]')!.getAttribute('data-template-sampling-head')).toBe('row');
     expect(q('[data-template-sampling-head]')!.textContent).toContain('알약은 이 템플릿에서 어느 계열 값을 고칠지만');
@@ -465,7 +466,9 @@ describe('템플릿 편집기 샘플링 알약', () => {
     expect(head.getAttribute('data-template-sampling-head')).toBe('stacked');
     expect(head.className).toContain('flex-col');
     const rows = Array.from(head.children);
-    expect(rows[0].textContent).toContain('샘플링');
+    // 2026-11-20 UI 정돈 그룹 1-c: 구획 제목 「샘플링」은 묶음 상자 제목 한 번만 — 머리 첫 줄은 도움말만 남는다
+    expect(head.closest('[data-setting-group="샘플링"]')).not.toBeNull();
+    expect(rows[0].querySelector('[data-help-icon]')).not.toBeNull();
     expect(rows[1].hasAttribute('data-template-sampling-family')).toBe(true);
     expect((rows[1] as HTMLElement).className).toContain('flex-wrap');
     expect((rows[1] as HTMLElement).className).not.toContain('overflow');

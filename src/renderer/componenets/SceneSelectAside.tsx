@@ -151,7 +151,7 @@ export const SceneSelectAside = ({ sel }: { sel: SceneSelection }) => {
               (kinds[kind] ? 'back-sky' : 'text-muted')
             }
           >
-            <input type="checkbox" checked={kinds[kind]} onChange={() => toggleKind(kind)} className="rounded line-color" />
+            <input type="checkbox" checked={kinds[kind]} onChange={() => toggleKind(kind)} className="setting-check setting-check-sm" />
             <span>
               {label} {kindCounts[kind]}
             </span>
@@ -160,7 +160,7 @@ export const SceneSelectAside = ({ sel }: { sel: SceneSelection }) => {
       </div>
       <input type="text" placeholder="씬 이름 검색..." value={sceneFilter}
         onChange={(e) => setSceneFilter(e.target.value)}
-        className="w-full mb-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+        className="w-full mb-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]" />
       <div
         className={
           (isMobile ? 'max-h-36' : 'flex-1 min-h-0') + ' overflow-y-auto border line-color rounded-lg p-2 space-y-1'
@@ -169,9 +169,9 @@ export const SceneSelectAside = ({ sel }: { sel: SceneSelection }) => {
       >
         {visibleList.map((name) => (
           <label key={name}
-            className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-1 py-0.5">
+            className="flex items-center gap-2 cursor-pointer hover-row rounded px-1 py-0.5">
             <input type="checkbox" checked={selectedScenes.has(name)} onChange={() => toggleScene(name)}
-              className="rounded line-color" />
+              className="setting-check" />
             <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{sceneKeyLabel(name)}</span>
           </label>
         ))}

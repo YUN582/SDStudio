@@ -66,10 +66,12 @@ export const CONFIG_GROUP_FIELDS = {
     'uiPillButtons',
   ] as const,
   layout: [
+    'showShortcutHelpOnStartup',
     'quickMenu',
     'quickMenuButton',
     'uiPresetLayout',
     'uiPresetIconRow',
+    'uiToolbarButtonNames',
     'webSearchEnabled',
     'uiCompanionSlots',
     'uiCombinationView',
@@ -80,7 +82,6 @@ export const CONFIG_GROUP_FIELDS = {
     'legacySceneEditor',
     'legacyWorkflowMode',
     'sceneToolbarLegacyText',
-    'showShortcutHelpOnStartup',
     'promptWeightSpacingFix',
   ] as const,
 };
@@ -133,6 +134,8 @@ export const CONFIG_SYNC_EXCLUDED = [
   'boostVariantTasks',
   'boostWarningDismissed',
   'syncFolder',
+  // PC 화면 배율(시험 기능) — 모니터·기기마다 맞는 값이 달라 기기별로 고른다.
+  'uiZoomPercent',
 ] as const;
 const EXCLUDED_TYPED: readonly (keyof Config)[] = CONFIG_SYNC_EXCLUDED;
 void EXCLUDED_TYPED;
@@ -512,6 +515,7 @@ export const CONFIG_FIELD_LABEL: Partial<Record<keyof Config, string>> = {
   quickMenuButton: '퀵 메뉴 버튼',
   uiPresetLayout: '프리셋 요소 순서',
   uiPresetIconRow: '프리셋 하단 아이콘 행',
+  uiToolbarButtonNames: '툴바 버튼 이름 표시',
   uiCompanionSlots: '동반 버튼 위치',
   uiCombinationView: '조합 에디터 보기',
   classicSceneCard: '클래식 씬 카드',

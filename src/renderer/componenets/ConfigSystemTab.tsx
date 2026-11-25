@@ -121,7 +121,7 @@ const FolderCleanupSection = ({ folder, label, description }: { folder: string; 
           {loading ? '조회 중...' : loaded ? '새로고침' : '조회'}
         </button>
       </div>
-      {description && <div className="text-xs text-faint">{description}</div>}
+      {description && <div className="text-xs text-muted">{description}</div>}
       {loaded && (
         <>
           <div className="text-sm gray-label">
@@ -247,7 +247,7 @@ const LegacyCleanupSection = () => {
           {scanning ? '검사 중...' : scan ? '새로고침' : '검사'}
         </button>
       </div>
-      <p className="text-xs text-faint">
+      <p className="text-xs text-muted">
         마이그레이션 후 구 저장 폴더에 남은 항목(프로젝트에 속하지 않는 고아
         폴더·파일)을 정리합니다.
       </p>
@@ -387,9 +387,12 @@ export const ExampleVibeCleanupSection = () => {
   const summary = scan ? summarizeExampleVibeScan(scan) : null;
 
   return (
-    <div className="space-y-2" data-example-vibe-section>
+    // 묶음 상자(2026-11-20 UI 정돈 그룹 1-a) — 제목은 묶음 제목(EXAMPLE_VIBE_TEXT.label) 한 번만, 안쪽 줄은 [검사] 버튼만.
+    // data-example-vibe-section 은 묶음 바깥 감싸개(시스템 탭 2단 흐름 단위, 제목 글자 포함)에 둔다.
+    <div data-example-vibe-section>
+     <SettingGroup title={EXAMPLE_VIBE_TEXT.label}>
+     <SettingField className="space-y-2">
       <div className="flex items-center gap-2">
-        <label className="block text-sm gray-label">{EXAMPLE_VIBE_TEXT.label}</label>
         <button
           className="btn text-xs back-gray px-2 py-0.5 rounded"
           onClick={doScan}
@@ -399,7 +402,7 @@ export const ExampleVibeCleanupSection = () => {
           {scanning ? '검사 중...' : scan ? '새로고침' : '검사'}
         </button>
       </div>
-      <p className="text-xs text-faint">{EXAMPLE_VIBE_TEXT.description}</p>
+      <p className="text-xs text-muted">{EXAMPLE_VIBE_TEXT.description}</p>
       {scan && scan.projectsFailed.length > 0 && (
         <p className="text-xs text-orange-500 dark:text-orange-400" data-example-vibe-failed>
           프로젝트 {scan.projectsFailed.length}개는 읽지 못해 검사하지 않았습니다:{' '}
@@ -471,6 +474,8 @@ export const ExampleVibeCleanupSection = () => {
           )}
         </>
       )}
+     </SettingField>
+     </SettingGroup>
     </div>
   );
 };
@@ -525,9 +530,10 @@ const MigrationDiagSection = () => {
     });
   };
 
+  // 묶음 상자(2026-11-20 UI 정돈 그룹 1-a) — 진단을 읽은 뒤에만 그린다(빈 상자 방지). 제목은 묶음 제목 한 번만.
   return (
-    <div>
-      <label className="block text-sm gray-label mb-1">저장소 구조</label>
+   <SettingGroup title="저장소 구조">
+    <SettingField>
       <p className="text-sm text-body">
         {diag.layout === 'workspace'
           ? '통합 구조(workspace) 사용 중'
@@ -575,7 +581,8 @@ const MigrationDiagSection = () => {
         </>
       )}
       {diag.layout === 'workspace' && <LegacyCleanupSection />}
-    </div>
+    </SettingField>
+   </SettingGroup>
   );
 };
 
@@ -642,18 +649,20 @@ const SystemTab = ({
   return (
     <div className="space-y-4">
       {/* Google 드라이브 연동·환경설정 내보내기/불러오기는 「드라이브」 탭으로 옮겼다(드라이브 API ⑤). */}
-      <div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="cfgStorageGuard" checked={storageWriteGuard}
-            onChange={(e) => setStorageWriteGuard(e.target.checked)} />
-          <label htmlFor="cfgStorageGuard" className="text-sm gray-label">저장소 불안정 시 자동 저장 보호 (권장)</label>
-        </div>
-        <p className="text-xs text-faint mt-1 ml-6">
-          저장소 접근이 일시적으로 불안정할 때 자동 저장을 잠시 멈춰 데이터 손상을 막습니다. 멈춘 동안의 직전 편집은 저장이 미뤄질 수 있습니다(접근이 회복되면 자동 재개). 꺼도 손상 방지 가드는 항상 동작합니다.
-        </p>
-      </div>
-      <hr className="line-color" />
-      <div>
+      {/* 묶음 상자(2026-11-20 UI 정돈 그룹 1-a — 사용자 승인: 붙어 있는 구획만 합침): 저장 보호 / 생성 간격 / 이미지 최적화 /
+          (모바일) WebP 자동 변환 / 폴더 정리 / 작업 로그 / 저장소 구조 / 예제 프리셋 잔존 이미지 정리 / 업데이트와 정보.
+          항목·순서·문구·id·저장 방식은 그대로, 구분선(hr) 대신 상자. PC 는 cfg-two-col 이 상자 단위로 2단에 흘린다. */}
+      <SettingGroup title="저장 보호">
+        <SettingCheckRow
+          id="cfgStorageGuard"
+          checked={storageWriteGuard}
+          onChange={setStorageWriteGuard}
+          label="저장소 불안정 시 자동 저장 보호 (권장)"
+          description="저장소 접근이 일시적으로 불안정할 때 자동 저장을 잠시 멈춰 데이터 손상을 막습니다. 멈춘 동안의 직전 편집은 저장이 미뤄질 수 있습니다(접근이 회복되면 자동 재개). 꺼도 손상 방지 가드는 항상 동작합니다."
+        />
+      </SettingGroup>
+      <SettingGroup title="생성 간격">
+       <SettingField>
         {/* 요청 사이 지연(2026-10-03 T3): 대기 = max(0, 지연 ± 무작위 폭), 단일 출처 requestTiming */}
         <label htmlFor="cfgRequestDelay" className="block text-sm gray-label mb-1">
           {REQUEST_DELAY_TEXT.delayLabel}
@@ -675,12 +684,13 @@ const SystemTab = ({
             className="flex-1 min-w-0" />
           <span className="text-sm gray-label w-14 text-right flex-none tabular-nums">±{formatDelaySeconds(requestDelayJitterMs)}</span>
         </div>
-        <p className="text-xs text-faint mt-1">
+        <p className="text-xs text-muted mt-1">
           {REQUEST_DELAY_TEXT.help}
         </p>
-      </div>
-      <hr className="line-color" />
-      <div>
+       </SettingField>
+      </SettingGroup>
+      <SettingGroup title="이미지 최적화">
+       <SettingField>
         <label className="block text-sm gray-label mb-1">
           이미지 최적화 병렬 처리 수 (1 ~ {platform.maxImageConcurrency})
         </label>
@@ -690,7 +700,7 @@ const SystemTab = ({
             className="flex-1 min-w-0" />
           <span className="text-sm gray-label w-14 text-right flex-none">{exportConcurrency}</span>
         </div>
-        <p className="text-xs text-faint mt-1">
+        <p className="text-xs text-muted mt-1">
           높을수록 내보내기가 빠르지만 CPU 사용량이 증가합니다.{isMobile ? ' 모바일은 1~2 권장.' : ''}
         </p>
         {!isMobile && runtimeDiag && (
@@ -699,87 +709,91 @@ const SystemTab = ({
             {runtimeDiag.uvThreadpool}
           </p>
         )}
-      </div>
+       </SettingField>
+      </SettingGroup>
       {/* 자동 WebP 변환 — 데스크톱은 저장경로 탭에 동일 설정이 있어 모바일만 노출 */}
       {isMobile && (
-        <>
-          <hr className="line-color" />
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="cfgAutoWebpM" checked={autoConvertWebp}
-                onChange={(e) => setAutoConvertWebp(e.target.checked)} />
-              <label htmlFor="cfgAutoWebpM" className="text-sm gray-label">새로 생성되는 이미지를 WebP로 자동 변환</label>
-            </div>
-            <p className="text-xs text-muted">
-              생성 직후 PNG를 WebP로 재인코딩해 저장 용량을 줄입니다. 프롬프트
-              메타데이터와 NAI 인식(스텔스 워터마크)은 유지되며, 기존 이미지에는
-              영향이 없습니다. 변환에 실패하면 원본 PNG가 그대로 저장됩니다.
-            </p>
-            {autoConvertWebp && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="cfgAutoWebpQM" className="text-sm gray-label">변환 품질 (1~100)</label>
-                <input
-                  type="number"
-                  id="cfgAutoWebpQM"
-                  min={1}
-                  max={100}
-                  value={autoWebpQuality}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value);
-                    setAutoWebpQuality(isNaN(v) ? 80 : Math.min(100, Math.max(1, v)));
-                  }}
-                  className="w-16 text-sm text-center border rounded px-1 py-1 back-gray"
-                />
-              </div>
-            )}
-          </div>
-        </>
+        <SettingGroup title="WebP 자동 변환">
+          <SettingCheckRow
+            id="cfgAutoWebpM"
+            checked={autoConvertWebp}
+            onChange={setAutoConvertWebp}
+            label="새로 생성되는 이미지를 WebP로 자동 변환"
+            description="생성 직후 PNG를 WebP로 재인코딩해 저장 용량을 줄입니다. 프롬프트 메타데이터와 NAI 인식(스텔스 워터마크)은 유지되며, 기존 이미지에는 영향이 없습니다. 변환에 실패하면 원본 PNG가 그대로 저장됩니다."
+          />
+          {autoConvertWebp && (
+            <SettingField className="flex items-center gap-2">
+              <label htmlFor="cfgAutoWebpQM" className="text-sm gray-label">변환 품질 (1~100)</label>
+              <input
+                type="number"
+                id="cfgAutoWebpQM"
+                min={1}
+                max={100}
+                value={autoWebpQuality}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setAutoWebpQuality(isNaN(v) ? 80 : Math.min(100, Math.max(1, v)));
+                }}
+                className="w-16 text-sm text-center border rounded px-1 py-1 back-gray"
+              />
+            </SettingField>
+          )}
+        </SettingGroup>
       )}
-      <hr className="line-color" />
-      <FolderCleanupSection folder="exports" label="exports 폴더 정리" />
-      <hr className="line-color" />
-      <FolderCleanupSection folder="tmp" label="tmp 폴더 정리" description="이미지 내보내기 시 생성되는 임시 파일이 저장됩니다." />
-      <hr className="line-color" />
-      <TaskLogSection />
-      <hr className="line-color" />
+      <SettingGroup title="폴더 정리">
+        {/* exports·tmp 두 구획을 한 상자에 — 각자의 소제목(라벨)은 유지 */}
+        <SettingField>
+          <FolderCleanupSection folder="exports" label="exports 폴더 정리" />
+        </SettingField>
+        <SettingField className="pt-2">
+          <FolderCleanupSection folder="tmp" label="tmp 폴더 정리" description="이미지 내보내기 시 생성되는 임시 파일이 저장됩니다." />
+        </SettingField>
+      </SettingGroup>
+      <SettingGroup title="작업 로그">
+        <SettingField>
+          <TaskLogSection />
+        </SettingField>
+      </SettingGroup>
+      {/* 저장소 구조 묶음은 MigrationDiagSection 이 진단을 읽은 뒤 스스로 그린다(읽기 전엔 아무것도 없음) */}
       <MigrationDiagSection />
       {/* 예제 프리셋 잔존 이미지 정리 — 구 저장소 잔재 정리 바로 아래, 저장소 배치와 무관하게 항상 표시 */}
       <ExampleVibeCleanupSection />
-      <hr className="line-color" />
-      <div className="space-y-2">
-        <label className="block text-sm gray-label mb-1">업데이트</label>
-        <button
-          className="px-3 py-1.5 text-sm back-sky rounded clickable disabled:opacity-50"
-          disabled={checkingUpdate}
-          onClick={handleCheckUpdate}
-        >
-          {checkingUpdate ? '확인 중...' : '업데이트 확인'}
-        </button>
-      </div>
-      <hr className="line-color" />
-      <div className="space-y-2">
-        <label className="block text-sm gray-label mb-1">정보</label>
-        <div className="flex flex-col gap-1 text-sm">
-          <a
-            className="btn-link cursor-pointer"
-            onClick={() => backend.openWebPage('https://github.com/Dd154663/SDStudio')}
+      <SettingGroup title="업데이트와 정보">
+        {/* 업데이트·정보 두 구획을 한 상자에 — 각자의 소제목은 유지 */}
+        <SettingField className="space-y-2">
+          <label className="block text-sm gray-label mb-1">업데이트</label>
+          <button
+            className="px-3 py-1.5 text-sm back-sky rounded clickable disabled:opacity-50"
+            disabled={checkingUpdate}
+            onClick={handleCheckUpdate}
           >
-            GitHub — Dd154663/SDStudio
-          </a>
-          <a
-            className="btn-link cursor-pointer"
-            onClick={() => backend.openWebPage('https://github.com/sunho/SDStudio')}
+            {checkingUpdate ? '확인 중...' : '업데이트 확인'}
+          </button>
+        </SettingField>
+        <SettingField className="space-y-2 pt-2">
+          <label className="block text-sm gray-label mb-1">정보</label>
+          <div className="flex flex-col gap-1 text-sm">
+            <a
+              className="btn-link cursor-pointer"
+              onClick={() => backend.openWebPage('https://github.com/Dd154663/SDStudio')}
+            >
+              GitHub — Dd154663/SDStudio
+            </a>
+            <a
+              className="btn-link cursor-pointer"
+              onClick={() => backend.openWebPage('https://github.com/sunho/SDStudio')}
+            >
+              원작 — sunho/SDStudio
+            </a>
+          </div>
+          <button
+            className="mt-2 px-3 py-1.5 text-sm font-bold rounded clickable text-white bg-gradient-to-r from-fuchsia-500 via-rose-500 to-orange-400 hover:brightness-110 shadow"
+            onClick={() => setShowRickroll(true)}
           >
-            원작 — sunho/SDStudio
-          </a>
-        </div>
-        <button
-          className="mt-2 px-3 py-1.5 text-sm font-bold rounded clickable text-white bg-gradient-to-r from-fuchsia-500 via-rose-500 to-orange-400 hover:brightness-110 shadow"
-          onClick={() => setShowRickroll(true)}
-        >
-          🎁 비밀 버튼 (누르지 마시오)
-        </button>
-      </div>
+            🎁 비밀 버튼 (누르지 마시오)
+          </button>
+        </SettingField>
+      </SettingGroup>
       {showRickroll && (
         <ModalOverlay
           isOpen={true}
@@ -869,14 +883,14 @@ export const TaskLogSection = () => {
           <>
             {/* [다운로드][닫기] 순서(2026-10-03 D1) — 바닥 버튼 규격은 내보내기 프리셋 관리와 같음 */}
             <button
-              className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+              className={DIALOG_PRIMARY_BTN}
               onClick={downloadLogs}
               disabled={logs.length === 0}
             >
               다운로드
             </button>
             <button
-              className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+              className={DIALOG_SECONDARY_BTN}
               onClick={() => setShowDialog(false)}
             >
               닫기
@@ -886,7 +900,7 @@ export const TaskLogSection = () => {
         footerStart={
           // 위험 보조 동작은 바닥줄 왼쪽(슬롯 규약) — 동작은 종전 그대로(확인 없음)
           <button
-            className="px-4 py-2 rounded-lg btn-solid-red text-sm font-medium transition-colors"
+            className={DIALOG_DANGER_BTN}
             onClick={() => taskQueueService.clearLogs()}
             disabled={logs.length === 0}
           >
@@ -916,3 +930,5 @@ export const TaskLogSection = () => {
 };
 
 export default SystemTab;
+import { SettingGroup, SettingField, SettingCheckRow } from './SettingControls';
+import { DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN, DIALOG_DANGER_BTN } from './ModalOverlay';

@@ -8,6 +8,14 @@ import {
   parsePromptWeightNumber,
   PROMPT_WEIGHT_NUMBER_SOURCE,
 } from './promptWeightSyntax';
+// ##주석## 범위 — PromptService.stripPromptComments 와 같은 단일 출처(여러 줄 허용, 짝 없는 단일 ## 는 리터럴).
+import {
+  PromptCommentRange,
+  promptCommentBoundsAt,
+  promptCommentRanges,
+} from './promptCommentSyntax';
+
+export type { PromptCommentRange };
 
 export interface PromptWeightAdjustment {
   text: string;
@@ -56,22 +64,9 @@ function caretSegmentOf(text: string, selectionStart: number): CaretSegment {
 /** Scope weight edits to either active text or one comment's contents, keeping its markers intact. */
 function weightSegmentOf(text: string, selectionStart: number): CaretSegment | undefined {
   const caret = clamp(selectionStart, 0, text.length);
-  let left = 0;
-  let right = text.length;
-  for (const comment of promptCommentRanges(text)) {
-    if (comment.end <= caret) {
-      left = comment.end;
-      continue;
-    }
-    if (comment.start <= caret) {
-      left = comment.start + 2;
-      right = comment.end - 2;
-      if (caret < left || caret > right) return undefined;
-      break;
-    }
-    right = comment.start;
-    break;
-  }
+  const bounds = promptCommentBoundsAt(text, caret);
+  if (!bounds) return undefined;
+  const { lo: left, hi: right } = bounds;
   const segment = caretSegmentOf(text.slice(left, right), caret - left);
   return {
     ...segment,
@@ -164,26 +159,6 @@ export function adjustPromptWeightAtSelection(
   };
 }
 
-// ##주석## 범위 — PromptService.stripPromptComments·하이라이트와 같은 규칙(여러 줄 허용, 짝 없는 단일 ## 는 리터럴).
-const PROMPT_COMMENT_RE = /##[\s\S]*?##/g;
-
-export interface PromptCommentRange {
-  /** 여는 `##` 의 시작 위치. */
-  start: number;
-  /** 닫는 `##` 바로 뒤 위치. */
-  end: number;
-}
-
-function promptCommentRanges(text: string): PromptCommentRange[] {
-  const ranges: PromptCommentRange[] = [];
-  const re = new RegExp(PROMPT_COMMENT_RE.source, 'g');
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length });
-  }
-  return ranges;
-}
-
 /**
  * 커서가 속한 주석(모바일 칩 주석 토글·활성 표시용, 2026-10-03).
  * - 커서가 주석 범위 안이거나 `##` 표식 안쪽/바깥 경계에 닿아 있으면(start <= caret <= end) 그 주석.
@@ -210,8 +185,9 @@ export function togglePromptCommentAtSelection(
   text: string,
   selectionStart: number,
   selectionEnd: number,
-  useSelectedText = false,
+  options: boolean | { useSelectedText?: boolean } = false,
 ): PromptWeightAdjustment | undefined {
+  const useSelectedText = typeof options === 'boolean' ? options : options.useSelectedText === true;
   const exact = useSelectedText && selectionStart !== selectionEnd;
   const ranges = promptCommentRanges(text);
   let comment = exact
@@ -300,6 +276,26 @@ export function togglePromptCommentAtSelection(
     selectionStart: map(selectionStart),
     selectionEnd: map(selectionEnd),
   };
+}
+
+/** 주석 토글 단축키 판정(편집기 안 Ctrl+3, 2026-11-22) — PC·모바일(외장 키보드) 편집기 공용. */
+export function isPromptCommentToggleKey(e: {
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
+  isComposing?: boolean;
+  keyCode?: number;
+  code?: string;
+  key?: string;
+  /** React 합성 이벤트는 isComposing 을 원본 이벤트에만 둔다. */
+  nativeEvent?: { isComposing?: boolean };
+}): boolean {
+  if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return false;
+  if (e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229) {
+    return false;
+  }
+  return e.code === 'Digit3' || e.key === '3';
 }
 
 export interface ArtistPromptSources {

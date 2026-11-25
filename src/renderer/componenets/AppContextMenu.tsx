@@ -5,13 +5,24 @@ import { Item, Menu, Separator } from 'react-contexify';
 // 메뉴가 떠 있는 동안 뒤로 가기·Esc 는 메뉴만 닫는다(닫기 관문, 2026-10-03 U1·X6)
 import { contextMenuBackLayer } from './contextMenuBack';
 import {
+  FaArrowDown,
+  FaArrowUp,
+  FaExchangeAlt,
+  FaExpand,
+  FaFolderOpen,
+  FaRedoAlt,
+  FaSearchPlus,
+  FaShareSquare,
+} from 'react-icons/fa';
+import { ActionIcon } from './ActionIcon';
+import { MenuItemLabel } from './ContextMenuList';
+import {
   sessionService,
   backend,
   imageService,
   isMobile,
   imageDownloadService,
   imageHistoryService,
-  templateService,
   taskQueueService,
 } from '../models';
 import { appState } from '../models/AppService';
@@ -62,6 +73,7 @@ import { openMaskApplyFlow, openStrengthBatchFlow } from '../models/variantBatch
 import { sceneSelectorHost } from '../models/sceneSelectorHost';
 import { recordSceneOrder } from '../models/sceneOrderUndo';
 import { editPresetList } from '../models/presetUndo';
+import { confirmPresetDelete } from '../models/presetDeleteConfirm';
 import { recordScenesCreated } from '../models/sceneStructureUndo';
 import {
   beginImageDelete,
@@ -72,6 +84,11 @@ import {
 import { UNDO_TEXT } from '../models/undoService';
 import { suggestFolderCopyName } from '../models/nameInput';
 import { editSeedGroups } from '../models/sceneFieldUndo';
+import {
+  copyScenesToProjectFlow,
+  defaultSceneCopyDeps,
+  sceneCopyTargets,
+} from '../models/sceneCopyFlow';
 
 export const AppContextMenu = observer(() => {
   // 선택은 (종류, 이름) 쌍이다 — 변형 탭의 선택으로 같은 이름의 일반 씬을 다루지 않는다
@@ -410,106 +427,20 @@ export const AppContextMenu = observer(() => {
     await copyScenesToProject([ctx.scene]);
   };
 
+  // 다른 프로젝트로 씬 복사 — 공용 흐름(models/sceneCopyFlow.ts, 대량 작업 메뉴와 같은 흐름, 2026-11-16 M5 a)
   const copyScenesToProject = async (scenes: GenericScene[]) => {
     const session = appState.curSession;
     if (!session || scenes.length === 0) return;
-    const curName = session.name;
+    const deps = defaultSceneCopyDeps();
     // 숨김 씬 템플릿 제외 (씬 템플릿 개편 2026-07-18)
-    const allProjects = templateService
-      .filterVisibleProjects(sessionService.list())
-      .filter((n) => n !== curName);
-    if (allProjects.length === 0) {
-      appState.pushMessage('복사할 다른 프로젝트가 없습니다');
-      return;
-    }
-
-    const countLabel = scenes.length > 1 ? `선택한 ${scenes.length}개 씬을` : '씬을';
-
-    // 1) 대상 프로젝트 선택
-    const targetName = await appState.pushDialogAsync({
-      text: `${countLabel} 복사할 프로젝트를 선택하세요`,
-      type: 'dropdown',
-      items: allProjects.map((n) => ({ text: n, value: n })),
+    const targets = sceneCopyTargets(deps, session.name);
+    if (!targets) return;
+    await copyScenesToProjectFlow(deps, {
+      scenes,
+      targets,
+      // 이미지·첨부 파일 원본 = 흐름 시작 때의 프로젝트
+      sourceSession: session,
     });
-    if (!targetName) return;
-
-    // 2) 복사 모드 선택
-    const mode = await appState.pushDialogAsync({
-      text: '복사 방식을 선택하세요',
-      type: 'select',
-      items: [
-        { text: '설정만 복사 (슬롯, 프롬프트 등)', value: 'config' },
-        { text: '이미지 포함 복사', value: 'with-images' },
-      ],
-    });
-    if (!mode) return;
-
-    // 3) 대상 세션 로드
-    const targetSession = await sessionService.get(targetName);
-    if (!targetSession) {
-      appState.pushMessage('프로젝트를 불러올 수 없습니다');
-      return;
-    }
-
-    let totalCopiedImages = 0;
-    let successCount = 0;
-
-    for (const srcScene of scenes) {
-      // 4) 씬 복제
-      const newScene = genericSceneFromJSON(srcScene.toJSON());
-      if (!newScene) continue;
-      let cnt = 0;
-      const baseName = newScene.name;
-      const newNameFn = () => baseName + (cnt === 0 ? '' : '_' + cnt);
-      while (targetSession.hasScene(newScene.type, newNameFn())) {
-        cnt++;
-      }
-      newScene.name = newNameFn();
-      if (newScene.type === 'inpaint') {
-        if (!newScene.sceneRef || !targetSession.scenes.has(newScene.sceneRef))
-          newScene.outputInSourceScene = undefined;
-        try {
-          await imageService.cloneWorkAssets(targetSession, newScene, session);
-          if (newScene.preset.image && newScene.sourceImage)
-            newScene.meta.set(DETACHED_INPUT_META, true);
-        } catch (error) {
-          appState.pushMessage(`"${srcScene.name}" 복사 실패: ${String(error)}`, 'error');
-          continue;
-        }
-      }
-
-      if (mode === 'config') {
-        newScene.imageMap = [];
-        newScene.mains = [];
-        targetSession.addScene(newScene);
-        successCount++;
-      } else {
-        const srcDir = imageService.getOutputDir(session, srcScene);
-        const dstDir = imageService.getOutputDir(targetSession, newScene);
-        targetSession.addScene(newScene);
-
-        const allImages = [...srcScene.imageMap];
-        let copied = 0;
-        for (const img of allImages) {
-          try {
-            await backend.copyFile(srcDir + '/' + img, dstDir + '/' + img);
-            copied++;
-          } catch (e) {
-            console.error('이미지 복사 실패:', img, e);
-          }
-        }
-        totalCopiedImages += copied;
-        successCount++;
-      }
-    }
-
-    if (successCount > 1) {
-      const imgMsg = mode === 'with-images' ? ` (이미지 ${totalCopiedImages}장)` : '';
-      appState.pushMessage(`${successCount}개 씬을 "${targetName}" 프로젝트에 복사했습니다${imgMsg}`);
-    } else if (successCount === 1) {
-      const imgMsg = mode === 'with-images' ? ` (이미지 ${totalCopiedImages}장)` : '';
-      appState.pushMessage(`씬을 "${targetName}" 프로젝트에 복사했습니다${imgMsg}`);
-    }
   };
 
   const handleSceneItemClick = ({ id, props }: any) => {
@@ -837,36 +768,13 @@ export const AppContextMenu = observer(() => {
   };
   const downloadImage = async (ctx: GallaryImageContextAlt) => {
     if (!ctx.scene) return;
-    if (isMobile) {
-      // 모바일은 폴더 선택 불가 → Download 폴더 복사 경로 (downloadSingleImage 미동작 버그 우회)
-      for (const p of ctx.path) {
-        await backend.copyToDownloads(p);
-      }
-      appState.pushMessage(
-        ctx.path.length > 1
-          ? `${ctx.path.length}장을 다운로드 폴더에 저장했습니다`
-          : '다운로드 폴더에 저장했습니다',
-      );
-      return;
-    }
-    const characterPreset = appState.getAppliedCharacterPreset();
-    if (ctx.path.length === 1) {
-      // 단일 이미지 다운로드
-      await imageDownloadService.downloadSingleImage(
-        appState.curSession!,
-        ctx.scene,
-        ctx.path[0],
-        characterPreset,
-      );
-    } else {
-      // 다중 이미지 다운로드
-      await imageDownloadService.downloadMultipleImages(
-        appState.curSession!,
-        ctx.scene,
-        ctx.path,
-        characterPreset,
-      );
-    }
+    // 플랫폼 분기(모바일 = 다운로드 폴더 복사, PC = 저장 폴더·파일명 규칙)는 서비스 한 곳(2026-11-19)
+    await imageDownloadService.downloadImages(
+      appState.curSession!,
+      ctx.scene,
+      ctx.path,
+      appState.getAppliedCharacterPreset(),
+    );
   };
   const upscaleImages = async (ctx: GallaryImageContextAlt) => {
     const session = appState.curSession;
@@ -974,7 +882,9 @@ export const AppContextMenu = observer(() => {
     }
   };
   const handleImageItemClick2 = ({ id, props }: any) => {
-    if (id === 'metadata' && props.ctx.path?.length === 1) {
+    if (id === 'image-settings' && props.ctx.path?.length === 1) {
+      void viewImageMetadata(props.ctx.path[0], props.ctx.scene);
+    } else if (id === 'metadata' && props.ctx.path?.length === 1) {
       void viewImageMetadata(props.ctx.path[0], props.ctx.scene);
     } else if (id === 'duplicate') {
       duplicateImage(props.ctx);
@@ -1003,7 +913,7 @@ export const AppContextMenu = observer(() => {
       saveImageToArtistLibrary(props.ctx);
     } else if (id === 'reveal') {
       revealImageInExplorer(props.ctx.path?.[0]);
-    } else if (id === 'edit-image' && props.ctx.path?.length === 1) {
+    } else if ((id === 'edit-image' || id === 'image-edit') && props.ctx.path?.length === 1) {
       editImage(props.ctx.path[0]);
     }
   };
@@ -1017,7 +927,7 @@ export const AppContextMenu = observer(() => {
       appState.pushMessage('그림체는 최소 한 개 이상이어야 합니다');
       return;
     }
-    const remove = () => {
+    confirmPresetDelete({ kind: 'style', name: ctx.preset.name }, () => {
         const curSession = ctx.session;
         const presets = curSession?.presets.get(ctx.preset.type) ?? [];
         // 확인 창이 떠 있는 동안 다른 곳에서 지워졌을 수 있어 한 번 더 본다
@@ -1029,20 +939,6 @@ export const AppContextMenu = observer(() => {
         editPresetList(curSession, UNDO_TEXT.presetRemove([ctx.preset.name]), () =>
           curSession!.removePreset(ctx.preset.type, ctx.preset.name),
         );
-    };
-    if (appState.skipStylePresetDeleteConfirm) { remove(); return; }
-    let skipForSession = false;
-    appState.pushDialog({
-      type: 'confirm',
-      ...deleteConfirmText({ kind: 'style', name: ctx.preset.name, outcome: 'undoable' }),
-      confirmCheck: {
-        label: '이번 세션에서 다시 묻지 않음',
-        onChange: checked => { skipForSession = checked; },
-      },
-      callback: () => {
-        if (skipForSession) appState.skipStylePresetDeleteConfirm = true;
-        remove();
-      },
     });
   };
   const editStyle = async (ctx: StyleContextAlt) => {
@@ -1052,26 +948,17 @@ export const AppContextMenu = observer(() => {
   // 히스토리는 타 프로젝트 항목이 있을 수 있어 curSession 대신 resolve()로 세션/씬을 얻는다.
   // (비활성 세션의 mains 토글 등도 ResourceSyncService가 자동 저장)
   const historyDownloadImage = async (ctx: HistoryImageContextAlt) => {
-    if (isMobile) {
-      // 모바일은 폴더 선택이 불가능해 downloadSingleImage가 동작하지 않음 —
-      // Download 폴더 복사(+미디어 스캔) 경로 사용
-      await backend.copyToDownloads(ctx.entry.path);
-      appState.pushMessage('다운로드 폴더에 저장했습니다');
-      return;
-    }
-    const resolved = await imageHistoryService.resolve(ctx.entry);
-    if (!resolved) return;
-    const { session, scene } = resolved;
-    const characterPreset =
-      session === appState.curSession
-        ? appState.getAppliedCharacterPreset()
-        : undefined;
-    await imageDownloadService.downloadSingleImage(
-      session,
-      scene,
-      ctx.entry.path,
-      characterPreset,
-    );
+    // 모바일은 서비스가 원본 씬을 찾지 않고 바로 다운로드 폴더로 복사한다(종전 동작 그대로)
+    await imageDownloadService.downloadHistoryImage(ctx.entry.path, async () => {
+      const resolved = await imageHistoryService.resolve(ctx.entry);
+      if (!resolved) return null;
+      const { session, scene } = resolved;
+      const characterPreset =
+        session === appState.curSession
+          ? appState.getAppliedCharacterPreset()
+          : undefined;
+      return { session, scene, characterPreset };
+    });
   };
   const historyDeleteImage = async (ctx: HistoryImageContextAlt) => {
     const resolved = await imageHistoryService.resolve(ctx.entry);
@@ -1122,6 +1009,17 @@ export const AppContextMenu = observer(() => {
       editImage(ctx.entry.path);
     }
   };
+  // 히스토리 항목은 다른 프로젝트 것일 수 있다 — 씬 맥락은 지금 프로젝트의 씬일 때만 넘긴다(창의 적용 대상 = 지금 프로젝트).
+  const historyImageSettings = async (ctx: HistoryImageContextAlt) => {
+    let scene: GenericScene | undefined;
+    try {
+      const resolved = await imageHistoryService.resolve(ctx.entry);
+      if (resolved && resolved.session === appState.curSession) scene = resolved.scene;
+    } catch {
+      scene = undefined;
+    }
+    await viewImageMetadata(ctx.entry.path, scene);
+  };
   const handleStyleItemClick = ({ id, props }: any) => {
     if (id === 'export') {
       exportStyle(props.ctx as StyleContextAlt);
@@ -1134,108 +1032,137 @@ export const AppContextMenu = observer(() => {
       appState.exportPresetToGlobal(ctx.session, ctx.preset);
     }
   };
+  // 줄 앞 아이콘(2026-11-18 우클릭 메뉴 정비): 사전(<ActionIcon>) 우선, 없으면 다른 화면에서 같은 기능에 쓰는 아이콘,
+  // 그것도 없으면 빈 칸(MenuItemLabel 이 같은 폭을 비워 글자 시작을 맞춘다). 크기 14px. 글자·순서·동작·조건 불변.
+  // 생성·변형 탭은 같은 씬 메뉴(ContextMenuType.Scene)를 쓰므로 아이콘도 같다.
+  const I = 14;
   return (
     <>
       <Menu id={ContextMenuType.Scene} onVisibilityChange={contextMenuBackLayer(ContextMenuType.Scene)}>
         <Item id="edit-prompt" onClick={handleSceneItemClick}>
-          씬 편집기로
+          <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>씬 편집기로</MenuItemLabel>
         </Item>
         <Item id="edit-combination" onClick={handleSceneItemClick}>
-          조합 에디터로
+          {/* 씬 빠른 수정 창의 「전체 조합 에디터 열기」 버튼과 같은 아이콘 */}
+          <MenuItemLabel icon={<FaExpand size={I} />}>조합 에디터로</MenuItemLabel>
         </Item>
         <Separator />
         <Item id="queue-add-all-or-selected" onClick={handleSceneItemClick}>
-          {selCount > 0
-            ? `선택한 씬 예약 추가 (${selCount})`
-            : '모든 씬 예약 추가'}
+          <MenuItemLabel icon={<ActionIcon id="queue-add" size={I} />}>
+            {selCount > 0
+              ? `선택한 씬 예약 추가 (${selCount})`
+              : '모든 씬 예약 추가'}
+          </MenuItemLabel>
         </Item>
         <Item id="queue-remove-all-or-selected" onClick={handleSceneItemClick}>
-          {selCount > 0
-            ? `선택한 씬 예약 제거 (${selCount})`
-            : '모든 씬 예약 제거'}
+          <MenuItemLabel icon={<ActionIcon id="queue-remove" size={I} />}>
+            {selCount > 0
+              ? `선택한 씬 예약 제거 (${selCount})`
+              : '모든 씬 예약 제거'}
+          </MenuItemLabel>
         </Item>
         <Separator />
         <Item id="duplicate" onClick={handleSceneItemClick}>
-          해당 씬 복제
+          <MenuItemLabel icon={<ActionIcon id="duplicate" size={I} />}>해당 씬 복제</MenuItemLabel>
         </Item>
         <Item id="regenerate-scene" onClick={handleSceneItemClick}>
-          씬 재생성 (이미지별 설정)
+          {/* FaRedo 는 사전 redo(다시 실행) — 같은 계열의 다른 모양으로 구분 */}
+          <MenuItemLabel icon={<FaRedoAlt size={I} />}>씬 재생성 (이미지별 설정)</MenuItemLabel>
         </Item>
         <Item id="export-images" onClick={handleSceneItemClick}>
-          씬 이미지 내보내기
+          <MenuItemLabel icon={<ActionIcon id="export" size={I} />}>씬 이미지 내보내기</MenuItemLabel>
         </Item>
         {appState.contextSceneType === 'scene' && selCount >= 2 && (
           <Item id="merge-scenes" onClick={handleSceneItemClick}
             hidden={({ props }) => !props?.ctx?.scene || !appState.isSceneSelected(props.ctx.scene)}>
-            씬 합치기
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>씬 합치기</MenuItemLabel>
           </Item>
         )}
         <Item id="copy-to-project" onClick={handleSceneItemClick}>
-          {selCount > 1
-            ? `선택한 씬(${selCount}) 복사`
-            : '다른 프로젝트로 씬 복사'}
+          {/* 이미지 그리드 「다른 씬으로 복사」와 같은 아이콘 */}
+          <MenuItemLabel icon={<FaShareSquare size={I} />}>
+            {selCount > 1
+              ? `선택한 씬(${selCount}) 복사`
+              : '다른 프로젝트로 씬 복사'}
+          </MenuItemLabel>
         </Item>
         <Item id="move-front" onClick={handleSceneItemClick}>
-          해당 씬 맨 위로
+          <MenuItemLabel icon={<FaArrowUp size={I} />}>해당 씬 맨 위로</MenuItemLabel>
         </Item>
         <Item id="move-back" onClick={handleSceneItemClick}>
-          해당 씬 맨 뒤로
+          <MenuItemLabel icon={<FaArrowDown size={I} />}>해당 씬 맨 뒤로</MenuItemLabel>
         </Item>
         <Item id="change-resolution" onClick={handleSceneItemClick}>
-          {selCount > 1
-            ? `선택한 씬(${selCount}) 해상도 변경`
-            : '해당 씬 해상도 변경'}
+          <MenuItemLabel icon={<ActionIcon id="change-resolution" size={I} />}>
+            {selCount > 1
+              ? `선택한 씬(${selCount}) 해상도 변경`
+              : '해당 씬 해상도 변경'}
+          </MenuItemLabel>
         </Item>
-        {/* 변형 탭 전용 일괄 작업(2026-10-04 P2~P4) — 대량 작업 메뉴와 같은 흐름에 이미 고른 씬을 넘긴다 */}
+        {/* 변형 탭 전용 일괄 작업(2026-10-04 P2~P4) — 대량 작업 메뉴와 같은 흐름에 이미 고른 씬을 넘긴다.
+            대량 작업 메뉴는 글자(이모지 접두) 항목이라 같은 기능의 아이콘이 없다 → 빈 칸 */}
         {appState.contextSceneType === 'inpaint' && (
           <Item id="variant-attach-image" onClick={handleSceneItemClick}>
-            {selCount > 1 ? `선택한 씬(${selCount})에 이미지 첨부` : '해당 씬에 이미지 첨부'}
+            <MenuItemLabel>
+              {selCount > 1 ? `선택한 씬(${selCount})에 이미지 첨부` : '해당 씬에 이미지 첨부'}
+            </MenuItemLabel>
           </Item>
         )}
         {appState.contextSceneType === 'inpaint' && (
           <Item id="variant-apply-mask" onClick={handleSceneItemClick}>
-            {selCount > 1 ? `선택한 씬(${selCount})에 인페인트 마스크 적용` : '해당 씬에 인페인트 마스크 적용'}
+            <MenuItemLabel>
+              {selCount > 1 ? `선택한 씬(${selCount})에 인페인트 마스크 적용` : '해당 씬에 인페인트 마스크 적용'}
+            </MenuItemLabel>
           </Item>
         )}
         {appState.contextSceneType === 'inpaint' && (
           <Item id="variant-strength" onClick={handleSceneItemClick}>
-            {selCount > 1 ? `선택한 씬(${selCount}) 강도·노이즈 변경` : '해당 씬 강도·노이즈 변경'}
+            <MenuItemLabel>
+              {selCount > 1 ? `선택한 씬(${selCount}) 강도·노이즈 변경` : '해당 씬 강도·노이즈 변경'}
+            </MenuItemLabel>
           </Item>
         )}
         <Separator />
+        {/* 시드 그룹은 다른 화면에도 아이콘이 없다 → 빈 칸 */}
         {selCount > 1 && (
           <Item id="seed-group-set" onClick={handleSceneItemClick}>
-            선택한 씬 시드 그룹 설정 ({selCount})
+            <MenuItemLabel>선택한 씬 시드 그룹 설정 ({selCount})</MenuItemLabel>
           </Item>
         )}
         <Item id="seed-group-remove" onClick={handleSceneItemClick}>
-          {selCount > 0
-            ? '선택한 씬을 시드 그룹에서 제외'
-            : '현재 시드 그룹 해제'}
+          <MenuItemLabel>
+            {selCount > 0
+              ? '선택한 씬을 시드 그룹에서 제외'
+              : '현재 시드 그룹 해제'}
+          </MenuItemLabel>
         </Item>
         <Separator />
         <Item id="delete" onClick={handleSceneItemClick}>
-          {selCount > 1
-            ? `선택한 씬(${selCount}) 삭제`
-            : '해당 씬 삭제'}
+          <MenuItemLabel icon={<ActionIcon id="delete" size={I} />}>
+            {selCount > 1
+              ? `선택한 씬(${selCount}) 삭제`
+              : '해당 씬 삭제'}
+          </MenuItemLabel>
         </Item>
         <Separator />
+        {/* 이미지 모두 삭제 두 줄 = 빈 칸 — 빗자루(empty-image-trash)는 「삭제 이미지 일괄 비우기」 뜻이라
+            휴지통으로 옮기는 이 동작과 헷갈리고, 한 줄에만 붙이면 두 줄이 다른 동작처럼 보인다 */}
         <Item id="delete-all-selected-images" onClick={handleSceneItemClick}>
-          선택한 씬 이미지 모두 삭제
+          <MenuItemLabel>선택한 씬 이미지 모두 삭제</MenuItemLabel>
         </Item>
         <Item id="delete-all-selected-images-except-fav" onClick={handleSceneItemClick}>
-          선택한 씬 이미지 모두 삭제 (즐겨찾기 제외)
+          <MenuItemLabel>선택한 씬 이미지 모두 삭제 (즐겨찾기 제외)</MenuItemLabel>
         </Item>
       </Menu>
       <Menu id={ContextMenuType.GallaryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.GallaryImage)}>
         <Item id="metadata" onClick={handleImageItemClick2} hidden={({ props }) => props?.ctx?.path?.length !== 1}>
-          메타 정보 보기
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>메타 정보 보기</MenuItemLabel>
         </Item>
         <Item id="download" onClick={handleImageItemClick2}>
-          이미지 다운로드
+          <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
         <Item id="export-images" onClick={handleImageItemClick2}>
-          이미지 내보내기
+          <MenuItemLabel icon={<ActionIcon id="export" size={I} />}>이미지 내보내기</MenuItemLabel>
         </Item>
         {!isMobile && (
           <Item
@@ -1243,133 +1170,167 @@ export const AppContextMenu = observer(() => {
             onClick={handleImageItemClick2}
             hidden={({ props }) => props?.ctx?.path?.length !== 1}
           >
-            이미지 편집
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
         <Item id="fav" onClick={handleImageItemClick2}>
-          즐겨찾기 토글
+          <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
         <Item id="transform" onClick={handleImageItemClick2}>
-          이미지 변형
+          {/* 이미지 상세 V2 칸의 변형(플러그인) 버튼과 같은 아이콘 */}
+          <MenuItemLabel icon={<FaExchangeAlt size={I} />}>이미지 변형</MenuItemLabel>
         </Item>
         <Item id="upscale" onClick={handleImageItemClick2}>
-          업스케일 ×2 (Anlas)
+          {/* 이미지 상세 V2 칸의 업스케일 버튼과 같은 아이콘 */}
+          <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
         <Item id="delete" onClick={handleImageItemClick2}>
-          해당 이미지 삭제
+          <MenuItemLabel icon={<ActionIcon id="delete" size={I} />}>해당 이미지 삭제</MenuItemLabel>
         </Item>
         <Item id="duplicate" onClick={handleImageItemClick2}>
-          해당 이미지 복제
+          <MenuItemLabel icon={<ActionIcon id="duplicate" size={I} />}>해당 이미지 복제</MenuItemLabel>
         </Item>
         <Item id="copy" onClick={handleImageItemClick2}>
-          다른 씬으로 이미지 복사
+          <MenuItemLabel icon={<FaShareSquare size={I} />}>다른 씬으로 이미지 복사</MenuItemLabel>
         </Item>
         {!isMobile && (
           <Item id="clipboard" onClick={handleImageItemClick2}>
-            클립보드로 이미지 복사
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>클립보드로 이미지 복사</MenuItemLabel>
           </Item>
         )}
         {!isMobile && (
           <Item id="reveal" onClick={handleImageItemClick2}>
-            파일 탐색기에서 열기
+            <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
           </Item>
         )}
+        {/* 이미지 편집(PC)·생성 설정 적용 — 한 장만 골랐을 때만(2026-11-22) */}
+        {!isMobile && (
+          <Item id="image-edit" onClick={handleImageItemClick2} hidden={(p) => p.props?.ctx?.path?.length !== 1}>
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
+          </Item>
+        )}
+        <Item id="image-settings" onClick={handleImageItemClick2} hidden={(p) => p.props?.ctx?.path?.length !== 1}>
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
+        </Item>
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick2}>
-          글로벌 프리셋 추가
+          <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick2}>
-          작가 라이브러리에 저장
+          <MenuItemLabel icon={<ActionIcon id="artist" size={I} />}>작가 라이브러리에 저장</MenuItemLabel>
         </Item>
       </Menu>
       <Menu id={ContextMenuType.Image} onVisibilityChange={contextMenuBackLayer(ContextMenuType.Image)}>
         <Item id="metadata" onClick={handleImageItemClick}>메타 정보 보기</Item>
         <Item id="upscale" onClick={handleImageItemClick}>
-          업스케일 ×2 (Anlas)
+          <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
         <Item id="download" onClick={handleImageItemClick}>
-          이미지 다운로드
+          <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
         {!isMobile && (
           <Item id="edit-image" onClick={handleImageItemClick}>
-            이미지 편집
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
         <Item id="fav" onClick={handleImageItemClick}>
-          즐겨찾기 토글
+          <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
         <Item id="duplicate" onClick={handleImageItemClick}>
-          해당 이미지 복제
+          <MenuItemLabel icon={<ActionIcon id="duplicate" size={I} />}>해당 이미지 복제</MenuItemLabel>
         </Item>
         <Item id="copy" onClick={handleImageItemClick}>
-          다른 씬으로 이미지 복사
+          <MenuItemLabel icon={<FaShareSquare size={I} />}>다른 씬으로 이미지 복사</MenuItemLabel>
         </Item>
         {!isMobile && (
           <Item id="clipboard" onClick={handleImageItemClick}>
-            클립보드로 이미지 복사
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>클립보드로 이미지 복사</MenuItemLabel>
           </Item>
         )}
         {!isMobile && (
           <Item id="reveal" onClick={handleImageItemClick}>
-            파일 탐색기에서 열기
+            <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
           </Item>
         )}
+        {!isMobile && (
+          <Item id="image-edit" onClick={handleImageItemClick}>
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
+          </Item>
+        )}
+        <Item id="image-settings" onClick={handleImageItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
+        </Item>
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick}>
-          글로벌 프리셋 추가
+          <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>
         <Item id="save-artist" onClick={handleImageItemClick}>
-          작가 라이브러리에 저장
+          <MenuItemLabel icon={<ActionIcon id="artist" size={I} />}>작가 라이브러리에 저장</MenuItemLabel>
         </Item>
       </Menu>
       <Menu id={ContextMenuType.HistoryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.HistoryImage)}>
         <Item id="metadata" onClick={handleHistoryItemClick}>메타 정보 보기</Item>
         <Item id="upscale" onClick={handleHistoryItemClick}>
-          업스케일 ×2 (Anlas)
+          <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
         <Item id="goto-scene" onClick={handleHistoryItemClick}>
-          해당 씬으로 이동
+          {/* 사전 scene-find = 「씬 위치로 이동」(그 씬 자리로) */}
+          <MenuItemLabel icon={<ActionIcon id="scene-find" size={I} />}>해당 씬으로 이동</MenuItemLabel>
         </Item>
         <Item id="open-grid" onClick={handleHistoryItemClick}>
-          이미지 그리드에서 보기
+          {/* 같은 기능의 아이콘이 없다 → 빈 칸 */}
+          <MenuItemLabel>이미지 그리드에서 보기</MenuItemLabel>
         </Item>
         <Item id="fav" onClick={handleHistoryItemClick}>
-          즐겨찾기 토글
+          <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
         <Item id="download" onClick={handleHistoryItemClick}>
-          이미지 다운로드
+          <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
         {!isMobile && (
           <Item id="edit-image" onClick={handleHistoryItemClick}>
-            이미지 편집
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
         {!isMobile && (
           <Item id="reveal" onClick={handleHistoryItemClick}>
-            파일 탐색기에서 열기
+            <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
           </Item>
         )}
+        {!isMobile && (
+          <Item id="image-edit" onClick={handleHistoryItemClick}>
+            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
+          </Item>
+        )}
+        <Item id="image-settings" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
+        </Item>
+        <Separator />
+        {/* 그리드·이미지 메뉴와 같은 항목·자리(「생성 설정 적용」 뒤 구분선 다음, 2026-11-22). PC·모바일 공통 */}
+        <Item id="save-global" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="copy-to-global" size={I} />}>글로벌 프리셋으로 복사</MenuItemLabel>
+        </Item>
         <Separator />
         <Item id="save-global" onClick={handleHistoryItemClick}>
-          글로벌 프리셋 추가
+          <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>
         <Separator />
         <Item id="delete" onClick={handleHistoryItemClick}>
-          해당 이미지 삭제
+          <MenuItemLabel icon={<ActionIcon id="delete" size={I} />}>해당 이미지 삭제</MenuItemLabel>
         </Item>
       </Menu>
       <Menu id={ContextMenuType.Style} onVisibilityChange={contextMenuBackLayer(ContextMenuType.Style)}>
         <Item id="export" onClick={handleStyleItemClick}>
-          해당 그림체 내보내기
+          <MenuItemLabel icon={<ActionIcon id="export" size={I} />}>해당 그림체 내보내기</MenuItemLabel>
         </Item>
         <Item id="to-global" onClick={handleStyleItemClick}>
-          글로벌로 복사
+          <MenuItemLabel icon={<ActionIcon id="copy-to-global" size={I} />}>글로벌로 복사</MenuItemLabel>
         </Item>
         <Item id="edit" onClick={handleStyleItemClick}>
-          해당 그림체 편집
+          <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>해당 그림체 편집</MenuItemLabel>
         </Item>
         <Item id="delete" onClick={handleStyleItemClick}>
-          해당 그림체 삭제
+          <MenuItemLabel icon={<ActionIcon id="delete" size={I} />}>해당 그림체 삭제</MenuItemLabel>
         </Item>
       </Menu>
     </>

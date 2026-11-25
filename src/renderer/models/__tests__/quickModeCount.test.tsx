@@ -6,7 +6,7 @@ const run = jest.fn();
 let outputs: string[] = [];
 const fetchImage = jest.fn(async () => 'data:image/png;base64,QUJD');
 const imageEvents = new EventTarget();
-const quickScene = { name: 'default', resolution: 'portrait' };
+const quickScene = { name: 'default', resolution: 'portrait', meta: new Map([['__sdstudioQuickGenCountV1', 10]]) };
 const quickSession = {
   name: '퀵 생성',
   scenes: new Map([['default', quickScene]]),

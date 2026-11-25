@@ -1,5 +1,7 @@
+import { ProgressBar, Spinner } from './ProgressIndicators';
 import './App.css';
 import { isWeightSpacingFixEnabled } from '../models/promptWeightSpacingFlow';
+import { createStartupShortcutHelpApplier } from '../models/shortcutHelpStartup';
 import './contexify.css';
 import {
   Component,
@@ -78,6 +80,7 @@ import {
   localAIService,
   imageService,
   isMobile,
+  globalPresetService,
 } from '../models';
 import { appState } from '../models/AppService';
 import { undoService } from '../models/undoService';
@@ -85,6 +88,7 @@ import { openStoragePermissionSettings } from '../models/storagePermissionGate';
 import { keyboardShortcutService } from '../models/KeyboardShortcutService';
 import { buildDanbooruSearchUrl } from '../models/util';
 import { isImportImageMime } from '../models/imageFormats';
+import { isImageDragOutActive } from '../models/imageDragOut';
 import { buildThemeVars } from '../models/uiTheme';
 import { AppContextMenu } from './AppContextMenu';
 import MobileKeyboardChip from './MobileKeyboardChip';
@@ -95,6 +99,10 @@ import FindReplaceDialog from './FindReplaceDialog';
 import BatchInsertDialog from './BatchInsertDialog';
 import ExportPresetManager from './ExportPresetManager';
 import DirectExportDialog from './DirectExportDialog';
+import {
+  globalStoreNoticeView,
+  subscribeGlobalStoreNotices,
+} from '../models/storeFile';
 configure({
   enforceActions: 'never',
 });
@@ -130,6 +138,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+// 「시작 시 단축키 도움말 표시」 — 이 창(렌더러)에서 설정을 처음 읽을 때 한 번만 반영(2026-11-22).
+const applyStartupShortcutHelp = createStartupShortcutHelpApplier(() => {
+  appState.showSceneCheatsheet = true;
+});
+
 const DnDPreview = () => {
   const preview = usePreview();
   if (!preview.display) {
@@ -140,7 +153,7 @@ const DnDPreview = () => {
   style['transformOrigin'] = 'center';
   let res: any = null;
   if (itemType === 'scene') {
-    const { scene, curSession, getImage, cellSize, cardWidth, selectedSceneNames } = item as any;
+    const { scene, curSession, getImage, fixedCardHeightPx, cardWidth, selectedSceneNames } = item as any;
     const sceneStyle = cardWidth
       ? { ...style, width: cardWidth + 'px' }
       : style;
@@ -151,7 +164,7 @@ const DnDPreview = () => {
           scene={scene}
           curSession={curSession}
           getImage={getImage}
-          cellSize={cellSize}
+          fixedCardHeightPx={fixedCardHeightPx}
           style={sceneStyle}
         />
         {count > 1 && (
@@ -315,6 +328,9 @@ export const App = observer(() => {
       appState.uiLayoutTemplate = conf.uiLayoutTemplate ?? defaultLayoutTemplateId(isMobile);
       appState.uiMobileV2Parts = conf.uiMobileV2Parts;
       appState.uiPresetIconRow = conf.uiPresetIconRow ?? false;
+      appState.uiToolbarButtonNames = conf.uiToolbarButtonNames ?? true;
+      // 시작 시 단축키 도움말 — 첫 읽기 때 한 번만(config-changed 로 다시 읽어도 사용자가 연 패널을 닫지 않음)
+      applyStartupShortcutHelp(conf);
       appState.genWidget = conf.genWidget ?? {};
       appState.uiLayoutSlots = conf.uiLayoutSlots ?? {};
       appState.uiFloatViewMode = conf.uiFloatViewMode ?? 'cover';
@@ -470,16 +486,16 @@ export const App = observer(() => {
       if (type === 'application/json') {
         return '프로젝트 또는 프롬프트조각을 불러옵니다';
       }
-      // tar 백업(프로젝트/폴더). 드래그 중에는 보안상 파일명(dataTransfer.files)을 읽을 수 없고,
+      // tar 백업(프로젝트/폴더/전체). 드래그 중에는 보안상 파일명(dataTransfer.files)을 읽을 수 없고,
       // tar 의 MIME 도 환경마다 application/x-tar 또는 빈 문자열로 다르게 보고된다.
-      // → MIME 타입 기준으로 안내(드롭 시 handleTarImport 가 폴더/프로젝트 백업을 정확히 구분).
+      // → MIME 타입 기준으로 안내(드롭 시 handleTarImport 가 폴더/프로젝트/전체 백업을 정확히 구분).
       if (
         type === 'application/x-tar' ||
         type === 'application/x-gtar' ||
         type === 'application/tar' ||
         type === '' // 확장자/타입 미상 — tar 등 백업 파일 가능성
       ) {
-        return '프로젝트 또는 폴더 백업을 불러옵니다';
+        return '프로젝트·폴더·전체 백업을 불러옵니다';
       }
       return null;
     };
@@ -538,6 +554,8 @@ export const App = observer(() => {
       }
       // 모달 오버레이가 열려 있으면 메타데이터 처리도 차단
       if (appState.modalOverlayCount > 0) return;
+      // 앱에서 끌어 나가던 이미지를 다시 앱 창에 놓은 경우 — 메타데이터 불러오기를 하지 않는다
+      if (isImageDragOutActive()) return;
       const file = event.dataTransfer.files[0];
       if (file) {
         appState.handleFile(file);
@@ -568,21 +586,15 @@ export const App = observer(() => {
     };
   }, [appState.curSession]);
 
-  // 글로벌 프리셋 손상 복구 알림
+  // 글로벌 저장소(글로벌 프리셋·글로벌 캐릭터 프리셋·프로젝트 템플릿·작가 라이브러리·전역 조각·템플릿 지정 목록) 안내 —
+  // 읽기 실패(저장 차단)·사본에서 복구·손상본 보존은 확인 창 1회, 차단 중 변경 거부는 토스트(문구 단일 출처 storeFile).
+  // 부팅 로드가 이 구독보다 먼저 끝나도 허브가 모아 두었다가 넘긴다.
   useEffect(() => {
-    const handler = (e: any) => {
-      const backupName = e.detail?.backupName;
-      appState.pushDialog({
-        type: 'yes-only',
-        text:
-          '글로벌 프리셋 파일이 손상되어 빈 상태로 초기화되었습니다.' +
-          (backupName ? `\n\n백업: ${backupName}` : ''),
-      });
-    };
-    window.globalPresetService?.addEventListener('corrupted', handler);
-    return () => {
-      window.globalPresetService?.removeEventListener('corrupted', handler);
-    };
+    return subscribeGlobalStoreNotices((notice) => {
+      const view = globalStoreNoticeView(notice);
+      if (view.as === 'toast') appState.pushMessage(view.text, 'error');
+      else appState.pushDialog({ type: 'yes-only', text: view.text });
+    });
   }, []);
 
   // onClick: 퀵 메뉴 export 계열의 탭 문맥 추적(appState.curMainTab, D3) —
@@ -616,6 +628,8 @@ export const App = observer(() => {
       banToggle: true,
       onClick: () => {
         appState.curMainTab = 'other';
+        // 부팅 때 읽지 못해 막혀 있으면 탭을 열 때 한 번 다시 읽는다(성공하면 차단 해제)
+        void globalPresetService.reloadIfFailed();
       },
     },
     {
@@ -744,6 +758,8 @@ export const App = observer(() => {
             <PreSetEditor
               key={appState.curSession.name}
               middlePromptMode={false}
+              // 펼친 프롬프트 칸 사이 높이 비율 손잡이 — 이 PC 왼쪽 패널만(2026-11-23)
+              promptResize
             />
           </div>
         </div>
@@ -815,7 +831,7 @@ export const App = observer(() => {
               "서비스 준비 전 사용" 류 race 를 원천 차단한다 (완료 후 항상 열림) */}
           {!appState.bootReady ? (
             <div className="flex-1 h-full w-full flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 rounded-full border-2 border-[color:var(--c-line)] border-t-sky-500 animate-spin" />
+              <Spinner />
               <div className="text-sub text-sm whitespace-pre-line text-center px-6">
                 {appState.bootStatusMessage || 'SDStudio 시작 중…'}
               </div>
@@ -910,8 +926,9 @@ export const App = observer(() => {
                   <HistoryImagePreview key={historyPreview.entry.id} preview={historyPreview} onClose={closeHistoryImage} />
                 )}
                 <ProjectDrawer />
-                {isMobile && <ImageHistoryDrawer />}
+                {isMobile && <ImageHistoryDrawer onOpenImage={openHistoryImage} />}
                 {isMobile && <ImageHistoryHandle />}
+                {/* 히스토리 큰 미리 보기(PC·모바일 공용, 드로어 DOM 밖에 한 번) */}
                 {/* 모바일은 레이아웃과 무관하게 좌측 손잡이+가장자리 스와이프(히스토리 손잡이의 좌우 반전) */}
                 {isMobile && <ProjectDrawerHandle />}
                 {appState.projectBrowserOpen && (
@@ -1022,12 +1039,7 @@ export const App = observer(() => {
                 <div className="text-sm font-medium text-default mb-1.5">
                   💾 {appState.exportProgress.text}
                 </div>
-                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-sky-500 rounded-full transition-all"
-                    style={{ width: `${(appState.exportProgress.done / Math.max(appState.exportProgress.total, 1)) * 100}%` }}
-                  />
-                </div>
+                <ProgressBar percent={(appState.exportProgress.done / Math.max(appState.exportProgress.total, 1)) * 100} />
                 <div className="text-xs text-muted mt-1">
                   {appState.exportProgress.done}/{appState.exportProgress.total}
                 </div>

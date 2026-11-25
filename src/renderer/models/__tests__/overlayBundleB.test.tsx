@@ -181,7 +181,7 @@ describe('소스 검사 — 5창의 등급 m(width 없음)', () => {
     const footer = block.slice(block.indexOf('const footer = ('), block.indexOf('return (', block.indexOf('const footer = (')));
     expect(footer.indexOf('선택 삭제')).toBeGreaterThan(-1);
     expect(footer.indexOf('선택 삭제')).toBeLessThan(footer.indexOf('닫기'));
-    expect(footer).toContain('btn-solid-red');
+    expect(footer).toContain('DIALOG_DANGER_BTN'); // 그룹 2-b: 위험 확정 = 공용 상수(btn-solid-red 알약)
     expect(footer).toContain('disabled={selected.size === 0}');
     expect(footer).toContain('onClick={onClose}');
     expect(block.slice(block.indexOf('const footerStart'), block.indexOf('const footer = ('))).toContain('선택됨');
@@ -201,7 +201,7 @@ describe('씬 휴지통 — size m·도구줄 머리·본문 목록만', () => {
     expect(toolbar?.textContent).toContain('0개 · 최근 삭제 순');
     expect(buttonByText(toolbar, '휴지통 비우기')?.disabled).toBe(true);
     expect(toolbar?.textContent).toContain('14');
-    expect(slot('body')?.textContent).toContain('휴지통이 비어있습니다');
+    expect(slot('body')?.textContent).toContain('휴지통이 비어 있습니다');
     expect(container.querySelector('[data-trash-list]')).toBeNull();
   });
 
@@ -272,12 +272,17 @@ describe('프로젝트 저장 공간 관리 — size m·도구줄·안내는 본
     expect(mockSize.cancelBulk).toHaveBeenCalled();
   });
 
-  test('행 계산 단추에 aria-label·title(계산 안 됨 = 「계산」, 계산됨 = 「다시 계산」)', async () => {
+  test('행 계산 단추에 aria-label·Tooltip(계산 안 됨 = 「계산」, 계산됨 = 「다시 계산」)', async () => {
     mockSize.entries = { 프로젝트A: { bytes: 10, at: Date.now() } };
     await renderStorage();
     const again = container.querySelector<HTMLButtonElement>('button[aria-label="다시 계산"]')!;
-    expect(again.textContent).toBe('↻');
-    expect(again.title).toBe('다시 계산');
+    // 2026-11-20 UI 정돈 그룹 1-c: 기호 글자 ↻ → 사전 refresh 아이콘(ActionIcon — 이 파일에서는 목으로 null) — 글자 기호는 없다
+    expect(again.textContent).toBe('');
+    expect(fs.readFileSync(path.join(__dirname, '../../componenets/StorageManageModal.tsx'), 'utf8')).toContain(
+      '<ActionIcon id="refresh"',
+    );
+    // 설명은 Tooltip 이 띄운다 — title 을 겹쳐 두면 설명이 두 번 뜬다(2026-11-18 아이콘 설명 메우기)
+    expect(again.hasAttribute('title')).toBe(false);
     const calc = container.querySelector<HTMLButtonElement>('button[aria-label="계산"]')!;
     expect(calc.textContent).toBe('계산');
     act(() => calc.click());

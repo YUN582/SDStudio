@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { FaStar, FaSearch, FaFolder, FaPlus, FaEllipsisV, FaCheck, FaPen, FaTimes, FaPalette, FaChevronDown, FaChevronRight, FaFolderPlus, FaWindowRestore } from 'react-icons/fa';
+import { reaction } from 'mobx';
+import { FaStar, FaSearch, FaFolder, FaPlus, FaEllipsisV, FaCheck, FaPen, FaTimes, FaPalette, FaChevronRight, FaFolderPlus, FaWindowRestore } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
 import {
   sessionService,
@@ -10,17 +11,16 @@ import {
   templateService,
 } from '../models';
 import { appState } from '../models/AppService';
-import {
-  nameErrorMessage,
-  projectNameRules,
-  promptName,
-  suggestFolderCopyName,
-} from '../models/nameInput';
 import { projectPath } from '../models/projectPaths';
 import { planFolderDeletePrompt } from '../models/folderDeleteFlow';
+import {
+  createFolderFlow,
+  defaultFolderFlowDeps,
+  duplicateFolderFlow,
+} from '../models/folderFlow';
+import { createProjectFlow, defaultProjectCreateFlowDeps } from '../models/projectCreateFlow';
 // 프로젝트·폴더 작업 되돌리기 기록(2차 묶음 2 P1-a, 전역 스택) — 서비스 메서드와 1:1
 import {
-  createFolderRecorded,
   moveProjectsToFolderRecorded,
   moveToFolderRecorded,
   renameFolderRecorded,
@@ -39,28 +39,9 @@ import {
   withAlpha,
 } from './folderColors';
 
-const RECENT_KEY = 'sdstudio-recent-projects';
-const RECENT_MAX = 5;
-
-export function pushRecentProject(name: string) {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    let list: string[] = raw ? JSON.parse(raw) : [];
-    list = list.filter((n) => n !== name);
-    list.unshift(name);
-    if (list.length > RECENT_MAX) list.length = RECENT_MAX;
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch {}
-}
-
-function getRecentProjects(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
+// 최근 프로젝트 목록 — 단일 출처 models/recentProjects.ts(기존 import 호환을 위해 다시 내보낸다)
+import { getRecentProjects, pushRecentProject } from '../models/recentProjects';
+export { pushRecentProject };
 
 // 한글 + 숫자 혼합 자연 정렬
 const naturalCmp = (a: string, b: string) =>
@@ -157,9 +138,9 @@ const ProjectCard = ({
       onDragStart={onDragStart ? (e: React.DragEvent) => { e.stopPropagation(); onDragStart(e); } : undefined}
       onDragEnd={onDragEnd ? (e: React.DragEvent) => { e.stopPropagation(); onDragEnd(e); } : undefined}
       style={isDragging ? { opacity: 0.4 } : undefined}
-      className={`cursor-pointer rounded-lg border-2 overflow-hidden transition-all hover:brightness-95 active:brightness-90 ${
+      className={`cursor-pointer rounded-lg border-2 overflow-hidden transition-[filter,border-color,box-shadow,opacity] hover:brightness-95 active:brightness-90 ${
         isSelected
-          ? 'border-sky-500 ring-2 ring-sky-400'
+          ? 'line-color card-selected card-check-none'
           : isActive
             ? 'border-sky-500 ring-2 ring-sky-300'
             : isFav
@@ -187,7 +168,7 @@ const ProjectCard = ({
             onToggleFav();
           }}
         >
-          <FaStar className={isFav ? 'text-yellow-400' : 'text-gray-300 dark:text-slate-600'} size={15} />
+          <FaStar className={isFav ? 'text-yellow-400' : 'text-faint'} size={15} />
         </button>
         </Tooltip>
         <span className="text-[15px] text-default truncate flex-1">{name}</span>
@@ -208,7 +189,7 @@ const ProjectCard = ({
         )}
         <Tooltip content="폴더로 이동">
         <button
-          className="flex-none text-faint hover:text-gray-700 dark:hover:text-gray-200 px-0.5"
+          className="flex-none text-muted hover:text-gray-800 dark:hover:text-gray-200 px-0.5"
           onClick={(e) => {
             e.stopPropagation();
             onMove();
@@ -323,7 +304,7 @@ const NavItem = ({
             e.stopPropagation();
             onEditCancel?.();
           }}
-          className="text-faint hover:text-gray-600 dark:hover:text-gray-200 px-0.5"
+          className="text-muted hover:text-gray-800 dark:hover:text-gray-200 px-0.5"
         >
           <FaTimes size={13} />
         </span>
@@ -345,7 +326,7 @@ const NavItem = ({
         ...(tint && !active ? { backgroundColor: withAlpha(tint, '26') } : {}),
       }}
       className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[15px] whitespace-nowrap transition-colors flex-none md:w-full ${
-        dropping ? 'ring-2 ring-sky-400 ' : ''
+        dropping ? 'card-drop-target ' : ''
       }${
         active
           ? 'bg-sky-600 text-white dark:bg-sky-500'
@@ -514,7 +495,12 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
     if (!isMobile) setTimeout(() => filterRef.current?.focus(), 100);
     const onUpdate = () => refresh();
     sessionService.addEventListener('listupdated', onUpdate);
-    return () => sessionService.removeEventListener('listupdated', onUpdate);
+    // 숨김 목록 변경(지정 목록 로드·다른 창 저장 재로드 — 2026-11-18 T4)에도 다시 거른다
+    const disposeHidden = reaction(() => templateService.hiddenNames, onUpdate);
+    return () => {
+      sessionService.removeEventListener('listupdated', onUpdate);
+      disposeHidden();
+    };
   }, [refresh]);
 
   // Ctrl+E로 닫기: 그리드는 검색창 자동 포커스 때문에 전역 단축키가 억제되므로
@@ -586,54 +572,19 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
     refresh();
   }, [refresh]);
 
-  // A1: 현재 폴더 뷰에 새 프로젝트 생성 (폴더 뷰가 아니면 루트)
+  // 특정 폴더(없으면 미분류)에 새 프로젝트 생성 — 공용 흐름(models/projectCreateFlow.ts, 상단 버튼·서랍과 같은 흐름,
+  // 2026-11-18 M5 c). 만들면 기존 프로젝트를 골랐을 때처럼 열고 탐색 창을 닫는다.
+  const createProjectInFolder = useCallback(async (folder: string | null) => {
+    const name = await createProjectFlow(defaultProjectCreateFlowDeps(), { folder });
+    if (name) onClose();
+  }, [onClose]);
+
+  // A1: 현재 폴더 뷰에 새 프로젝트 생성 (폴더 뷰가 아니면 미분류)
   const createProjectInView = useCallback(async () => {
     const folder =
       view !== 'all' && view !== 'fav' && view !== 'unfiled' ? view : null;
-    // 이름 규칙·중복(어느 폴더에 있는지 포함)은 입력 창 안에서 검사(D2)
-    const name = await promptName({
-      title: folder ? `"${folder}" 폴더에 새 프로젝트 이름` : '신규 프로젝트 이름',
-      ...projectNameRules(sessionService),
-    });
-    if (!name) return;
-    try {
-      await sessionService.add(name);
-      if (folder) {
-        try {
-          await sessionService.moveToFolder(name, folder);
-        } catch (e) {}
-      }
-      refresh();
-      appState.pushMessage(`프로젝트 "${name}"을(를) 만들었습니다.`);
-    } catch (e: any) {
-      appState.pushMessage(
-        nameErrorMessage(e, 'project', name, '프로젝트 생성에 실패했습니다.'),
-        'error',
-      );
-    }
-  }, [view, refresh]);
-
-  // 특정 폴더에 새 프로젝트 생성 (메뉴/버튼 공용)
-  const createProjectInFolder = useCallback(async (folder: string) => {
-    const name = await promptName({
-      title: `"${folder}" 폴더에 새 프로젝트 이름`,
-      ...projectNameRules(sessionService),
-    });
-    if (!name) return;
-    try {
-      await sessionService.add(name);
-      try {
-        await sessionService.moveToFolder(name, folder);
-      } catch (e) {}
-      refresh();
-      appState.pushMessage(`프로젝트 "${name}"을(를) 만들었습니다.`);
-    } catch (e: any) {
-      appState.pushMessage(
-        nameErrorMessage(e, 'project', name, '프로젝트 생성에 실패했습니다.'),
-        'error',
-      );
-    }
-  }, [refresh]);
+    await createProjectInFolder(folder);
+  }, [view, createProjectInFolder]);
 
   // 모바일: 폴더마다 ⋮ 메뉴 (데스크톱은 인라인 버튼 유지)
   const openFolderMenu = async (f: string) => {
@@ -797,28 +748,15 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
     moveProjectTo(d.name, null);
   }, [drag, moveProjectTo]);
 
+  // 폴더 만들기·복제 — 공용 흐름(models/folderFlow.ts, 프로젝트 서랍과 같은 흐름, 2026-11-16 M5 a)
   const createFolder = useCallback(async (parentPath?: string) => {
-    const hint = parentPath
-      ? `"${sessionService.folderLeafName(parentPath)}" 안에 새 폴더 (예: 서브폴더 또는 상위/하위)`
-      : '새 폴더 이름을 입력하세요 (예: 폴더 또는 상위/하위)';
-    // 「상위/하위」 경로 입력 허용 — 단계마다 경로 안전 검사, 같은 경로의 폴더는 창 안에서 거부(D2)
-    const toFull = (v: string) => (parentPath ? parentPath + '/' + v : v);
-    const value = await promptName({
-      title: hint,
-      kind: 'folder',
-      pathSafe: true,
-      allowSlash: true,
-      existing: (v) => sessionService.listFolders().includes(toFull(v)),
+    await createFolderFlow(defaultFolderFlowDeps(), {
+      parentPath,
+      onCreated: (fullPath) => {
+        setView(fullPath);
+        refresh();
+      },
     });
-    if (!value) return;
-    const fullPath = toFull(value);
-    try {
-      await createFolderRecorded(fullPath);
-      setView(fullPath);
-      refresh();
-    } catch (e: any) {
-      appState.pushMessage(e.message || '폴더 생성에 실패했습니다.', 'error');
-    }
   }, [refresh]);
 
   const handleNewFolder = useCallback(async () => {
@@ -943,43 +881,9 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
   );
 
   const cloneFolder = useCallback(async (sourceFolder: string) => {
-    const leafName = sessionService.folderLeafName(sourceFolder);
-    const parent = sessionService.folderParentPath(sourceFolder);
-    const toTarget = (v: string) => (parent ? parent + '/' + v : v);
-    // 원본 이름 기반 제안값을 채워 연다(D2) — 같은 자리의 폴더와 겹치면 창 안에서 거부
-    const value = await promptName({
-      title: `"${leafName}" 폴더를 복제합니다. 새 폴더 이름을 입력하세요.`,
-      initial: suggestFolderCopyName(leafName, (v) =>
-        sessionService.listFolders().includes(toTarget(v)),
-      ),
-      kind: 'folder',
-      pathSafe: true,
-      existing: (v) => sessionService.listFolders().includes(toTarget(v)),
+    await duplicateFolderFlow(defaultFolderFlowDeps(), sourceFolder, {
+      onDuplicated: () => refresh(),
     });
-    if (!value) return;
-
-    const mode = await appState.pushDialogAsync({
-      text: '이미지 파일을 함께 복사할까요?',
-      type: 'select',
-      items: [
-        { text: '설정만 복사 (프롬프트, 프리셋 등)', value: 'config' },
-        { text: '이미지 포함 복사 (휴지통 제외)', value: 'with-images' },
-      ],
-    });
-    if (!mode) return;
-
-    const withImages = mode === 'with-images';
-    const targetPath = toTarget(value);
-    try {
-      appState.setProgressDialog({ text: '폴더 복제 중...', done: 0, total: 1 });
-      await sessionService.cloneFolder(sourceFolder, targetPath, withImages);
-      appState.setProgressDialog(undefined);
-      refresh();
-      appState.pushMessage(`"${value}" 폴더로 복제되었습니다.`);
-    } catch (e: any) {
-      appState.setProgressDialog(undefined);
-      appState.pushMessage(e.message || '폴더 복제에 실패했습니다.', 'error');
-    }
   }, [refresh]);
 
   return (
@@ -1065,7 +969,7 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
                   icon={
                     hasChildren ? (
                       <span className="flex items-center gap-0.5">
-                        {isOpen ? <FaChevronDown size={10} className="flex-none text-faint" /> : <FaChevronRight size={10} className="flex-none text-faint" />}
+                        <FaChevronRight size={10} className={'flex-none text-faint transition-transform' + (isOpen ? ' rotate-90' : '')} />
                         <FaFolder size={14} style={{ color: folderColor }} />
                       </span>
                     ) : (
@@ -1188,7 +1092,7 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
             })()}
             <button
               onClick={handleNewFolder}
-              className="btn-ghost flex items-center justify-center md:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg text-sm whitespace-nowrap flex-none md:w-full border border-dashed line-color text-muted"
+              className="add-slot flex items-center justify-center md:justify-start gap-1.5 px-2.5 py-1.5 text-sm whitespace-nowrap flex-none md:w-full"
             >
               <FaPlus size={11} />
               <span>새 폴더</span>
@@ -1206,7 +1110,7 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
               placeholder="프로젝트 검색..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              className="w-full pl-9 pr-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
             />
           </div>
 
@@ -1247,7 +1151,7 @@ const ProjectBrowser = observer(({ onClose }: { onClose: () => void }) => {
                 <button
                   onClick={bulkMove}
                   disabled={selected.size === 0}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm btn-solid-sky disabled:opacity-40"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm btn-solid-sky"
                 >
                   <FaFolder size={12} /> 폴더로 이동
                 </button>

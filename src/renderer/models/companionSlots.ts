@@ -23,7 +23,12 @@
 //   슬롯에 배정된 버튼은 파생적으로 툴바 표면에서 사라진다(소비자가 companionAssignedIds
 //   를 resolveToolbarView 제외 집합으로 전달 — uiToolbar 데이터 자체는 불변).
 
-import { portableButtonIds } from './uiLayout';
+import type { UiToolbarConfig } from '../../main/config';
+import {
+  insertToolbarFollowers,
+  portableButtonIds,
+  TOOLBAR_FOLLOWERS,
+} from './uiLayout';
 
 /**
  * COMPANION_HOSTS — 동반 슬롯을 붙일 수 있는 "호스트 행"의 hostKey 목록(단일 출처).
@@ -65,7 +70,7 @@ export const COMPANION_HOST_LABELS: Record<string, string> = {
  * MODERN_COMPANION_DEFAULTS — 모던 사이드바('modern' 템플릿) 적용 시 강제되는 동반 슬롯
  *   기본 배치(② A 스펙, 2026-07-18 사용자 확정). 템플릿 저장 전환 시 ConfigScreen 이
  *   uiToolbar 초기화와 함께 이 값을 uiCompanionSlots 로 깐다(이후 재커스텀 자유).
- *   - backup-export·project-trash·delete-session·piece-editor → 사전세팅선택 위 행
+ *   - backup-import·backup-export·project-trash·delete-session·piece-editor → 사전세팅선택 위 행
  *     (구 "작업모드 행 옆" 대체. delete-session 도 "프로젝트 전체" 액션이라 사전세팅선택
  *     행이 아닌 상단부로 — 2026-07-18 실기 피드백 2로 2026-07-13 결정 대체)
  *   - character-presets → 캐릭터 프롬프트 행 (하단 아이콘 행과 결합 시 5종 정렬)
@@ -75,6 +80,7 @@ export const COMPANION_HOST_LABELS: Record<string, string> = {
  */
 export const MODERN_COMPANION_DEFAULTS: Record<string, string[]> = {
   'preset-top': [
+    'backup-import', // 2026-11-19 백업 메뉴 분할 — 내보내기(backup-export) 바로 앞
     'backup-export',
     'project-trash',
     'delete-session',
@@ -85,13 +91,98 @@ export const MODERN_COMPANION_DEFAULTS: Record<string, string[]> = {
 };
 
 /**
+ * 따라가는 버튼(2026-11-19 백업 메뉴 분할, uiLayout TOOLBAR_FOLLOWERS) — 저장된 슬롯이 새 버튼(backup-import)을
+ *   한 번도 적지 않았으면 짝(backup-export)이 있는 호스트마다 그 바로 앞에 함께 놓인 것으로 읽는다(가상 적용, 저장 불변 —
+ *   구버전은 풀 밖 id 라 무시). 짝과 함께 툴바에서 빠지므로 모던 사이드바처럼 툴바가 없는 배치에서도 불러오기가 남는다.
+ *   사용자가 슬롯에서 그 버튼만 빼면(removeCompanion) 이 키 아래에 적어 두어 다시 따라가지 않게 한다.
+ *   이 키는 호스트가 아니라 해석(COMPANION_HOSTS 만 훑음)·구버전 모두 무시한다.
+ */
+export const COMPANION_KEPT_IN_TOOLBAR_KEY = '_toolbar';
+
+function followerMentioned(slots: Record<string, string[]>, id: string): boolean {
+  return Object.values(slots).some((ids) => Array.isArray(ids) && ids.includes(id));
+}
+
+/** 저장된 슬롯 → 따라가기를 적용한 슬롯(순수, 원본 불변). 적용할 것이 없으면 입력 그대로. */
+export function withCompanionFollowers(
+  slots?: Record<string, string[]>,
+): Record<string, string[]> | undefined {
+  if (!slots) return slots;
+  const pending = TOOLBAR_FOLLOWERS.filter(({ id }) => !followerMentioned(slots, id));
+  if (pending.length === 0) return slots;
+  const skip = (id: string) => !pending.some((f) => f.id === id);
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(slots)) {
+    out[k] =
+      COMPANION_HOSTS.includes(k) && Array.isArray(v)
+        ? insertToolbarFollowers(v, skip)
+        : v;
+  }
+  return out;
+}
+
+/**
+ * PC 기본 동반 배치(2026-11-22 사용자 결정) — 저장된 배치가 이 버튼을 한 번도 적지 않았으면 이 호스트 끝에 놓인 것으로
+ *   읽는다(가상 적용, 저장 불변 — 따라가는 버튼과 같은 방식). 프롬프트조각은 맨 아래 툴바 대신 사전세팅선택 행이 기본 자리.
+ *   「적은 적 있음」 = 동반 슬롯 어느 키(툴바 유지 표 COMPANION_KEPT_IN_TOOLBAR_KEY 포함)에 있거나, 툴바에서 그 버튼을
+ *   직접 옮겨 uiToolbar.buttons 에 자리가 적혀 있음(moveToolbarButton 은 옮긴 버튼만 buttons 에 적는다).
+ *   적용하지 않는 경우(종전 그대로): 모바일(클래식·V2 — 슬롯을 쓰지 않음) · 모던 사이드바(템플릿 기본 배치
+ *   MODERN_COMPANION_DEFAULTS 가 따로 있음) · 클래식 툴바(「이전 배치로 되돌리기」) · 레거시 작업모드(이지 모드 등
+ *   사전세팅선택 행이 없는 작업모드가 있어 툴바에서 빠지면 버튼이 양쪽에서 사라진다 — 작업모드 행을 호스트에서 뺀 이유와 같음) ·
+ *   프리셋 패널을 접어 둔 동안(presetPanelHidden — 호스트 행이 화면에 없다. 펴면 다시 행으로).
+ *   저장: 해석 단계의 가상 적용일 뿐 편집 함수(assign/removeCompanion)의 입력은 저장값이다 — 다른 버튼을 옮겨도 기본 배치는
+ *   저장에 옮겨 적히지 않고, 그 버튼 자체를 옮길 때만 적힌다(removeCompanion 은 툴바 유지 표에). 구버전은 저장이 그대로라 무영향.
+ */
+export const COMPANION_DEFAULT_PLACEMENTS: readonly { id: string; host: string }[] = [
+  { id: 'piece-editor', host: 'preset-select' },
+];
+
+export interface CompanionDefaultContext {
+  isMobile: boolean;
+  template?: string;
+  toolbar?: UiToolbarConfig;
+  legacyWorkflowMode?: boolean;
+  presetPanelHidden?: boolean;
+}
+
+/** 기본 동반 배치가 적용되는 환경인지(버튼별 「적은 적 있음」 판정 전 단계). */
+export function companionDefaultsActive(ctx: CompanionDefaultContext): boolean {
+  return (
+    !ctx.isMobile &&
+    ctx.template !== 'modern' &&
+    !ctx.toolbar?.classic &&
+    !ctx.legacyWorkflowMode &&
+    !ctx.presetPanelHidden
+  );
+}
+
+/** 저장된 슬롯 → 기본 동반 배치를 적용한 슬롯(순수, 원본 불변). 적용할 것이 없으면 입력 그대로. */
+export function withCompanionDefaults(
+  slots: Record<string, string[]> | undefined,
+  ctx: CompanionDefaultContext,
+): Record<string, string[]> | undefined {
+  if (!companionDefaultsActive(ctx)) return slots;
+  const pending = COMPANION_DEFAULT_PLACEMENTS.filter(
+    ({ id }) =>
+      !followerMentioned(slots ?? {}, id) && ctx.toolbar?.buttons?.[id] === undefined,
+  );
+  if (pending.length === 0) return slots;
+  const out: Record<string, string[]> = { ...(slots ?? {}) };
+  for (const { id, host } of pending) {
+    out[host] = [...(out[host] ?? []), id];
+  }
+  return out;
+}
+
+/**
  * resolveAssignment — 사용자 설정 → id별 소유 호스트(first-host-wins) 맵(내부 헬퍼).
  *
  * COMPANION_HOSTS 순서대로 훑으며 각 버튼 id 를 처음 요청한 호스트에 귀속시킨다.
  * 풀(portable) 밖·stale id 는 귀속하지 않고(=조용히 버림), 이미 앞선 호스트가 소유한
  * id 는 무시(유일성). 이 맵이 resolveCompanionButtons·companionAssignedIds 의 단일 근거.
  */
-function resolveAssignment(slots?: Record<string, string[]>): Map<string, string> {
+function resolveAssignment(savedSlots?: Record<string, string[]>): Map<string, string> {
+  const slots = withCompanionFollowers(savedSlots);
   const pool = new Set(portableButtonIds());
   const owner = new Map<string, string>();
   for (const host of COMPANION_HOSTS) {
@@ -120,7 +211,7 @@ export function resolveCompanionButtons(
   slots?: Record<string, string[]>,
 ): string[] {
   if (!COMPANION_HOSTS.includes(hostKey)) return []; // ①
-  const requested = slots?.[hostKey];
+  const requested = withCompanionFollowers(slots)?.[hostKey]; // 따라가는 버튼 포함
   if (!requested || requested.length === 0) return []; // ②
   const owner = resolveAssignment(slots);
   const result: string[] = [];
@@ -183,7 +274,9 @@ export function assignCompanionAt(
   anchor?: { id: string; side: 'before' | 'after' },
 ): Record<string, string[]> {
   const next: Record<string, string[]> = {};
-  for (const [k, v] of Object.entries(slots ?? {})) {
+  // 따라가는 버튼은 보이던 자리 그대로 저장에 옮겨 적은 뒤 편집한다(편집 뒤에도 화면이 같게).
+  // 툴바 유지 표(COMPANION_KEPT_IN_TOOLBAR_KEY)에서도 함께 빠진다(전 키에서 제거).
+  for (const [k, v] of Object.entries(withCompanionFollowers(slots) ?? {})) {
     next[k] = v.filter((id) => id !== buttonId); // 전 호스트에서 제거
   }
   const cur = next[hostKey] ? [...next[hostKey]] : [];
@@ -220,8 +313,24 @@ export function removeCompanion(
   buttonId: string,
 ): Record<string, string[]> {
   const next: Record<string, string[]> = {};
-  for (const [k, v] of Object.entries(slots ?? {})) {
+  for (const [k, v] of Object.entries(withCompanionFollowers(slots) ?? {})) {
     next[k] = v.filter((id) => id !== buttonId);
+  }
+  // 따라가는 버튼만 빼면 짝을 다시 따라가지 않도록 툴바 유지 표에 적어 둔다(짝이 슬롯에 남아 있을 때만 — 아니면 따라갈 곳이 없다).
+  const follower = TOOLBAR_FOLLOWERS.find((f) => f.id === buttonId);
+  const leaderInSlot =
+    !!follower &&
+    COMPANION_HOSTS.some((h) => (next[h] ?? []).includes(follower.leader));
+  // 기본 동반 배치 버튼(프롬프트조각)도 빼면 툴바 유지 표에 적는다 — 적지 않으면 「한 번도 적지 않음」으로 읽혀 기본 자리로 되돌아간다.
+  const hasDefaultPlacement = COMPANION_DEFAULT_PLACEMENTS.some((d) => d.id === buttonId);
+  if (
+    (leaderInSlot || hasDefaultPlacement) &&
+    !(next[COMPANION_KEPT_IN_TOOLBAR_KEY] ?? []).includes(buttonId)
+  ) {
+    next[COMPANION_KEPT_IN_TOOLBAR_KEY] = [
+      ...(next[COMPANION_KEPT_IN_TOOLBAR_KEY] ?? []),
+      buttonId,
+    ];
   }
   return pruneEmpty(next);
 }

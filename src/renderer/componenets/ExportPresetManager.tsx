@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import ExportSettingsFields from './ExportSettingsFields';
 import { ExportFormState as FormState, emptyExportForm as emptyForm, presetToExportForm as presetToForm, exportFormProblems, exportFormToPreset } from '../models/exportSettings';
 import React, { useState, useEffect, useRef } from 'react';
@@ -10,13 +11,14 @@ import { deleteConfirmText } from '../models/deleteFlowRules';
 import { ExportPresetOps, saveExportPresetsRecorded } from '../models/globalLibraryUndo';
 import { UNDO_TEXT } from '../models/undoService';
 
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import { ListSearchBar } from './ListSearchBar';
 import { matchesQuery } from '../models/listSearch';
 import { useGuardedClose } from './backdropClose';
 
 import { FaPlus, FaTrash, FaPen } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
+import { SettingCheckRow } from './SettingControls';
 
 const EXPORT_PRESET_OPS: ExportPresetOps<ExportPreset> = {
   load: () => appState.loadExportPresets(),
@@ -259,7 +261,7 @@ const ExportPresetManager = observer(() => {
   const newPresetButton = (
     <button
       onClick={newPreset}
-      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed line-color hover:border-sky-400 dark:hover:border-sky-500 text-muted hover:text-sky-500 transition-colors text-sm"
+      className="add-slot w-full flex items-center gap-2 px-3 py-2 text-sm"
     >
       <FaPlus size={14} />
       새 프리셋 추가
@@ -282,9 +284,9 @@ const ExportPresetManager = observer(() => {
   );
 
   const noHits = (
-    <div className="text-xs text-faint text-center py-6" data-list-no-hits="">
+    <EmptyState className="py-6" data-list-no-hits="">
       검색 결과가 없습니다
-    </div>
+    </EmptyState>
   );
 
   const presetRows = shownPresets.map(({ p, i }) => (
@@ -293,8 +295,8 @@ const ExportPresetManager = observer(() => {
       onClick={() => renamingIndex === null && selectPreset(i)}
       className={`px-3 py-2 cursor-pointer flex justify-between items-center gap-2 ${
         editingIndex === i
-          ? 'bg-sky-50 dark:bg-sky-900/30 border-l-2 border-sky-500'
-          : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'
+          ? 'list-row-selected'
+          : 'hover-row'
       }`}
     >
       {renamingIndex === i ? (
@@ -310,7 +312,7 @@ const ExportPresetManager = observer(() => {
             if (e.key === 'Enter') commitRename();
             else if (e.key === 'Escape') cancelRename();
           }}
-          className="flex-1 min-w-0 px-2 py-1 rounded border border-sky-400 bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+          className="flex-1 min-w-0 px-2 py-1 rounded border border-sky-400 bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
         />
       ) : (
         <div className="min-w-0 text-sm font-medium text-default truncate flex items-center gap-1">
@@ -375,7 +377,7 @@ const ExportPresetManager = observer(() => {
           placeholder="프리셋 이름"
           aria-invalid={problems.includes('이름') || undefined}
           className={
-            'flex-1 min-w-0 px-3 py-1.5 rounded border bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 ' +
+            'flex-1 min-w-0 px-3 py-1.5 rounded border bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)] ' +
             (wide && problems.includes('이름') ? 'border-red-400 dark:border-red-500' : 'line-color')
           }
         />
@@ -383,18 +385,20 @@ const ExportPresetManager = observer(() => {
 
       <ExportSettingsFields form={form} setForm={setForm} twoColumn={wide} />
       {/* ⚡ 빠른 export 기본 프리셋 지정 */}
-      <label className="flex items-center gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={form.isDefault}
-          onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
-          className="w-4 h-4 accent-sky-500"
+      {/* 체크 줄(2026-11-20 UI 정돈 그룹 1-c) — 줄 안쪽 여백(10px)만큼 당겨 위 칸들과 왼쪽을 맞춘다 */}
+      <div className="-mx-2.5 select-none">
+        <SettingCheckRow
+          id="exportPresetIsDefault"
+          checked={!!form.isDefault}
+          onChange={(checked) => setForm({ ...form, isDefault: checked })}
+          label={
+            <>
+              <ActionIcon id="quick-export" className="inline-block mr-1 align-[-0.125em]" />
+              빠른 내보내기 기본 프리셋으로 사용
+            </>
+          }
         />
-        <span className="text-sm text-gray-700 dark:text-gray-300">
-          <ActionIcon id="quick-export" className="inline-block mr-1 align-[-0.125em]" />
-          빠른 내보내기 기본 프리셋으로 사용
-        </span>
-      </label>
+      </div>
     </>
   );
 
@@ -406,7 +410,7 @@ const ExportPresetManager = observer(() => {
         onClick={savePreset}
         aria-disabled={problems.length > 0 || undefined}
         className={
-          'px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors' +
+          DIALOG_PRIMARY_BTN +
           (problems.length > 0 ? ' opacity-50' : '')
         }
       >
@@ -414,7 +418,7 @@ const ExportPresetManager = observer(() => {
       </button>
       <button
         onClick={requestClose}
-        className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+        className={DIALOG_SECONDARY_BTN}
       >
         취소
       </button>
@@ -441,7 +445,7 @@ const ExportPresetManager = observer(() => {
             {newPresetButton}
             {presets.length > 0 && searchBar}
             {presets.length === 0 ? (
-              <div className="text-xs text-faint text-center py-6">저장된 프리셋이 없습니다</div>
+              <EmptyState className="py-6">저장된 프리셋이 없습니다</EmptyState>
             ) : shownPresets.length === 0 ? (
               noHits
             ) : (

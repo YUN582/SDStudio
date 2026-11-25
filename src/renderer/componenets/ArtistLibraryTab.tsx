@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
@@ -13,6 +14,7 @@ import {
   FaPen,
   FaFileArchive,
   FaFileImport,
+  FaCheck,
   FaCheckSquare,
   FaGlobe,
   FaCompressArrowsAlt,
@@ -175,9 +177,11 @@ const TagPresetManageModal = observer(({ onClose }: { onClose: () => void }) => 
           {artistLibraryService.tagPresets.map((t) => (
             <span key={t} className="flex items-center gap-1 text-sm px-2 py-1 rounded-md bg-[var(--c-surface)] text-body">
               {t}
-              <button className="text-muted hover:text-red-500" aria-label={`태그 프리셋 ${t} 삭제`} onClick={() => removeArtistTagPresetRecorded(t)}>
-                <FaTrash size={14} />
-              </button>
+              <Tooltip content={`태그 프리셋 ${t} 삭제`}>
+                <button className="text-muted hover:text-red-500" aria-label={`태그 프리셋 ${t} 삭제`} onClick={() => removeArtistTagPresetRecorded(t)}>
+                  <FaTrash size={14} />
+                </button>
+              </Tooltip>
             </span>
           ))}
         </div>
@@ -371,15 +375,17 @@ export const ArtistDetailModal = observer(({ artistId, onClose }: { artistId: st
                   <FamilyBadge family={img.family} className="absolute left-0.5 bottom-0.5" />
                 </div>
               ))}
-              <button className="flex-none w-14 h-14 rounded border border-dashed line-color flex items-center justify-center text-faint hover:text-sky-500"
-                aria-label="이미지 추가"
-                onClick={() => fileRef.current?.click()}>
-                <FaPlus />
-              </button>
+              <Tooltip content="이미지 추가">
+                <button className="add-slot flex-none w-14 h-14 flex items-center justify-center"
+                  aria-label="이미지 추가"
+                  onClick={() => fileRef.current?.click()}>
+                  <FaPlus />
+                </button>
+              </Tooltip>
               {/* 샘플 생성(2026-09-26): 현재 프리셋에서 다른 작가 태그를 빼고 이 작가만으로 1장 생성해 카드에 저장 */}
               <Tooltip content="현재 프리셋에서 다른 artist: 태그를 빼고 이 작가만으로 1장 생성해 카드에 저장">
                 <button
-                  className="flex-none w-14 h-14 rounded border border-dashed line-color flex flex-col items-center justify-center gap-0.5 text-faint hover:text-sky-500 disabled:opacity-40"
+                  className="add-slot flex-none w-14 h-14 flex flex-col items-center justify-center gap-0.5 disabled:opacity-50"
                   disabled={!appState.curSession}
                   data-artist-sample-generate=""
                   onClick={() => {
@@ -403,7 +409,7 @@ export const ArtistDetailModal = observer(({ artistId, onClose }: { artistId: st
                 {(['v4_5', 'v5'] as ModelBaseFamily[]).map((f) => (
                   <button
                     key={f}
-                    className={'px-2 py-0.5 rounded-full border ' + (selected.family === f ? 'border-sky-500 text-sky-500 bg-sky-100 dark:bg-sky-900/40' : 'line-color text-muted hover:border-sky-400')}
+                    className={'px-2 py-0.5 rounded-full border ' + (selected.family === f ? 'border-sky-500 text-[color:var(--c-link)] bg-sky-100 dark:bg-sky-900/40' : 'line-color text-muted hover:border-sky-400')}
                     onClick={() => setArtistImageFamilyRecorded(artist.id, selected.id, selected.family === f ? undefined : f)}
                     title="이 샘플이 나온 모델 계열(다시 누르면 미지정)"
                   >
@@ -453,7 +459,7 @@ export const ArtistDetailModal = observer(({ artistId, onClose }: { artistId: st
               {artist.tags.map((t) => (
                 <span key={t} className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300">
                   {t}
-                  <button className="hover:text-red-500" onClick={() => removeArtistTagRecorded(artist.id, t)}>×</button>
+                  <button className="hover:text-red-500" aria-label={`태그 ${t} 삭제`} onClick={() => removeArtistTagRecorded(artist.id, t)}><FaTimes size={10} className="block" /></button>
                 </span>
               ))}
             </div>
@@ -478,9 +484,10 @@ export const ArtistDetailModal = observer(({ artistId, onClose }: { artistId: st
                 const has = artist.tags.includes(t);
                 return (
                   <button key={t} disabled={has}
-                    className={'text-xs px-2.5 py-1 rounded-full border ' + (has ? 'line-color text-gray-300 dark:text-gray-600' : 'line-color text-muted hover:border-sky-500 hover:text-sky-500')}
+                    className={'text-xs px-2.5 py-1 rounded-full border ' + (has ? 'line-color text-faint' : 'line-color text-muted hover:border-sky-500 hover:text-sky-500')}
                     onClick={() => addArtistTagRecorded(artist.id, t)}>
-                    + {t}
+                    {/* 이미 추가된 태그는 색 말고도 체크 아이콘으로 구분(UI 정돈 그룹 1) — 「+」 자리에 체크 */}
+                    {has ? <FaCheck size={10} className="inline mr-1 align-[-1px]" aria-hidden="true" /> : '+ '}{t}
                   </button>
                 );
               })}
@@ -819,7 +826,7 @@ const ArtistLibraryTab = observer(({ isActive = true }: { isActive?: boolean }) 
         onClickCapture={selection.onClickCapture}>
         {selection.overlay}
         {total > 0 && list.length === 0 ? (
-          <div className="text-center text-faint py-10">검색 결과가 없습니다.</div>
+          <EmptyState size="lg" className="py-10">검색 결과가 없습니다.</EmptyState>
         ) : (
           <div className="flex flex-wrap gap-4 items-start">
             <AddArtistCard onClick={newArtist} />

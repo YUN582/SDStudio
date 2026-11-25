@@ -18,6 +18,7 @@ import { observer } from 'mobx-react-lite';
 import OpusUsageBadge from './OpusUsageBadge';
 import { normalizeTokenRotateWarning } from '../models/tokenAutoRotation';
 import ModelFamilySwitch from './ModelFamilySwitch';
+import Tooltip from './Tooltip';
 
 export const AppToolbarControls = observer(() => {
   // Desktop uses the project command row; mobile keeps the title-row controls.
@@ -102,15 +103,17 @@ export const AppToolbarControls = observer(() => {
   // 모바일 기본 툴바의 환경설정 버튼·계정 표기. 모바일은 SessionSelect 의 2줄 배치 슬롯
   // (1줄째 맨 앞=환경설정·계정 표기, 그 뒤 프로젝트 선택)으로, 좁은 PC 창은 기존 인라인 묶음으로 렌더.
   const mobileSettingsButton = (
-    <button
-      className="icon-button flex-none"
-      aria-label="환경설정"
-      onClick={() => {
-        setSettings(true);
-      }}
-    >
-      <FaCog size={18} />
-    </button>
+    <Tooltip content="환경설정">
+      <button
+        className="icon-button flex-none"
+        aria-label="환경설정"
+        onClick={() => {
+          setSettings(true);
+        }}
+      >
+        <FaCog size={18} />
+      </button>
+    </Tooltip>
   );
   const mobileAccountBadge = !loggedIn ? (
     <span className="round-tag back-red text-sm !px-2 !py-1">로그인필요</span>

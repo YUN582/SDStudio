@@ -4,6 +4,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import {
+  FaBookmark,
   FaCloud,
   FaCloudDownloadAlt,
   FaCloudUploadAlt,
@@ -11,11 +12,14 @@ import {
   FaHeart,
   FaPaintBrush,
   FaPlus,
+  FaReply,
   FaShare,
   FaStar,
 } from 'react-icons/fa';
 import {
   BackupExportIcon,
+  BackupImportIcon,
+  BookmarkJumpIcon,
   EXCLUSIVE_ICONS,
   ICON_DICTIONARY,
   IconId,
@@ -61,6 +65,7 @@ describe('아이콘 의미 사전', () => {
     expect(keysUsing(FaPaintBrush)).toEqual(['inpaint']);
     expect(keysUsing(FaCog)).toEqual(['preferences']);
     expect(keysUsing(FaHeart)).toEqual(['artist-favorite']);
+    // 단독 FaShare 는 share 하나 — 합성(backup-export·bookmark-jump)은 별도 컴포넌트라 여기 걸리지 않는다.
     expect(keysUsing(FaShare)).toEqual(['share']);
   });
 
@@ -88,6 +93,40 @@ describe('아이콘 의미 사전', () => {
     // 크기 미지정이면 em 기준
     const { container: c2 } = render(<BackupExportIcon />);
     expect(c2.querySelectorAll('svg')[1].getAttribute('width')).toBe('0.55em');
+  });
+
+  test('backup-import 는 같은 백업 본체에 들어오는 화살표(FaReply) 합성 — 내보내기와 다른 아이콘', () => {
+    expect(iconOf('backup-import')).toBe(BackupImportIcon);
+    expect(iconOf('backup-import')).not.toBe(BackupExportIcon);
+    expect(keysUsing(FaReply)).toEqual([]); // 단독 FaReply 키는 없다(합성 안에만)
+    const { container } = render(<BackupImportIcon size={18} />);
+    const svgs = container.firstElementChild!.querySelectorAll('svg');
+    expect(svgs).toHaveLength(2);
+    expect(svgs[0].getAttribute('width')).toBe('18');
+    expect(svgs[1].getAttribute('width')).toBe('10');
+    // 본체는 내보내기와 같은 FaFileArchive, 덧붙임만 다르다(그린 모양 비교)
+    const { container: exp } = render(<BackupExportIcon size={18} />);
+    const expSvgs = exp.firstElementChild!.querySelectorAll('svg');
+    expect(svgs[0].innerHTML).toBe(expSvgs[0].innerHTML);
+    expect(svgs[1].innerHTML).not.toBe(expSvgs[1].innerHTML);
+  });
+
+  test('bookmark-jump 는 합성 아이콘(책갈피 본체+58% 화살표) — 지정·표시 bookmark 와 별개', () => {
+    expect(iconOf('bookmark-jump')).toBe(BookmarkJumpIcon);
+    expect(iconOf('bookmark')).toBe(FaBookmark);
+    const { container } = render(<BookmarkJumpIcon size={18} />);
+    const wrap = container.firstElementChild as HTMLElement;
+    expect(wrap.tagName).toBe('SPAN');
+    const svgs = wrap.querySelectorAll('svg');
+    expect(svgs).toHaveLength(2);
+    expect(svgs[0].getAttribute('width')).toBe('18');
+    expect(svgs[1].getAttribute('width')).toBe('10');
+    expect(svgs[1].getAttribute('aria-hidden')).toBe('true');
+    const { container: c2 } = render(<BookmarkJumpIcon />);
+    const badge = c2.querySelectorAll('svg')[1] as unknown as HTMLElement;
+    expect(badge.getAttribute('width')).toBe('0.58em');
+    expect(badge.style.right).toBe('-0.32em');
+    expect(badge.style.bottom).toBe('-0.18em');
   });
 
   test('사전에 없는 id 는 undefined(퀵 메뉴는 번개로 대신)', () => {

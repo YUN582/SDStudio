@@ -102,8 +102,6 @@ export interface Config {
   /** 켜면 PC 씬 툴바 버튼을 예전처럼 텍스트로 표시(레거시). 기본 false = 아이콘+툴팁.
    *  모바일 아이콘 축약에는 영향 없음(모바일 텍스트 복원은 클래식 툴바가 담당). */
   sceneToolbarLegacyText?: boolean;
-  /** Show shortcut help when the app starts. Default false. */
-  showShortcutHelpOnStartup?: boolean;
   /** 퀵 메뉴 구성(전역 액션 id 목록, globalActions 참조). 미설정 = 추천 기본 프리셋.
    *  stale id 는 해석 시 조용히 무시(uiToolbar 선례). */
   quickMenu?: string[];
@@ -192,6 +190,16 @@ export interface Config {
   // 최하단의 아이콘 한 줄로 정리한다(존재하는 버튼만 — 워크플로우별 상이).
   // 미설정/false = 현행 세로 넓은 버튼 그대로(롤백 안전). PC·모바일 공용.
   uiPresetIconRow?: boolean;
+  // PC 툴바 버튼 이름 표시(2026-11-18) — 씬 툴바·이미지 그리드 머리줄의 아이콘 버튼 아래 작은 이름.
+  // 미설정/true = 켬(기본, 저장값이 없던 기존 사용자도 켬), false = 끔(종전 아이콘만). 모바일은 값과 무관하게 이름 없음.
+  uiToolbarButtonNames?: boolean;
+  // 시작 시 씬 단축키 도움말 패널 표시(2026-11-22, PC 전용) — 미설정/false = 닫힌 채 시작(기본), true = 열린 채 시작.
+  // 앱이 시작해 설정을 처음 읽을 때 한 번만 반영한다(models/shortcutHelpStartup.ts). 실행 중 여닫음은 저장하지 않는다.
+  showShortcutHelpOnStartup?: boolean;
+  // PC 화면 배율(시험 기능, 2026-11-19) — 100·95·90·85·80·75(%). 미설정·허용 밖 값 = 100%(종전 그대로).
+  // main 이 Electron 창 배율로 적용(창 생성·문서 로드·set-config 때). Android 는 읽지 않는다. 기기별 값이라
+  // 환경설정 내보내기 제외(configSync CONFIG_SYNC_EXCLUDED). 허용 목록·정규화 단일 출처 shared/uiZoom.ts.
+  uiZoomPercent?: number;
   // 동반 슬롯(L3-1 → E2) — 프리셋 에디터 "호스트 행" 옆에 붙일 전역(portable) 툴바 버튼.
   // 키 = hostKey(wfiElementKey 안정 키, 예 'characterPrompts'·'vibes'·'characterReferences'
   // ·'sampling-group'), 값 = 붙일 버튼 id 목록(uiLayout.ts portable 버튼 id, 예

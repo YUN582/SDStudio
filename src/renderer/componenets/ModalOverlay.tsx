@@ -60,11 +60,22 @@ interface ModalOverlayProps {
 const OVERLAY_FOOTER_BAR_CLASS = 'flex-none flex items-center gap-2 px-5 py-3 border-t line-color';
 
 // 창 닫기 ✕ 모양 — 래퍼 머리줄 ✕ 와 직접 만든 창·패널(이미지 검수·단축키 도움말·작업 목록)의 ✕ 가 같은 클래스·아이콘
-// 크기를 쓴다(단일 출처, 2026-11-15 PC UX 결함 C2). 다크 hover 짝(dark:hover:bg-slate-600)을 포함 — 작업 목록 ✕ 가
-// 다크에서 hover 시 사라지던 결함(S1)을 같이 없앤다. 래퍼 DOM 은 종전과 같다.
+// 크기를 쓴다(단일 출처, 2026-11-15 PC UX 결함 C2). hover 바탕은 덮개 토큰 --c-hover(UI 정돈 그룹 2-a — 종전 gray-200 은
+// 창 배경 위에서 거의 안 보였다. 라이트·다크 짝을 토큰이 처리해 작업 목록 ✕ 가 다크 hover 에서 사라지던 결함 S1 도 계속 없음).
+// 래퍼 DOM 은 종전과 같다.
 export const OVERLAY_CLOSE_BUTTON_CLASS =
-  'p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-muted transition-colors';
+  'p-1 rounded hover:bg-[var(--c-hover)] text-muted transition-colors';
 export const OVERLAY_CLOSE_ICON_SIZE = 16;
+
+// 창의 확정·취소 버튼 모양(UI 정돈 그룹 2-b — 종전 세 모양: 일반 창 바닥줄 8px 사각·확인 창 알약 반투명·만료 창 4px 사각).
+// 확정 = 솔리드(btn-solid-*) 알약, 취소·닫기 = btn-neutral 알약. 반경은 .r-btn(모던 알약 · 클래식 마감은 병기한 rounded 4px),
+// 높이·글자는 종전 일반 창 바닥줄 값(px-4 py-2 text-sm). .dialog-btn = 누르는 동안 어둡게(App.css — 확인 창 clickable 의 누름 표시 대체).
+// 확정 색이 하늘·빨강이 아닌 자리(주황·초록·보라 등)는 DIALOG_SOLID_BTN 뒤에 btn-solid-{색} 을 호출부가 붙인다.
+// 배치용 유틸(flex-1·min-w-* 등)은 상수 뒤에 덧붙인다. 순서·문구·동작은 자리마다 그대로.
+export const DIALOG_SOLID_BTN = 'dialog-btn px-4 py-2 rounded r-btn text-sm font-medium transition-colors';
+export const DIALOG_PRIMARY_BTN = `${DIALOG_SOLID_BTN} btn-solid-sky`;
+export const DIALOG_DANGER_BTN = `${DIALOG_SOLID_BTN} btn-solid-red`;
+export const DIALOG_SECONDARY_BTN = 'dialog-btn px-4 py-2 rounded r-btn btn-neutral text-body text-sm transition-colors';
 
 const ModalOverlay = ({
   isOpen,

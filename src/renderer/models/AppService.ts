@@ -22,6 +22,7 @@ import {
   zipService,
 } from '.';
 import { setAppState } from './appStateRef';
+import { createProjectFlow, defaultProjectCreateFlowDeps } from './projectCreateFlow';
 import { resolveToastKind, ToastKind } from './toastKind';
 import { confirmViaDialog } from './confirmKeys';
 import { NAME_INPUT_TEXT, nameErrorMessage, projectNameRules, promptName } from './nameInput';
@@ -39,6 +40,17 @@ import type { GlobalPresetType, IGlobalPresetEntry } from './GlobalPresetService
 import { SUPPORTED_GLOBAL_PRESET_TYPES } from './GlobalPresetService';
 import { isOutputImageFile, isImportImageMime } from './imageFormats';
 import { projectPath } from './projectPaths';
+import { isTarFileName } from './backupKind';
+import { withCompanionDefaults } from './companionSlots';
+import { ImageViewOrder, readImageViewOrder, writeImageViewOrder } from './imageOrderSort';
+import { readImageDetailInfoOpen, writeImageDetailInfoOpen } from './imageDetailInfoOpen';
+import {
+  IMAGE_GRID_SIZE_STORAGE_KEY,
+  SCENE_CARD_SIZE_STORAGE_KEY,
+  normalizeSizePercent,
+  readSizePercent,
+  writeSizePercent,
+} from './sizeSlider';
 import { V2_SHEET_CLOSE_EVENT } from './uiEvents';
 import { ARTIST_LIBRARY_TAB_ACTION } from './ArtistLibraryService';
 import { Dialog, DialogItem } from '../componenets/ConfirmWindow';
@@ -86,6 +98,7 @@ import { v4 } from 'uuid';
 import { Resolution, resolutionMap } from '../backends/imageGen';
 import { ProgressDialog } from '../componenets/ProgressWindow';
 import { migratePieceLibrary } from './legacy';
+import { appliedCharacterPresetNameOf, appliedCharacterPresetOf } from './appliedCharacterPreset';
 import {
   EMPTY_SCENE_SELECTION,
   SceneKind,
@@ -175,12 +188,8 @@ export class AppState {
   /** 현재 적용된 캐릭터 프리셋 이름 (shared에서 읽음 — 영속화됨).
    *  다중 적용(W4) 이후엔 "마지막 적용" 표시용 잔존 — 목록은 appliedCharacterPresetNames 사용 */
   get appliedCharacterPreset(): string | undefined {
-    const session = this.curSession;
-    if (!session) return undefined;
-    const workflowType = session.selectedWorkflow?.workflowType;
-    if (!workflowType) return undefined;
-    const shared = session.presetShareds.get(workflowType);
-    return shared?._appliedPresetName || undefined;
+    // 세션별 판정 단일 출처(appliedCharacterPreset.ts — 폴더 일괄 이미지 내보내기도 같은 규칙, 2026-11-16 M5 b-2)
+    return appliedCharacterPresetNameOf(this.curSession);
   }
 
   /** 현재 적용된 캐릭터 프리셋 이름 목록(W4 다중 적용).
@@ -312,6 +321,21 @@ export class AppState {
   // 화이트리스트·해석은 resolveCompanionButtons(companionSlots.ts) 단일 출처. 로드는
   // App.tsx. (쓰기 API 는 L3-3 ConfigScreen 소관 — 이번 단계는 읽기 배선만.)
   @observable accessor uiCompanionSlots: Record<string, string[]> = {};
+  // 화면이 읽는 동반 슬롯 = 저장값 + PC 기본 동반 배치(프롬프트조각 → 사전세팅선택 행, 2026-11-22).
+  // 화면 해석(호스트 행 버튼·툴바 제외 집합)은 이것을 읽는다. 편집(assign/removeCompanion)의 입력과 쓰기는 저장값
+  // uiCompanionSlots — 기본 배치는 가상 적용이라 사용자가 그 버튼(프롬프트조각)을 직접 옮길 때만 저장에 적힌다
+  // (withCompanionDefaults). 프리셋 패널을 접어 둔 동안은 호스트 행이 없으므로 기본 배치를 쉬어 툴바에 남긴다.
+  get companionSlotsView(): Record<string, string[]> {
+    return (
+      withCompanionDefaults(this.uiCompanionSlots, {
+        isMobile,
+        template: this.uiLayoutTemplate,
+        toolbar: this.uiToolbar,
+        legacyWorkflowMode: this.legacyWorkflowMode,
+        presetPanelHidden: this.leftPanelCollapsed,
+      }) ?? {}
+    );
+  }
 
   // 레이아웃 템플릿 id(config.uiLayoutTemplate 미러). 기본 'classic'.
   // 배치 해석은 resolveLayout(layoutTemplates.ts) 단일 출처.
@@ -324,6 +348,9 @@ export class AppState {
   // 프리셋 패널 버튼 하단 아이콘 행(config.uiPresetIconRow 미러). 기본 false = 현행
   // 세로 넓은 버튼. 소비는 PreSetEdtior.tsx(PresetRootRender), 로드는 App.tsx.
   @observable accessor uiPresetIconRow: boolean = false;
+  // PC 툴바 버튼 이름 표시(config.uiToolbarButtonNames 미러, 미설정 = 켬). 소비는 SceneQueueControl·ResultViewer
+  // (componenets/ToolbarButtonName.tsx), 로드는 App.tsx.
+  @observable accessor uiToolbarButtonNames: boolean = true;
   // 모바일 V2: 퀵 생성 탭이 하단 바 자리를 [생성][해상도]로 쓰는 동안 true(큐용 하단 바 숨김). models/mobileV2.ts
   @observable accessor mobileV2QuickBar: boolean = false;
   // 모바일 V2: 하단 시트 프롬프트가 열려 있는 동안 true. 드로어 손잡이·가장자리 스와이프가 물러난다(MobilePromptSheet).
@@ -400,6 +427,8 @@ export class AppState {
   lastExportSelected?: GenericScene[];
   lastExportImages?: ReadonlyMap<GenericScene, readonly string[]>;
   lastExportSession?: Session;
+  /** 마지막 내보내기가 그리드 「선택한 이미지 내보내기」였으면 그 고른 이미지(씬 단위 내보내기면 undefined) */
+  lastExportPicked?: import('./pickedImageExport').ExportImagePick<GenericScene>;
 
   // 모달 오버레이 카운터 (열린 ModalOverlay 수 추적)
   @observable accessor modalOverlayCount: number = 0;
@@ -585,36 +614,11 @@ export class AppState {
   }
 
   // 신규 프로젝트 생성 — 진입점(프로젝트 툴바 bar/sidebar 등)이 공유하는 전역 액션.
-  // 이름 입력 다이얼로그 + 템플릿 선택까지 여기서 처리한다 (SessionSelect 로컬에서 이관).
+  // 공용 흐름(models/projectCreateFlow.ts, 서랍·탐색 창과 같은 흐름) — 상단 버튼은 항상 미분류로 만들고
+  // 폴더 기본 템플릿을 적용하지 않는다(2026-11-18 사용자 결정).
   @action
   addSession() {
-    (async () => {
-      // 이름 규칙·중복은 입력 창 안에서 검사(models/nameInput — 실패해도 창 유지)
-      const inputValue = await promptName({
-        title: '신규 프로젝트 이름을 입력해주세요',
-        ...projectNameRules(sessionService),
-      });
-      if (!inputValue) return;
-      const tplId = await projectTemplateService.pickForCreate();
-      if (tplId === undefined) return; // 사용자가 템플릿 선택을 취소
-      try {
-        if (tplId) {
-          await sessionService.createSessionFromProjectTemplate(
-            tplId,
-            inputValue,
-          );
-        } else {
-          await sessionService.add(inputValue);
-        }
-        const newSession = (await sessionService.get(inputValue))!;
-        this.curSession = newSession;
-      } catch (e: any) {
-        this.pushMessage(
-          nameErrorMessage(e, 'project', inputValue, '프로젝트 생성에 실패했습니다.'),
-          'error',
-        );
-      }
-    })();
+    void createProjectFlow(defaultProjectCreateFlowDeps());
   }
 
   // 현재 프로젝트 삭제(휴지통으로 이동) — 전역 액션 (SessionSelect 로컬에서 이관).
@@ -923,6 +927,55 @@ export class AppState {
     localStorage.setItem('sdstudio-history-columns', String(this.historyColumns));
   }
 
+  // 이미지 그리드 보기 순서(2026-11-22) — 앱 전체 하나, 히스토리 열 수와 같은 localStorage 화면 보기 설정.
+  // 보여 주는 순서만 바꾸고 데이터는 쓰지 않는다(models/imageOrderSort.ts).
+  @observable accessor imageViewOrder: ImageViewOrder = readImageViewOrder(
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+  );
+
+  @action
+  setImageViewOrder(mode: ImageViewOrder) {
+    this.imageViewOrder = mode;
+    writeImageViewOrder(typeof localStorage === 'undefined' ? undefined : localStorage, mode);
+  }
+
+  // 이미지 상세 보기 「이미지 정보」 펼침(2026-11-23 사용자 결정) — 앱 전체 하나, 보기 순서와 같은 localStorage 화면 보기 설정.
+  // 기본 접힘. PC 넓은 폭·좁은 폭 클래식·모바일 V2 가 같은 값을 쓴다(models/imageDetailInfoOpen.ts).
+  @observable accessor imageDetailInfoOpen: boolean = readImageDetailInfoOpen(
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+  );
+
+  @action
+  setImageDetailInfoOpen(open: boolean) {
+    this.imageDetailInfoOpen = open;
+    writeImageDetailInfoOpen(typeof localStorage === 'undefined' ? undefined : localStorage, open);
+  }
+
+  // 크기 슬라이더(2026-11-23 사용자 결정) — 0~100%, 50 = 종전 미디엄. 각각 앱 전체 하나, 보기 순서와 같은 localStorage 화면 보기 설정
+  // (config.json·환경설정 내보내기 아님). 씬 카드 = 이미지생성·이미지변형 탭 공용(PC), 이미지 그리드 = PC 만(모바일 S/M/L 은 기억 안 함).
+  // % → 실제 크기 규칙은 models/sizeSlider.ts.
+  @observable accessor sceneCardSizePercent: number = readSizePercent(
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+    SCENE_CARD_SIZE_STORAGE_KEY,
+  );
+
+  @action
+  setSceneCardSizePercent(percent: number) {
+    this.sceneCardSizePercent = normalizeSizePercent(percent);
+    writeSizePercent(typeof localStorage === 'undefined' ? undefined : localStorage, SCENE_CARD_SIZE_STORAGE_KEY, this.sceneCardSizePercent);
+  }
+
+  @observable accessor imageGridSizePercent: number = readSizePercent(
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+    IMAGE_GRID_SIZE_STORAGE_KEY,
+  );
+
+  @action
+  setImageGridSizePercent(percent: number) {
+    this.imageGridSizePercent = normalizeSizePercent(percent);
+    writeSizePercent(typeof localStorage === 'undefined' ? undefined : localStorage, IMAGE_GRID_SIZE_STORAGE_KEY, this.imageGridSizePercent);
+  }
+
   // 모바일 우측 히스토리 드로어 (비영속)
   @observable accessor historyDrawerOpen: boolean = false;
 
@@ -1052,8 +1105,9 @@ export class AppState {
   }
 
   handleFile(file: File) {
-    if (file.name.endsWith('.tar')) {
-      // tar 파일 — 프로젝트 백업 불러오기
+    // 확장자는 대소문자를 가리지 않는다(.TAR·.Tar — 2026-11-22). 확장자가 없거나 다른 파일을 백업으로 추정해 풀지는 않는다.
+    if (isTarFileName(file.name)) {
+      // tar 파일 — 백업 불러오기(전체·폴더·프로젝트 백업을 handleTarImport 가 가린다)
       const filePath = (file as any).path;
       if (!filePath) {
         this.pushMessage('tar 파일 경로를 가져올 수 없습니다');
@@ -1381,7 +1435,8 @@ export class AppState {
 
 
   // ── 백업/내보내기/가져오기: BackupService 로 분리됨 (UI 호환 위임) ──
-  projectBackupMenu() { return backupService.projectBackupMenu(); }
+  projectImportMenu() { return backupService.projectImportMenu(); }
+  projectExportMenu() { return backupService.projectExportMenu(); }
   duplicateProject() { return backupService.duplicateProject(); }
   deleteFolderWithProjects(folder: string) { return backupService.deleteFolderWithProjects(folder); }
   folderBackupMenu(folder: string) { return backupService.folderBackupMenu(folder); }
@@ -1853,10 +1908,7 @@ export class AppState {
    * @returns 현재 적용된 CharacterPreset 객체 또는 undefined
    */
   getAppliedCharacterPreset(): CharacterPreset | undefined {
-    if (!this.curSession || !this.appliedCharacterPreset) {
-      return undefined;
-    }
-    return this.curSession.getCharacterPreset(this.appliedCharacterPreset);
+    return appliedCharacterPresetOf(this.curSession);
   }
 
   /**

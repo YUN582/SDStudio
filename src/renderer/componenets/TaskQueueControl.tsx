@@ -411,18 +411,15 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
         <span className="sr-only md:not-sr-only whitespace-nowrap text-default">개수:</span>
         <input
           aria-label="생성 개수"
-          min={1}
-          max={99}
-          className={'ml-1 md:ml-2 p-1 w-10 md:w-16 text-center gray-input'}
+          min={SAMPLE_COUNT_MIN}
+          max={SAMPLE_COUNT_MAX}
+          className={'ml-1 md:ml-2 p-1 w-10 md:w-16 md:h-8 text-center gray-input'}
           type="number"
           value={appState.samples}
           onChange={(e: any) => {
             // parseInt 는 비숫자에서 NaN 을 반환하고 ??/Math.min 은 NaN 을 거르지
-            // 못한다 — NaN 이 samples 에 들어가면 큐 통계가 영구 오염된다.
-            const num = parseInt(e.currentTarget.value, 10);
-            appState.samples = Number.isFinite(num)
-              ? Math.max(1, Math.min(99, num))
-              : 1;
+            // 못한다 — NaN 이 samples 에 들어가면 큐 통계가 영구 오염된다(판정 = models/sampleCount, 퀵 생성 장수와 공용).
+            appState.samples = parseSampleCount(e.currentTarget.value);
           }}
         />
         <UndoInlineSlot />
@@ -493,3 +490,4 @@ const TaskQueueControl = observer(({queueCurrent,queueDisabled=false}: QueueCont
 });
 
 export default TaskQueueControl;
+import { SAMPLE_COUNT_MIN, SAMPLE_COUNT_MAX, parseSampleCount } from '../models/sampleCount';

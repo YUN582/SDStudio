@@ -1,7 +1,15 @@
 import React from 'react';
 import { isMobile, backend } from '../models';
 import { buildImageOptimizeOptions } from '../models/platform';
-import { ExportFormState } from '../models/exportSettings';
+import {
+  DEFAULT_FOLDER_EXPORT_TARGET,
+  DirectExportScope,
+  ExportFormState,
+  FOLDER_EXPORT_TARGET_OPTIONS,
+  FOLDER_EXPORT_VARIANT_DIR,
+  FolderExportTarget,
+  isExportFieldShown,
+} from '../models/exportSettings';
 import { DropdownSelect } from './UtilComponents';
 import { FaFolderOpen } from 'react-icons/fa';
 const menuOptions = [
@@ -47,7 +55,8 @@ const FieldRow = ({ label, stacked, children }: {
     </div>
   );
 
-export default function ExportSettingsFields({ form, setForm, direct = false, twoColumn = false, fixedImageSelection = false }: {
+export default function ExportSettingsFields({ form, setForm, direct = false, twoColumn = false, fixedImageSelection = false, scope = fixedImageSelection ? 'images' : 'project' }: {
+  scope?: import('../models/exportSettings').DirectExportScope;
   form: ExportFormState;
   setForm: React.Dispatch<React.SetStateAction<ExportFormState>>;
   direct?: boolean;
@@ -57,6 +66,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
   twoColumn?: boolean;
 }) {
   const optOptions = buildImageOptimizeOptions().map(({ text, value }) => ({ label: text, value }));
+  const shown = (key: Parameters<typeof isExportFieldShown>[0]) => isExportFieldShown(key, scope);
   const selectTargetFolder = async () => {
     const folder = await backend.selectDir();
     if (folder) setForm((current) => ({ ...current, targetFolder: folder }));
@@ -67,7 +77,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
     data-export-fields-columns={twoColumn ? '2' : undefined}
   >
           {/* 이미지 범위 */}
-          {!fixedImageSelection && <FieldRow label="이미지 범위 *" stacked={twoColumn}>
+          {!fixedImageSelection && shown('menu') && <FieldRow label="이미지 범위 *" stacked={twoColumn}>
             <div className="flex-1 min-w-0">
               <DropdownSelect
                 selectedOption={form.menu}
@@ -89,7 +99,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
           </FieldRow>
 
           {/* 파일명 패턴 (프로젝트/폴더 접두) */}
-          <FieldRow label="파일명 패턴" stacked={twoColumn}>
+          {shown('filenamePattern') && <FieldRow label="파일명 패턴" stacked={twoColumn}>
             <div className="flex-1 min-w-0">
               <DropdownSelect
                 selectedOption={form.filenamePattern}
@@ -97,10 +107,10 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 onSelect={(o: any) => setForm({ ...form, filenamePattern: o.value })}
               />
             </div>
-          </FieldRow>
+          </FieldRow>}
 
           {/* 출력 형태 (tar / 개별 파일) */}
-          <FieldRow label="출력 형태" stacked={twoColumn}>
+          {shown('outputMode') && <FieldRow label="출력 형태" stacked={twoColumn}>
             <div className="flex-1 min-w-0">
               <DropdownSelect
                 selectedOption={form.outputMode}
@@ -108,7 +118,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 onSelect={(o: any) => setForm({ ...form, outputMode: o.value })}
               />
             </div>
-          </FieldRow>
+          </FieldRow>}
 
           {/* 캐릭터 이름 (format=prefix 시) */}
           {form.format === 'prefix' && (
@@ -118,23 +128,23 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 value={form.prefix}
                 onChange={(e) => setForm({ ...form, prefix: e.target.value })}
                 placeholder="캐릭터 이름"
-                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
               />
             </FieldRow>
           )}
 
           {/* 캐릭터 프리셋 접두/접미사 적용 토글 */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          {shown('applyCharacterAffix') && <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={!!form.applyCharacterAffix}
               onChange={(e) => setForm({ ...form, applyCharacterAffix: e.target.checked })}
-              className="w-4 h-4 accent-sky-500"
+              className="setting-check"
             />
             <span className="text-sm text-default">
               캐릭터 프리셋 접두사/접미사 적용
             </span>
-          </label>
+          </label>}
 
           {/* 최적화 방법 */}
           <FieldRow label="최적화 *" stacked={twoColumn}>
@@ -155,14 +165,14 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 value={form.imageSize}
                 onChange={(e) => setForm({ ...form, imageSize: Number(e.target.value) })}
                 placeholder="1024"
-                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
               />
               <span className="text-xs text-faint">px</span>
             </FieldRow>
           )}
 
           {/* 압축 화질 (lossy/avif 시) — 픽셀 크기와 별개 축(해상도 vs 압축 강도) */}
-          {(form.opt === 'lossy' || form.opt === 'avif') && (
+          {shown('quality') && (form.opt === 'lossy' || form.opt === 'avif') && (
             <FieldRow label="화질" stacked={twoColumn}>
               <input
                 type="number"
@@ -173,20 +183,20 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                   setForm({ ...form, quality: e.target.value === '' ? '' : Number(e.target.value) })
                 }
                 placeholder={form.opt === 'avif' ? '50' : '80'}
-                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                className="flex-1 min-w-0 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
               />
               <span className="text-xs text-faint">1~100</span>
             </FieldRow>
           )}
 
           {/* NAI 스테가노그래피 보존 (webp: lossy/lossless 시) */}
-          {(form.opt === 'lossy' || form.opt === 'lossless') && (
+          {shown('preserveStealth') && (form.opt === 'lossy' || form.opt === 'lossless') && (
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={!!form.preserveStealth}
                 onChange={(e) => setForm({ ...form, preserveStealth: e.target.checked })}
-                className="w-4 h-4 accent-sky-500"
+                className="setting-check"
               />
               <span className="text-sm text-default">
                 NAI 스테가노그래피 보존 (NAI 인스펙터 인식 유지, 처리 느려짐)
@@ -201,7 +211,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
               value={form.separator}
               onChange={(e) => setForm({ ...form, separator: e.target.value })}
               placeholder="비워두면 구분자 없음"
-              className="flex-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              className="flex-1 px-3 py-1.5 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
             />
           </FieldRow>
 
@@ -211,7 +221,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
               type="checkbox"
               checked={!!form.autoConvertSeparator}
               onChange={(e) => setForm({ ...form, autoConvertSeparator: e.target.checked })}
-              className="w-4 h-4 accent-sky-500"
+              className="setting-check"
             />
             <span className="text-sm text-default">
               특수문자 묻지 않고 구분자로 자동 변환
@@ -219,7 +229,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
           </label>
 
           {/* 목표 폴더 (데스크톱 전용 — 모바일은 임의 폴더 저장 미지원) */}
-          {!isMobile && (
+          {!isMobile && shown('targetFolder') && (
             <div className="space-y-2 border-t line-color pt-3 col-span-full">
               <div className="text-xs text-muted">
                 내보내기 목표 폴더 (비우면 환경설정 기본 폴더, 둘 다 없으면 다운로드 폴더 사용)
@@ -230,7 +240,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
               <div className="flex gap-2">
                 <button
                   onClick={selectTargetFolder}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded border line-color text-sm text-body hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded border line-color text-sm text-body hover-row transition-colors"
                 >
                   <FaFolderOpen size={12} />
                   폴더 선택
@@ -238,7 +248,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                 {form.targetFolder && (
                   <button
                     onClick={() => setForm({ ...form, targetFolder: '' })}
-                    className="px-3 py-1.5 rounded border line-color text-sm text-muted hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+                    className="px-3 py-1.5 rounded border line-color text-sm text-muted hover-row transition-colors"
                   >
                     지우기
                   </button>
@@ -249,7 +259,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
                   type="checkbox"
                   checked={!!form.useProjectRelativePath}
                   onChange={(e) => setForm({ ...form, useProjectRelativePath: e.target.checked })}
-                  className="w-4 h-4 accent-sky-500"
+                  className="setting-check"
                 />
                 <span className="text-sm text-default">
                   프로젝트 폴더 경로로 하위 폴더 생성
@@ -258,7 +268,7 @@ export default function ExportSettingsFields({ form, setForm, direct = false, tw
             </div>
           )}
 
-    {form.opt !== 'original' && <FieldRow label="재최적화" stacked={twoColumn}>
+    {shown('reoptimize') && form.opt !== 'original' && <FieldRow label="재최적화" stacked={twoColumn}>
       <div className="flex-1 min-w-0"><DropdownSelect selectedOption={form.reoptimize}
         options={[
           { value: 'skip', label: '이미 최적화된 이미지는 원본 유지' },

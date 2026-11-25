@@ -1,6 +1,7 @@
 import { projectAuxiliaryDir } from '../models/projectAuxiliaryPaths';
 import { MobileV2Parts, normalizeV2Parts } from '../models/mobileV2';
 import { isWeightSpacingFixEnabled } from '../models/promptWeightSpacingFlow';
+import { collectProjectFastcacheDirs } from '../models/imageCacheClear';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { HScrollHintArrow, useHScrollHint } from './HScrollHint';
 import {
@@ -12,7 +13,6 @@ import {
   sessionService,
 } from '../models';
 import { Config, ImageEditor, RemoveBgQuality, UiThemeConfig, UiToolbarConfig } from '../../main/config';
-import { platform } from '../models/platform';
 import { defaultLayoutTemplateId } from '../models/layoutTemplates';
 import {
   MODERN_COMPANION_DEFAULTS,
@@ -45,7 +45,7 @@ import {
 import { ActionIcon } from './ActionIcon';
 import { useBackLayer } from '../models/BackStackService';
 import { useBackdropClose, useGuardedClose } from './backdropClose';
-import ModalOverlay, { scrollOverlayBodyToTop } from './ModalOverlay';
+import ModalOverlay, { scrollOverlayBodyToTop, DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import OpusUsageMeter, { OpusUsageHelp } from './OpusUsageMeter';
 import { useOpusUsage } from './OpusUsageBadge';
 import OpusUsageQuietToggle from './OpusUsageQuietToggle';
@@ -57,7 +57,8 @@ import DriveSettingsTab from './DriveSettingsTab';
 import KeyBindingsTab from './ConfigKeyBindingsTab';
 import PersonalTab from './ConfigPersonalTab';
 import SystemTab from './ConfigSystemTab';
-import StorageImageTab, { RecoveryTab } from './ConfigStorageTab';
+import StorageImageTab, { CUSTOM_IMAGE_EDITOR_TEXT, RecoveryTab, resolveImageEditorChoice } from './ConfigStorageTab';
+import { platform } from '../models/platform';
 import CustomizationTab from './ConfigThemeTab';
 import LayoutTab, { ToolbarTab } from './ConfigLayoutTab';
 import type {
@@ -91,6 +92,9 @@ import {
   sameBoostSettings,
 } from '../models/boostMode';
 import { useBoostAccountLock } from './boostAccountLock';
+import Tooltip from './Tooltip';
+import { SettingCheckRow, SettingField, SettingGroup } from './SettingControls';
+import { normalizeUiZoomPercent, uiZoomPercentForSave, UiZoomPercent } from '../../shared/uiZoom';
 
 // PC 에서 섹션 단위 2단 흐름(cfg-two-col)을 쓰는 탭 key — 칸이 많고 세로로만 쌓이던 탭(2026-11-11 오버레이 묶음 1).
 // 로그인(안내 박스)·레이아웃(템플릿 그림 고르기)·저장 경로(긴 경로)·드라이브·단축키(표)는 한 열 유지.
@@ -370,15 +374,17 @@ const LoginTab = ({
     }
   };
 
+  // 묶음 상자(2026-11-20 UI 정돈 그룹 1-a): API 토큰으로 로그인 / (상자 밖) 토큰 발급 방법 안내 / Opus 할당량 안내 / 여러 토큰 / 부스트 모드.
+  // 항목·순서·문구·id·저장 방식은 그대로, 구분선(hr) 대신 상자. 체크 = SettingCheckRow(「저장」 반영), 할당량 경고 = 스위치(즉시 저장).
+  // 「여러 토큰」 안의 자동 순회 하위 상자는 기존 상자 그대로 둔다(묶음 안에 묶음을 만들지 않음).
   return (
     <div className="space-y-5">
-      <div>
-        <label className="block text-sm font-semibold gray-label mb-2">
-          API 토큰으로 로그인
-        </label>
+      <SettingGroup title="API 토큰으로 로그인">
+       <SettingField>
         <div className="flex gap-2 mb-2">
           <input className="gray-input block flex-1" type="password"
             placeholder="API 토큰을 붙여넣으세요"
+            aria-label="API 토큰"
             value={accessToken} onChange={(e) => setAccessToken(e.target.value)} />
         </div>
         <div className="flex items-center">
@@ -399,9 +405,9 @@ const LoginTab = ({
             {switchLocked}
           </p>
         )}
-      </div>
-      <hr className="line-color" />
-      {/* 토큰 발급/로그인 가이드 */}
+       </SettingField>
+      </SettingGroup>
+      {/* 토큰 발급/로그인 가이드 — 안내문 상자라 묶음으로 감싸지 않는다 */}
       <div className="rounded-lg border line-color bg-gray-50 dark:bg-slate-700/40 p-4 text-sm text-body">
         <p className="font-medium mb-1">토큰 발급 방법</p>
         <ol className="list-decimal list-inside space-y-1 mb-3 leading-relaxed text-body">
@@ -426,22 +432,17 @@ const LoginTab = ({
         </ol>
       </div>
 
-      <hr className="line-color" />
-      <div className="space-y-2">
-        <p className="text-sm font-semibold gray-label">Opus 할당량 안내</p>
-        <div className="rounded-lg border line-color bg-[var(--c-surface-2)] p-3">
-          {/* 할당량 상세 창(상단 배지)의 토글과 같은 값 — 바꾸는 즉시 저장된다. */}
-          <OpusUsageQuietToggle id="cfgOpusUsageQuiet" />
-        </div>
-      </div>
+      <SettingGroup title="Opus 할당량 안내">
+        {/* 할당량 상세 창(상단 배지)의 토글과 같은 값 — 바꾸는 즉시 저장된다(스위치). 안쪽 상자는 묶음과 겹쳐 뺐다. */}
+        <OpusUsageQuietToggle id="cfgOpusUsageQuiet" />
+      </SettingGroup>
 
-      <hr className="line-color" />
-      <div className="space-y-3">
+      <SettingGroup title="여러 토큰">
+       <SettingField className="space-y-3">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold gray-label">여러 토큰</p>
             <button
-              className="btn back-sky rounded px-3 py-1.5 text-xs ml-auto flex-none whitespace-nowrap"
+              className="btn back-sky rounded px-3 py-1.5 text-xs flex-none whitespace-nowrap"
               disabled={profileBusy || profiles.length === 0}
               onClick={checkProfileUsages}
             >
@@ -458,33 +459,32 @@ const LoginTab = ({
           표시되지 않지만, 공용 기기에서는 저장하지 마세요.
         </div>
         <div className="rounded-lg border line-color bg-[var(--c-surface-2)] p-3 space-y-3">
-          <div className="flex items-center gap-2">
-            <input
+          {/* 체크 줄의 안쪽 여백만큼 당겨 하위 상자 안 다른 글자와 체크 상자의 왼쪽을 맞춘다 */}
+          <div className="-mx-2.5">
+            <SettingCheckRow
               id="cfgMultiTokenAutoRotate"
-              type="checkbox"
               checked={multiTokenAutoRotate}
               disabled={!profilesReady || profiles.length < 2 || boostLock.rotationBlocked}
-              onChange={(e) => setMultiTokenAutoRotate(e.target.checked)}
+              onChange={setMultiTokenAutoRotate}
+              label="V5 할당량 기반 자동 순회"
+              description={
+                <>
+                  {boostLock.rotationBlocked && (
+                    <span className="block mb-1" data-boost-rotation-locked>
+                      {BOOST_TEXT.rotationLocked}
+                    </span>
+                  )}
+                  <span className="block">
+                    정상 Opus 토큰이 2개 이상 저장된 경우에만 동작합니다. 무료 할당량 대상
+                    V5 생성에서 한 장이 끝난 뒤 다음 장을 시작하기 전에 전환합니다.
+                  </span>
+                  <span className="block mt-1" data-opus-rotation-rule>
+                    {OPUS_USAGE_TEXT.rotationRule}
+                  </span>
+                </>
+              }
             />
-            <label
-              htmlFor="cfgMultiTokenAutoRotate"
-              className="text-sm font-medium text-default"
-            >
-              V5 할당량 기반 자동 순회
-            </label>
           </div>
-          {boostLock.rotationBlocked && (
-            <p className="text-xs text-muted" data-boost-rotation-locked>
-              {BOOST_TEXT.rotationLocked}
-            </p>
-          )}
-          <p className="text-xs text-muted">
-            정상 Opus 토큰이 2개 이상 저장된 경우에만 동작합니다. 무료 할당량 대상
-            V5 생성에서 한 장이 끝난 뒤 다음 장을 시작하기 전에 전환합니다.
-          </p>
-          <p className="text-xs text-muted" data-opus-rotation-rule>
-            {OPUS_USAGE_TEXT.rotationRule}
-          </p>
           <div className={multiTokenAutoRotate ? 'space-y-3' : 'space-y-3 opacity-50'}>
             <div>
               <label className="block text-xs text-body mb-1">
@@ -522,30 +522,21 @@ const LoginTab = ({
                 }
                 className="w-full"
               />
-              <p className="text-xs text-faint mt-1">
+              <p className="text-xs text-muted mt-1">
                 반복 전환을 막기 위해 경고 임계값보다 항상 5%p 이상 높게 유지됩니다.
               </p>
             </div>
-            <div className="border-t line-color pt-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <input
+            <div className="border-t line-color pt-2 space-y-2">
+              <div className="-mx-2.5">
+                <SettingCheckRow
                   id="cfgMultiTokenBalanceRotate"
-                  type="checkbox"
                   checked={multiTokenBalanceRotate}
                   disabled={!multiTokenAutoRotate}
-                  onChange={(e) => setMultiTokenBalanceRotate(e.target.checked)}
+                  onChange={setMultiTokenBalanceRotate}
+                  label="여유 할당량 균형 순회"
+                  description="느리게 회복된 다른 계정의 무료 할당량이 현재 계정보다 5%p 이상 여유로울 때 전환합니다. 후보 조회와 계정 전환은 최대 30분에 한 번만 수행합니다."
                 />
-                <label
-                  htmlFor="cfgMultiTokenBalanceRotate"
-                  className="text-xs font-medium text-default"
-                >
-                  여유 할당량 균형 순회
-                </label>
               </div>
-              <p className="text-xs text-muted">
-                느리게 회복된 다른 계정의 무료 할당량이 현재 계정보다 5%p 이상 여유로울 때 전환합니다.
-                후보 조회와 계정 전환은 최대 30분에 한 번만 수행합니다.
-              </p>
               <div className={multiTokenBalanceRotate ? '' : 'opacity-50'}>
                 <label className="block text-xs text-body mb-1">
                   균형 순회 여유 기준 — {multiTokenRotateBalance}% 이상
@@ -644,16 +635,17 @@ const LoginTab = ({
                     </span>
                   )}
                   {editingProfileId !== profile.id && (
-                    <button
-                      className="btn btn-ghost rounded p-1 text-muted flex-none"
-                      title="토큰 이름 변경"
-                      aria-label={`${profile.name} 이름 변경`}
-                      disabled={profileBusy}
-                      onClick={() => startProfileRename(profile)}
-                      onDoubleClick={() => startProfileRename(profile)}
-                    >
-                      <FaPen size={14} />
-                    </button>
+                    <Tooltip content="토큰 이름 변경">
+                      <button
+                        className="btn btn-ghost rounded p-1 text-muted flex-none"
+                        aria-label={`${profile.name} 이름 변경`}
+                        disabled={profileBusy}
+                        onClick={() => startProfileRename(profile)}
+                        onDoubleClick={() => startProfileRename(profile)}
+                      >
+                        <FaPen size={14} />
+                      </button>
+                    </Tooltip>
                   )}
                   {active && (
                     <span className={`${roundTag} back-green flex-none`}>사용 중</span>
@@ -683,121 +675,115 @@ const LoginTab = ({
           </div>
         )}
         <OpusUsageHelp />
-      </div>
+       </SettingField>
+      </SettingGroup>
 
-      <hr className="line-color" />
       {/* 부스트 모드(B3, PC·모바일 공통) — 값은 다른 다중 토큰 설정처럼 「저장」 때 config 에 쓴다(경고 창의
-          「다시 보지 않음」만 즉시 저장). 판정·문구 단일 출처 models/boostMode.ts. */}
-      <div className="space-y-3" data-boost-settings>
-        <div>
-          <p className="text-sm font-semibold gray-label">{BOOST_TEXT.settingsTitle}</p>
-          <p className="text-xs text-muted mt-1">{BOOST_TEXT.settingsDescription}</p>
-        </div>
-        <div className="rounded-lg border line-color bg-[var(--c-surface-2)] p-3 space-y-3">
-          <div className="flex items-center gap-2">
-            <input
-              id="cfgBoostMode"
-              type="checkbox"
-              checked={boostOn}
-              disabled={boostBusy || (!boostOn && !!boostLock.boostBlocked)}
-              onChange={(e) => void toggleBoost(e.target.checked)}
-            />
-            <label htmlFor="cfgBoostMode" className="text-sm font-medium text-default">
-              {BOOST_TEXT.settingsToggle}
-            </label>
-          </div>
-          {boostLock.boostBlocked === 'rotation' && (
+          「다시 보지 않음」만 즉시 저장). 판정·문구 단일 출처 models/boostMode.ts.
+          묶음 상자(2026-11-20) — 종전 안쪽 상자는 묶음과 이중 테두리라 하나로 합쳤다. */}
+      <div data-boost-settings>
+       <SettingGroup title={BOOST_TEXT.settingsTitle}>
+        <SettingField>
+          <p className="text-xs text-muted">{BOOST_TEXT.settingsDescription}</p>
+        </SettingField>
+        <SettingCheckRow
+          id="cfgBoostMode"
+          checked={boostOn}
+          disabled={boostBusy || (!boostOn && !!boostLock.boostBlocked)}
+          onChange={(checked) => void toggleBoost(checked)}
+          label={BOOST_TEXT.settingsToggle}
+        />
+        {boostLock.boostBlocked === 'rotation' && (
+          <SettingField>
             <p className="text-xs text-muted" data-boost-locked="rotation">
               {BOOST_TEXT.boostLockedByRotation}
             </p>
-          )}
-          {profilesReady && profiles.length < 2 && (
+          </SettingField>
+        )}
+        {profilesReady && profiles.length < 2 && (
+          <SettingField>
             <p className="text-xs text-muted" data-boost-locked="profiles">
               {BOOST_TEXT.profilesRequired}
             </p>
-          )}
-          {(() => {
-            // 켤 수 없는 상태(토큰 부족·순회 켜짐)면 방식·범위도 고를 수 없다. 꺼져 있어도 고를 수는 있다(켜면 그 값으로).
-            const areaDisabled = !boostOn && !!boostLock.boostBlocked;
-            return (
-              <div
-                className={'space-y-3 ' + (boostOn ? '' : 'opacity-60')}
-                aria-disabled={areaDisabled || undefined}
-              >
-                <fieldset className="space-y-1.5" disabled={areaDisabled}>
-                  <legend className="text-xs font-medium text-body mb-1">
-                    {BOOST_TEXT.modeHeading}
-                  </legend>
-                  {(['replicate', 'split'] as BoostActiveMode[]).map((mode) => (
-                    <label key={mode} className="flex items-start gap-2 text-xs text-default cursor-pointer">
-                      <input
-                        type="radio"
-                        name="cfgBoostActiveMode"
-                        className="mt-0.5 flex-none"
-                        checked={boostModeChoice === mode}
-                        onChange={() => chooseBoostMode(mode)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block">{BOOST_TEXT.modeLabel[mode]}</span>
-                        <span className="block text-muted">{BOOST_TEXT.modeHint[mode]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-                <fieldset className="space-y-1.5 border-t line-color pt-3" disabled={areaDisabled}>
-                  <legend className="text-xs font-medium text-body mb-1">
-                    {BOOST_TEXT.scopeHeading}
-                  </legend>
-                  {BOOST_ACCOUNT_SCOPES.map((scope) => (
-                    <label key={scope} className="flex items-start gap-2 text-xs text-default cursor-pointer">
-                      <input
-                        type="radio"
-                        name="cfgBoostScope"
-                        className="mt-0.5 flex-none"
-                        checked={boost.scope === scope}
-                        onChange={() =>
-                          setBoostSettings((cur: BoostSettings) => ({ ...cur, scope }))
-                        }
-                      />
-                      <span className="min-w-0">
-                        <span className="block">{BOOST_SCOPE_LABEL[scope]}</span>
-                        <span className="block text-muted">{BOOST_TEXT.scopeHint[scope]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-                <div className="border-t line-color pt-3 space-y-1">
-                  <div className="flex items-center gap-2">
+          </SettingField>
+        )}
+        {(() => {
+          // 켤 수 없는 상태(토큰 부족·순회 켜짐)면 방식·범위도 고를 수 없다. 꺼져 있어도 고를 수는 있다(켜면 그 값으로).
+          const areaDisabled = !boostOn && !!boostLock.boostBlocked;
+          return (
+            <div
+              className={'space-y-3 pt-1 ' + (boostOn ? '' : 'opacity-60')}
+              aria-disabled={areaDisabled || undefined}
+            >
+              <fieldset className="space-y-1.5 px-2.5" disabled={areaDisabled}>
+                <legend className="text-xs font-medium text-body mb-1">
+                  {BOOST_TEXT.modeHeading}
+                </legend>
+                {(['replicate', 'split'] as BoostActiveMode[]).map((mode) => (
+                  <label key={mode} className="flex items-start gap-2 text-xs text-default cursor-pointer">
                     <input
-                      id="cfgBoostVariantTasks"
-                      type="checkbox"
-                      checked={boost.variantTasks}
-                      disabled={areaDisabled}
-                      onChange={(e) =>
-                        setBoostSettings((cur: BoostSettings) => ({
-                          ...cur,
-                          variantTasks: e.target.checked,
-                        }))
+                      type="radio"
+                      name="cfgBoostActiveMode"
+                      className="mt-0.5 flex-none"
+                      checked={boostModeChoice === mode}
+                      onChange={() => chooseBoostMode(mode)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block">{BOOST_TEXT.modeLabel[mode]}</span>
+                      <span className="block text-muted">{BOOST_TEXT.modeHint[mode]}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <fieldset className="space-y-1.5 border-t line-color pt-3 px-2.5" disabled={areaDisabled}>
+                <legend className="text-xs font-medium text-body mb-1">
+                  {BOOST_TEXT.scopeHeading}
+                </legend>
+                {BOOST_ACCOUNT_SCOPES.map((scope) => (
+                  <label key={scope} className="flex items-start gap-2 text-xs text-default cursor-pointer">
+                    <input
+                      type="radio"
+                      name="cfgBoostScope"
+                      className="mt-0.5 flex-none"
+                      checked={boost.scope === scope}
+                      onChange={() =>
+                        setBoostSettings((cur: BoostSettings) => ({ ...cur, scope }))
                       }
                     />
-                    <label htmlFor="cfgBoostVariantTasks" className="text-xs font-medium text-default">
-                      {BOOST_TEXT.variantToggle}
-                    </label>
-                  </div>
-                  <p className="text-xs text-muted">{BOOST_TEXT.variantHint}</p>
-                </div>
-                <p className="text-xs text-body border-t line-color pt-3" data-boost-preview>
-                  {boostPreview === 'error'
-                    ? '참여 후보를 불러오지 못했습니다.'
-                    : boostPreview
-                      ? boostParticipantPreviewText(boostPreview)
-                      : '참여 후보를 불러오는 중…'}
-                </p>
+                    <span className="min-w-0">
+                      <span className="block">{BOOST_SCOPE_LABEL[scope]}</span>
+                      <span className="block text-muted">{BOOST_TEXT.scopeHint[scope]}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <div className="border-t line-color pt-1">
+                <SettingCheckRow
+                  id="cfgBoostVariantTasks"
+                  checked={boost.variantTasks}
+                  disabled={areaDisabled}
+                  onChange={(checked) =>
+                    setBoostSettings((cur: BoostSettings) => ({
+                      ...cur,
+                      variantTasks: checked,
+                    }))
+                  }
+                  label={BOOST_TEXT.variantToggle}
+                  description={BOOST_TEXT.variantHint}
+                />
               </div>
-            );
-          })()}
-          {boostOn && multiAccountWarning}
-        </div>
+              <p className="text-xs text-body border-t line-color pt-3 px-2.5" data-boost-preview>
+                {boostPreview === 'error'
+                  ? '참여 후보를 불러오지 못했습니다.'
+                  : boostPreview
+                    ? boostParticipantPreviewText(boostPreview)
+                    : '참여 후보를 불러오는 중…'}
+              </p>
+            </div>
+          );
+        })()}
+        {boostOn && <SettingField>{multiAccountWarning}</SettingField>}
+       </SettingGroup>
       </div>
     </div>
   );
@@ -838,7 +824,6 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [legacyWorkflowMode, setLegacyWorkflowMode] = useState(false);
   const [sceneToolbarLegacyText, setSceneToolbarLegacyText] = useState(false);
-  const [showShortcutHelpOnStartup, setShowShortcutHelpOnStartup] = useState(false);
   const [storageWriteGuard, setStorageWriteGuard] = useState(true);
   const [fullWordAc, setFullWordAc] = useState(appState.fullWordAutoComplete);
   const [trueDark, setTrueDark] = useState(false);
@@ -866,6 +851,11 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   const [uiLayoutTemplate, setUiLayoutTemplate] = useState(defaultLayoutTemplateId(isMobile));
   const [uiMobileV2Parts, setUiMobileV2Parts] = useState<MobileV2Parts>(normalizeV2Parts(undefined));
   const [uiPresetIconRow, setUiPresetIconRow] = useState(false);
+  const [uiToolbarButtonNames, setUiToolbarButtonNames] = useState(true);
+  // 시작 시 씬 단축키 도움말 표시(2026-11-22, PC 전용 줄, 기본 끔 — 사용자 결정). 모바일은 줄이 없고 저장값을 건드리지 않는다.
+  const [showShortcutHelpOnStartup, setShowShortcutHelpOnStartup] = useState(false);
+  // PC 화면 배율(시험 기능, 2026-11-19 — shared/uiZoom.ts). 모바일은 항목이 없고 저장값도 건드리지 않는다.
+  const [uiZoomPercent, setUiZoomPercent] = useState<UiZoomPercent>(100);
   // 모던 해제 확인(② A 2차 피드백 후속 1): 모던 → 다른 템플릿 전환 시 "배치 초기화"에
   // 동의했는지. true 면 저장 시 버튼(툴바·동반)·레이아웃 배치를 기본값으로 되돌린다.
   const [modernExitReset, setModernExitReset] = useState(false);
@@ -938,6 +928,9 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     setUiLayoutTemplate(config.uiLayoutTemplate ?? defaultLayoutTemplateId(isMobile));
     setUiMobileV2Parts(normalizeV2Parts(config.uiMobileV2Parts));
     setUiPresetIconRow(config.uiPresetIconRow ?? false);
+    setUiToolbarButtonNames(config.uiToolbarButtonNames ?? true);
+    setShowShortcutHelpOnStartup(config.showShortcutHelpOnStartup === true);
+    setUiZoomPercent(normalizeUiZoomPercent(config.uiZoomPercent));
     setUiFloatViewMode(config.uiFloatViewMode ?? 'cover');
     setUiFont(config.uiFont ?? 'system');
     setUiClassicFinish(config.uiClassicFinish ?? false);
@@ -1002,7 +995,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     return () => { appState.configScreenOpen = false; };
   }, []);
 
-  const roundTag = 'text-white text-xs px-2 py-1 rounded-full';
+  const roundTag = 'round-tag round-tag-sm';
 
   const [loggedIn, setLoggedIn] = useState(false);
   useEffect(() => {
@@ -1029,9 +1022,18 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
   const clearImageCache = async () => {
     if (!curSession) return;
     appState.pushMessage('이미지 캐시 초기화 시작');
-    for (const scene of Object.values(curSession.scenes)) {
+    // 이미지생성 씬·변형 씬의 <이미지 폴더>/fastcache 만(목록 단일 출처 models/imageCacheClear.ts, 2026-11-21 —
+    // 종전엔 Map 인 scenes 를 Object.values 로 훑어 디스크 썸네일을 하나도 지우지 못했다).
+    const session = curSession;
+    const dirs = collectProjectFastcacheDirs(session, (scene) =>
+      imageService.getOutputDir(session, scene),
+    );
+    for (const scene of [...session.getScenes('scene'), ...session.getScenes('inpaint')]) {
+      dirs.push(projectAuxiliaryDir(imageService.getOutputDir(session, scene), 'fastcache'));
+    }
+    for (const dir of new Set(dirs)) {
       try {
-        await backend.deleteDir(projectAuxiliaryDir(imageService.getImageDir(curSession, scene), 'fastcache'));
+        await backend.deleteDir(dir);
       } catch (e) {}
     }
     imageService.cache.cache.clear();
@@ -1075,22 +1077,27 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     setSyncFolder(folder);
   };
 
-  const stageTexts = ['모델 다운로드 중...', '모델 가중치 다운로드 중...', '모델 압축 푸는 중...'];
-
+  // 「사용자 지정」 편집기 실행 파일 고르기(Windows 전용 — 버튼도 그때만 보인다). 기존 파일 고르기 창(select-file)에
+  // .exe 필터만 건다. 다른 플랫폼에서는 부르지 않는다(Android 문서 선택기는 .exe 를 거를 수 없다).
   const selectCustomImageEditor = async () => {
+    if (!platform.supportsCustomImageEditor) return;
+    let picked: string | undefined;
     try {
-      const executable = await backend.selectFile({
-        filters: [{ name: '실행 파일', extensions: ['exe'] }],
+      picked = await backend.selectFile({
+        filters: [{ name: CUSTOM_IMAGE_EDITOR_TEXT.pickerFilterName, extensions: ['exe'] }],
       });
-      if (executable) setCustomImageEditorPath(executable);
     } catch {
-      appState.pushMessage('이미지 편집기 실행 파일을 선택하지 못했습니다.', 'error');
+      return;
     }
+    if (!picked) return;
+    setCustomImageEditorPath(picked);
   };
+
+  const stageTexts = ['모델 다운로드 중...', '모델 가중치 다운로드 중...', '모델 압축 푸는 중...'];
 
   const handleSave = async () => {
     if (platform.supportsCustomImageEditor && imageEditor === 'custom' && !customImageEditorPath) {
-      appState.pushMessage('이미지 편집기의 실행 파일(.exe)을 먼저 선택해주세요.', 'error');
+      appState.pushMessage(CUSTOM_IMAGE_EDITOR_TEXT.pathMissing, 'error');
       return;
     }
     const old = await backend.getConfig();
@@ -1132,7 +1139,6 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       webSearchEnabled,
       legacyWorkflowMode: legacyWorkflowMode,
       sceneToolbarLegacyText: sceneToolbarLegacyText,
-      showShortcutHelpOnStartup,
       storageWriteGuard: storageWriteGuard,
       exportConcurrency: exportConcurrency,
       defaultExportFolder: defaultExportFolder || undefined,
@@ -1146,6 +1152,13 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       uiLayoutTemplate: uiLayoutTemplate,
       uiMobileV2Parts: uiMobileV2Parts,
       uiPresetIconRow: uiPresetIconRow,
+      uiToolbarButtonNames: uiToolbarButtonNames,
+      // 시작 시 단축키 도움말: 끔 = 키를 비운다(= 기본). 모바일은 줄이 없어 저장값을 그대로 둔다.
+      showShortcutHelpOnStartup: mobileMode
+        ? old.showShortcutHelpOnStartup
+        : showShortcutHelpOnStartup || undefined,
+      // 화면 배율: 100% 는 키를 비운다(= 기본). 모바일은 저장값을 그대로 둔다. 적용은 main 의 set-config 가 모든 창에.
+      uiZoomPercent: mobileMode ? old.uiZoomPercent : uiZoomPercentForSave(uiZoomPercent),
       uiFloatViewMode: uiFloatViewMode,
       uiFont: uiFont,
       uiClassicFinish: uiClassicFinish,
@@ -1210,6 +1223,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     appState.uiLayoutTemplate = uiLayoutTemplate;
     appState.uiMobileV2Parts = uiMobileV2Parts;
     appState.uiPresetIconRow = uiPresetIconRow;
+    appState.uiToolbarButtonNames = uiToolbarButtonNames;
     appState.uiFloatViewMode = uiFloatViewMode;
     appState.uiFont = uiFont;
     appState.uiClassicFinish = uiClassicFinish;
@@ -1260,10 +1274,11 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
     // 모바일은 편집 모드가 없어 기존 select UI 가 유일한 수단이라 탭을 유지한다.
     ...(mobileMode ? [{ key: 'toolbar', label: '툴바', icon: <FaThLarge size={14} /> }] : []),
     { key: 'layout', label: '레이아웃', icon: <FaColumns size={14} /> },
-    ...(!mobileMode ? [{ key: 'storage', label: '저장 경로', icon: <FaFolder size={14} /> }] : []),
+    ...(!mobileMode ? [{ key: 'storage', label: '저장·이미지', icon: <FaFolder size={14} /> }] : []),
     // 드라이브(드라이브 API ⑤, PC·모바일 공통): Google 드라이브 연동·백업 목록·환경설정 내보내기/불러오기·
     // (PC) 고급 로컬 동기화 폴더. 라벨 축약·좁은 탭 여백은 PC 가로 탭 8개를 672 폭에 넣으려던 것(2026-10-01) —
-    // 2026-11-11 오버레이 묶음 1 에서 PC 는 왼쪽 세로 탭(180px)이 되어 「저장경로」를 「저장 경로」로 풀었다.
+    // 2026-11-11 오버레이 묶음 1 에서 PC 는 왼쪽 세로 탭(180px)이 되어 「저장경로」를 「저장 경로」로 풀었고,
+    // 2026-11-22 「저장·이미지」로 바꿨다(사용자 — 저장 위치 말고도 내보내기·다운로드·캐시·편집기·WebP·복구를 다뤄 이름이 좁았다).
     // 「커스텀」(구 개인 설정)·「단축키」(구 키 바인딩)는 축약이 아니라 이름 자체를 바꾼 결정이라 그대로 둔다.
     { key: 'drive', label: '드라이브', icon: <FaGoogleDrive size={14} /> },
     { key: 'system', label: '시스템', icon: <ActionIcon id="system-settings" size={14} /> },
@@ -1291,7 +1306,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       case 'toolbar':
         return <ToolbarTab {...{ uiToolbar, setUiToolbar, quickMenu: quickMenuCfg, setQuickMenu: setQuickMenuCfg, quickMenuButton, setQuickMenuButton }} />;
       case 'layout':
-        return <LayoutTab {...{ uiLayoutTemplate, setUiLayoutTemplate, uiMobileV2Parts, setUiMobileV2Parts, setModernExitReset, uiPresetIconRow, setUiPresetIconRow, uiToolbar, setUiToolbar, quickMenu: quickMenuCfg, setQuickMenu: setQuickMenuCfg, quickMenuButton, setQuickMenuButton, uiFloatViewMode, setUiFloatViewMode, mobileMode, onClose: requestClose }} />;
+        return <LayoutTab {...{ uiLayoutTemplate, setUiLayoutTemplate, uiMobileV2Parts, setUiMobileV2Parts, setModernExitReset, uiPresetIconRow, setUiPresetIconRow, uiToolbarButtonNames, setUiToolbarButtonNames, showShortcutHelpOnStartup, setShowShortcutHelpOnStartup, uiZoomPercent, setUiZoomPercent, uiToolbar, setUiToolbar, quickMenu: quickMenuCfg, setQuickMenu: setQuickMenuCfg, quickMenuButton, setQuickMenuButton, uiFloatViewMode, setUiFloatViewMode, mobileMode, onClose: requestClose }} />;
       case 'recovery':
         return <RecoveryTab />;
       case 'keybindings':
@@ -1341,6 +1356,9 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
       uiLayoutTemplate !== (savedCfg.uiLayoutTemplate ?? defaultLayoutTemplateId(isMobile)) ||
       JSON.stringify(uiMobileV2Parts) !== JSON.stringify(normalizeV2Parts(savedCfg.uiMobileV2Parts)) ||
       uiPresetIconRow !== (savedCfg.uiPresetIconRow ?? false) ||
+      uiToolbarButtonNames !== (savedCfg.uiToolbarButtonNames ?? true) ||
+      (!mobileMode && showShortcutHelpOnStartup !== (savedCfg.showShortcutHelpOnStartup === true)) ||
+      (!mobileMode && uiZoomPercent !== normalizeUiZoomPercent(savedCfg.uiZoomPercent)) ||
       uiFloatViewMode !== (savedCfg.uiFloatViewMode ?? 'cover') ||
       uiFont !== (savedCfg.uiFont ?? 'system') ||
       uiClassicFinish !== (savedCfg.uiClassicFinish ?? false) ||
@@ -1390,7 +1408,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
 
   // 미저장 변경 표시 (#17) — 배지는 안내, 닫기 확인은 위 requestClose 가 맡는다(2026-11-12 H3 A안).
   const dirtyBadgeClass =
-    'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap shadow-sm bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/80 dark:text-amber-200 dark:border-amber-600';
+    'warn-badge shadow-sm';
   const dirtyBadgeContent = (
     <>
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-300" />
@@ -1420,7 +1438,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
                 className={
                   'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-left whitespace-nowrap transition-colors ' +
                   (activeTab === i
-                    ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'
+                    ? 'bg-sky-50 dark:bg-sky-900/30 text-[color:var(--c-link)] dark:text-sky-400'
                     : 'text-muted hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700/50')
                 }
                 onClick={() => selectTab(i)}
@@ -1440,19 +1458,25 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
         }
         footer={
           <>
-            <button className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors" onClick={handleSave}>
+            <button className={DIALOG_PRIMARY_BTN} onClick={handleSave}>
               저장
             </button>
             <button
-              className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+              className={DIALOG_SECONDARY_BTN}
               onClick={requestClose}
             >
               닫기
             </button>
           </>
         }
+        // 본문 여백은 스크롤 영역(본문 슬롯)이 아니라 안쪽 감싸기가 맡는다(2026-11-21) — 여백이 스크롤 영역에 있으면
+        // 단축키 탭의 붙박이 그룹 머리(sticky top-0)가 그 여백만큼(20px) 내려와 붙고 위 틈으로 목록 줄이 비쳤다.
+        // 처음 모양·여백은 p-5 그대로(SPEC 「오버레이 창 크기 체계」 bodyPadding='none' = 붙박이 머리용).
+        bodyPadding="none"
       >
-        {tabPanels}
+        <div className="p-5" data-cfg-body-pad="">
+          {tabPanels}
+        </div>
       </ModalOverlay>
     );
   }
@@ -1476,7 +1500,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
             흐름에 끼우면 열릴 때마다 내용이 밀리므로 absolute + pointer-events-none 로
             레이아웃·클릭에 영향 0. 안내 전용 — 닫기 확인은 requestClose(2026-11-12 H3 A안). */}
         {dirty && (
-          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap shadow-sm bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/80 dark:text-amber-200 dark:border-amber-600">
+          <div className={'absolute top-2.5 left-1/2 -translate-x-1/2 z-10 pointer-events-none ' + dirtyBadgeClass}>
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-300" />
             저장 안 된 변경
           </div>
@@ -1485,7 +1509,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
         <div className="flex items-center justify-between px-3 md:px-5 py-3 border-b line-color flex-none">
           <h1 className="text-base font-semibold text-default">환경설정</h1>
           <button
-            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-muted transition-colors"
+            className="p-1 rounded hover:bg-[var(--c-hover)] text-muted transition-colors"
             aria-label="닫기"
             onClick={requestClose}
           >
@@ -1515,7 +1539,7 @@ const ConfigScreen = observer(({ onSave, onClose }: ConfigScreenProps) => {
                 className={
                   'flex flex-none items-center gap-1 px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ' +
                   (activeTab === i
-                    ? 'border-sky-500 text-sky-600 dark:text-sky-400'
+                    ? 'border-sky-500 text-[color:var(--c-link)] dark:text-sky-400'
                     : 'border-transparent text-muted hover:text-gray-700 dark:hover:text-gray-200')
                 }
                 onClick={() => selectTab(i)}

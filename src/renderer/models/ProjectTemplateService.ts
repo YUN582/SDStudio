@@ -1,5 +1,4 @@
 import { observable, action, runInAction } from 'mobx';
-import { persistService } from './PersistenceService';
 import { v4 as uuidv4 } from 'uuid';
 import {
   backend,
@@ -24,6 +23,9 @@ import {
 } from './types';
 import { dataUriToBase64 } from './ImageService';
 import { imageExtFromBase64 } from './imageFormats';
+import { StoreFile, GLOBAL_STORE_SYNC_KEYS } from './storeFile';
+import { globalStoreDeps } from './globalStoreDeps';
+import { mergeById } from './storeMerge';
 import {
   collectTemplateImageTokens,
   imageFileExt,
@@ -37,8 +39,19 @@ import {
   type TemplateImportPolicy,
 } from './projectTemplateBackup';
 
-const PROJECT_TEMPLATES_FILE = 'project_templates.json';
-const PROJECT_TEMPLATE_IMAGES_DIR = 'project_template_images';
+// 데이터 루트 직하 파일·폴더 이름 — 전체 백업이 같은 이름으로 `__settings__/` 아래에 담는다(2026-11-18 T1)
+export const PROJECT_TEMPLATES_FILE = 'project_templates.json';
+export const PROJECT_TEMPLATE_IMAGES_DIR = 'project_template_images';
+
+/** 전체 백업의 프로젝트 템플릿 채택 결과(adoptFromFullBackupIfEmpty) */
+export type FullBackupTemplateAdoptOutcome =
+  /** 백업에 프로젝트 템플릿이 없음(예전 백업·빈 목록·손상) */
+  | { kind: 'none' }
+  /** 받는 쪽에 이미 있어 그대로 둠(count = 백업 쪽 항목 수 — 결과 창 안내용, 2026-11-22) */
+  | { kind: 'kept'; count: number }
+  /** 받는 쪽 파일을 읽지 못했거나 저장이 막혀 건너뜀 */
+  | { kind: 'blocked' }
+  | { kind: 'adopted'; count: number };
 
 // 신규 프로젝트 생성 다이얼로그의 '빈 프로젝트' 값 — uuid 와 충돌 불가한 문자.
 const BLANK_VALUE = '/blank';
@@ -124,87 +137,134 @@ export interface IProjectTemplateStore {
 export class ProjectTemplateService extends EventTarget {
   @observable accessor templates: IProjectTemplateEntry[] = [];
   @observable accessor loaded: boolean = false;
-  private saveTimeout: any = null;
+
+  // 로드 판정·저장·사본 회전(storeFile.ts 단일 출처, 2026-11-17 묶음 1). 형식은 종전 그대로.
+  private store = new StoreFile<IProjectTemplateStore>(
+    {
+      file: PROJECT_TEMPLATES_FILE,
+      label: '프로젝트 템플릿',
+      parse: (raw) => ProjectTemplateService.parseStore(raw),
+      countItems: (s) => s.templates.length,
+      serialize: () => {
+        const store: IProjectTemplateStore = {
+          version: 1,
+          templates: this.templates,
+        };
+        return JSON.stringify(store);
+      },
+      saveDelayMs: 2000,
+      // 여러 창 동기화(2026-11-17 묶음 2): 다른 창이 이 저장소를 다시 읽게 알린다(bootstrap 수신부 → reloadExternal)
+      afterWrite: () => {
+        backend.notifyGlobalStoreChanged(GLOBAL_STORE_SYNC_KEYS.projectTemplates).catch(() => {});
+      },
+    },
+    globalStoreDeps,
+  );
+
+  /** 파일을 읽지 못해 저장·변경이 막힌 상태(앱을 다시 시작하거나 다시 읽기 성공 시 풀림) */
+  get loadFailed(): boolean {
+    return this.store.loadFailed;
+  }
 
   // ---------- lifecycle ----------
+
+  /** 파일 원문 → 저장 형식(구조가 어긋나면 null, JSON 이 아니면 throw — StoreFile 은 둘 다 손상으로 본다) */
+  private static parseStore(raw: string): IProjectTemplateStore | null {
+    const json = JSON.parse(raw);
+    return json && typeof json === 'object' && Array.isArray(json.templates)
+      ? (json as IProjectTemplateStore)
+      : null;
+  }
+
+  /** 파일 내용 → 메모리 목록(load·다른 창 재로드·병합 기준이 같은 규칙을 쓴다) */
+  private static normalizeTemplates(json: IProjectTemplateStore | null): IProjectTemplateEntry[] {
+    return json && Array.isArray(json.templates)
+      ? json.templates
+          .filter(
+            (t) =>
+              t && typeof t.id === 'string' && typeof t.name === 'string',
+          )
+          .map((t: any) => ({
+            ...t,
+            // 구형(프리셋 목록형) 데이터 호환: 첫 항목을 1벌로 승격
+            preset:
+              t.preset ??
+              (Array.isArray(t.presets) ? (t.presets[0] ?? null) : null),
+            presets: undefined,
+            characterPresets: Array.isArray(t.characterPresets)
+              ? t.characterPresets
+              : [],
+            // 구 데이터는 두 영역이 없음 → 빈 배열(호환 안전)
+            vibes: Array.isArray(t.vibes) ? t.vibes : [],
+            characterReferences: Array.isArray(t.characterReferences)
+              ? t.characterReferences
+              : [],
+            scenes: Array.isArray(t.scenes) ? t.scenes : [],
+            // 배지 색 문자열 방어
+            badgeColor:
+              typeof t.badgeColor === 'string' && t.badgeColor
+                ? t.badgeColor
+                : undefined,
+          }))
+      : [];
+  }
+
   async load() {
-    try {
-      const str = await backend.readFile(PROJECT_TEMPLATES_FILE);
-      const json = JSON.parse(str) as IProjectTemplateStore;
-      this.templates =
-        json && Array.isArray(json.templates)
-          ? json.templates
-              .filter(
-                (t) =>
-                  t && typeof t.id === 'string' && typeof t.name === 'string',
-              )
-              .map((t: any) => ({
-                ...t,
-                // 구형(프리셋 목록형) 데이터 호환: 첫 항목을 1벌로 승격
-                preset:
-                  t.preset ??
-                  (Array.isArray(t.presets) ? (t.presets[0] ?? null) : null),
-                presets: undefined,
-                characterPresets: Array.isArray(t.characterPresets)
-                  ? t.characterPresets
-                  : [],
-                // 구 데이터는 두 영역이 없음 → 빈 배열(호환 안전)
-                vibes: Array.isArray(t.vibes) ? t.vibes : [],
-                characterReferences: Array.isArray(t.characterReferences)
-                  ? t.characterReferences
-                  : [],
-                scenes: Array.isArray(t.scenes) ? t.scenes : [],
-                // 배지 색 문자열 방어
-                badgeColor:
-                  typeof t.badgeColor === 'string' && t.badgeColor
-                    ? t.badgeColor
-                    : undefined,
-              }))
-          : [];
-    } catch (e) {
+    const res = await this.store.load();
+    if (res.keepMemory) return; // 재로드 실패 — 이미 가진 목록 유지
+    if (res.kind === 'io-failed') {
+      // 읽기 실패 — 빈 목록으로 보이되 저장·변경은 막힌다. loaded=false 로 두어 다음 ensureLoaded 가 다시 읽게 한다.
       this.templates = [];
+      this.loaded = false;
+      this.dispatchEvent(new CustomEvent('changed', {}));
+      return;
     }
+    this.templates = ProjectTemplateService.normalizeTemplates(
+      res.kind === 'ok' || res.kind === 'recovered' ? res.data : null,
+    );
     this.loaded = true;
     this.dispatchEvent(new CustomEvent('changed', {}));
   }
 
+  /**
+   * 다른 창이 저장했다는 알림으로 다시 읽는다(여러 창 동기화). 아직 읽지 않았거나(이 창에서 템플릿 화면을 연 적 없음)
+   * 읽기 실패 상태면 무동작 — 종전 ensureLoaded 경로가 나중에 최신본을 읽는다.
+   * 저장 안 된 변경이 없으면 교체, 있으면 항목(id) 단위 병합 — 재로드만으로는 쓰지 않는다.
+   */
+  async reloadExternal() {
+    if (!this.loaded) return;
+    const r = await this.store.reloadExternal({
+      replace: (remote) => {
+        this.templates = ProjectTemplateService.normalizeTemplates(remote);
+      },
+      merge: (remote, base) => {
+        this.templates = mergeById(
+          ProjectTemplateService.normalizeTemplates(base),
+          this.templates,
+          ProjectTemplateService.normalizeTemplates(remote),
+        );
+      },
+    });
+    if (r === 'replaced' || r === 'merged') this.dispatchEvent(new CustomEvent('changed', {}));
+  }
+
+  // 읽기 실패(loaded=false)면 부를 때마다 다시 읽는다 — 템플릿 관리·생성 창 진입이 곧 재시도
   async ensureLoaded() {
     if (!this.loaded) await this.load();
   }
 
+  // 저장: tmp → rename(실패 시 직접 쓰기), 세션 첫 저장 전 .bak1~3 회전, 읽기 실패 상태면 쓰지 않음(storeFile)
   async save() {
-    const store: IProjectTemplateStore = {
-      version: 1,
-      templates: this.templates,
-    };
-    const data = JSON.stringify(store);
-    const tmp = PROJECT_TEMPLATES_FILE + '.tmp';
-    try {
-      await persistService.write(tmp, data);
-      await backend.renameFile(tmp, PROJECT_TEMPLATES_FILE);
-    } catch (e) {
-      try {
-        await persistService.write(PROJECT_TEMPLATES_FILE, data);
-      } catch (e2) {
-        console.error('Failed to save project templates:', e2);
-      }
-    }
+    await this.store.saveNow();
   }
 
   scheduleSave() {
-    if (this.saveTimeout) clearTimeout(this.saveTimeout);
-    this.saveTimeout = setTimeout(() => {
-      this.save();
-      this.saveTimeout = null;
-    }, 2000);
+    this.store.schedule();
   }
 
+  // 종료·전파 직전 — 바뀐 것이 있을 때만 쓴다
   async flushSave() {
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-      this.saveTimeout = null;
-    }
-    await this.save();
+    await this.store.flush();
   }
 
   // ---------- read ----------
@@ -241,7 +301,17 @@ export class ProjectTemplateService extends EventTarget {
 
   private touch(entry: IProjectTemplateEntry) {
     entry.updatedAt = Date.now();
-    this.templates = [...this.templates];
+    if (this.templates.includes(entry)) {
+      this.templates = [...this.templates];
+    } else {
+      // 이미지 저장 등 await 도중 다른 창 저장으로 목록이 다시 읽혀(reloadExternal) 이 객체가 목록에서 빠졌다 — 방금 한 편집이
+      // 조용히 사라지지 않게 같은 id 자리에 넣거나(이 창 편집 우선 = 병합 규칙과 같음), 다른 창이 지웠으면 뒤에 붙인다.
+      const i = this.templates.findIndex((t) => t.id === entry.id);
+      this.templates =
+        i >= 0
+          ? this.templates.map((t, k) => (k === i ? entry : t))
+          : [...this.templates, entry];
+    }
     this.scheduleSave();
     this.dispatchEvent(new CustomEvent('changed', {}));
   }
@@ -252,6 +322,7 @@ export class ProjectTemplateService extends EventTarget {
     name: string,
     opts?: { folderLocal?: boolean },
   ): Promise<IProjectTemplateEntry> {
+    this.store.assertWritable();
     const entry: IProjectTemplateEntry = {
       id: uuidv4(),
       name: this.resolveNameCollision((name || '새 템플릿').trim() || '새 템플릿'),
@@ -272,6 +343,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async rename(id: string, newName: string): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     newName = newName.trim();
@@ -287,6 +359,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async duplicate(id: string): Promise<IProjectTemplateEntry> {
+    this.store.assertWritable();
     const src = this.get(id);
     if (!src) throw new Error('템플릿을 찾을 수 없습니다');
     const clone: IProjectTemplateEntry = JSON.parse(JSON.stringify(src));
@@ -333,6 +406,7 @@ export class ProjectTemplateService extends EventTarget {
   // 기존 이미지는 정리한다. 이후 소스와 무관하게 자유 조정 가능.
   @action
   async overwriteFromTemplate(targetId: string, sourceId: string): Promise<void> {
+    this.store.assertWritable();
     const target = this.get(targetId);
     if (!target) throw new Error('템플릿을 찾을 수 없습니다');
     const src = this.get(sourceId);
@@ -393,6 +467,7 @@ export class ProjectTemplateService extends EventTarget {
   // "자식 전파 확인"(updatedAt 변경 감지)을 유발하면 안 된다.
   @action
   async setBadgeColor(id: string, color: string | null): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const next = color || undefined;
@@ -405,6 +480,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async delete(id: string): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(id);
     if (!entry) return;
     for (const token of this.collectImageTokens(entry)) {
@@ -449,7 +525,8 @@ export class ProjectTemplateService extends EventTarget {
    */
   @action
   async restoreEntry(snap: ProjectTemplateEntrySnapshot): Promise<boolean> {
-    await this.ensureLoaded();
+    await this.ensureLoaded(); // 읽기 실패 상태면 여기서 다시 읽기를 시도한다
+    this.store.assertWritable();
     if (this.get(snap.entry.id)) return false;
     const map = new Map<string, string>();
     for (const token of collectTemplateImageTokens(snap.entry)) {
@@ -492,7 +569,8 @@ export class ProjectTemplateService extends EventTarget {
     root: string,
     policy: TemplateImportPolicy,
   ): Promise<{ added: number; skipped: number; overwritten: number }> {
-    await this.ensureLoaded();
+    await this.ensureLoaded(); // 읽기 실패 상태면 여기서 다시 읽기를 시도한다
+    this.store.assertWritable();
     let store: any;
     try {
       store = JSON.parse(
@@ -563,6 +641,73 @@ export class ProjectTemplateService extends EventTarget {
     return { added, skipped, overwritten };
   }
 
+  // ---------- 전체 백업 복원 (2026-11-18 T1) ----------
+  /**
+   * 전체 백업 `__settings__/` 의 프로젝트 템플릿을, 받는 쪽이 **정상으로 읽은 결과가 빈 목록일 때만** 통째로 채택한다
+   * (글로벌 라이브러리 adoptGlobalsIfEmpty 와 같은 규칙). 같은 id·이름·폴더 전용 표식·배지 색을 그대로 둔다 — 폴더 기본
+   * 템플릿 지정·적용 기록이 id 로 가리키기 때문(라이브러리 백업 불러오기는 새 id·이름 기준 병합 — 그 흐름은 그대로).
+   *  - 하나라도 있으면 kept(보존). 읽기 실패(loadFailed)면 blocked(아무것도 쓰지 않음).
+   *  - 이미지는 엔트리가 참조하는 파일만, 받는 쪽에 같은 이름이 없을 때만 복사(덮지 않음). 백업에 없는 파일은 참조 그대로 둔다.
+   *  - 저장은 StoreFile 규칙(dirty → 지금 저장). 저장이 막히면(쓰기 충돌) 메모리를 비운 채로 되돌리고 blocked.
+   */
+  @action
+  async adoptFromFullBackupIfEmpty(settingsDir: string): Promise<FullBackupTemplateAdoptOutcome> {
+    let raw: string;
+    try {
+      if (!(await backend.existFile(settingsDir + '/' + PROJECT_TEMPLATES_FILE))) return { kind: 'none' };
+      raw = await backend.readFile(settingsDir + '/' + PROJECT_TEMPLATES_FILE);
+    } catch (e) {
+      return { kind: 'none' };
+    }
+    let parsed: IProjectTemplateStore | null = null;
+    try {
+      parsed = ProjectTemplateService.parseStore(raw);
+    } catch (e) {
+      parsed = null; // 손상 — 이 부분만 건너뛴다
+    }
+    const incoming = ProjectTemplateService.normalizeTemplates(parsed);
+    if (incoming.length === 0) return { kind: 'none' };
+    try {
+      await this.ensureLoaded();
+    } catch (e) {
+      return { kind: 'blocked' };
+    }
+    // 「비어 있음」은 정상으로 읽은 결과가 빈 경우만 — 읽기 실패의 빈 메모리 목록으로 판단하지 않는다
+    if (!this.loaded || this.store.loadFailed) return { kind: 'blocked' };
+    if (this.templates.length > 0) return { kind: 'kept', count: incoming.length };
+    for (const entry of incoming) {
+      for (const token of collectTemplateImageTokens(entry)) {
+        const base = imageTokenBase(token);
+        if (!isSafeImageToken(base)) continue;
+        const dst = this.getImagePath(base);
+        const src = settingsDir + '/' + PROJECT_TEMPLATE_IMAGES_DIR + '/' + base;
+        try {
+          if (await backend.existFile(dst)) continue;
+          if (!(await backend.existFile(src))) continue;
+          await backend.copyFile(src, dst);
+        } catch (e) {
+          console.warn('전체 백업 프로젝트 템플릿 이미지 복사 실패:', base, e);
+        }
+      }
+    }
+    // 이미지 복사(await) 사이에 다른 창 알림으로 목록이 채워졌으면 덮지 않는다
+    if (this.templates.length > 0) return { kind: 'kept', count: incoming.length };
+    this.templates = incoming;
+    this.scheduleSave();
+    const saved = await this.store.flush();
+    if (this.store.loadFailed) {
+      this.templates = [];
+      this.dispatchEvent(new CustomEvent('changed', {}));
+      return { kind: 'blocked' };
+    }
+    if (!saved) {
+      // 쓰기 오류 — 메모리에는 채택됨, dirty 가 남아 종료·백그라운드 전환 저장이 다시 시도한다
+      console.error('전체 백업 프로젝트 템플릿 저장 실패(다시 시도 예정)');
+    }
+    this.dispatchEvent(new CustomEvent('changed', {}));
+    return { kind: 'adopted', count: incoming.length };
+  }
+
   // ---------- 이미지 (data URI 파일 — 글로벌 캐릭터 프리셋과 동일 패턴) ----------
   getImagePath(filename: string): string {
     return PROJECT_TEMPLATE_IMAGES_DIR + '/' + filename.split('/').pop()!;
@@ -587,6 +732,7 @@ export class ProjectTemplateService extends EventTarget {
 
   // 편집기(FileUploadBase64 — raw base64)용 저장
   async storeImageForEditor(base64: string): Promise<string> {
+    this.store.assertWritable();
     const filename = uuidv4() + '.' + imageExtFromBase64(base64);
     await backend.writeDataFile(
       PROJECT_TEMPLATE_IMAGES_DIR + '/' + filename,
@@ -636,6 +782,7 @@ export class ProjectTemplateService extends EventTarget {
 
   // 글로벌 프리셋 → 템플릿 프롬프트 영역 1회성 덮어쓰기 (프롬프트·샘플링만)
   async importGlobalPreset(templateId: string, globalId: string) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const g = globalPresetService.get(globalId);
@@ -647,6 +794,7 @@ export class ProjectTemplateService extends EventTarget {
 
   // 현재 프로젝트의 프리셋 → 템플릿 프롬프트 영역 1회성 덮어쓰기
   async importSessionPreset(templateId: string, preset: any) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     this.overwritePresetSettings(entry, preset.toJSON());
@@ -657,6 +805,7 @@ export class ProjectTemplateService extends EventTarget {
   // "불러오기 없이 수동 세팅"도 가능해야 한다는 스펙.
   @action
   async patchPreset(templateId: string, patch: Record<string, any>) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     entry.preset = { ...(entry.preset ?? blankTemplatePreset(entry.name)), ...patch };
@@ -666,6 +815,7 @@ export class ProjectTemplateService extends EventTarget {
   // 글로벌 캐릭터 프리셋 → 템플릿
   @action
   async importGlobalCharacterPreset(templateId: string, globalId: string) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const g = globalCharacterPresetService.get(globalId);
@@ -697,6 +847,7 @@ export class ProjectTemplateService extends EventTarget {
     session: Session,
     preset: CharacterPreset,
   ) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const json: ICharacterPreset = preset.toJSON();
@@ -736,6 +887,7 @@ export class ProjectTemplateService extends EventTarget {
     json: ICharacterPreset,
     index?: number,
   ) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     if (index === undefined) {
@@ -757,6 +909,7 @@ export class ProjectTemplateService extends EventTarget {
     patch: Record<string, any>,
     newRepImageBase64: string | null,
   ) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const next: any = {
@@ -779,6 +932,7 @@ export class ProjectTemplateService extends EventTarget {
     templateId: string,
     projectName: string,
   ): Promise<number> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const session = await sessionService.get(projectName);
@@ -802,6 +956,7 @@ export class ProjectTemplateService extends EventTarget {
   // ---------- 항목 제거 ----------
   @action
   async removePreset(templateId: string) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry || !entry.preset) return;
     if (entry.preset.profile) await this.deleteImageData(entry.preset.profile);
@@ -811,6 +966,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async removeCharacterPreset(templateId: string, index: number) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) return;
     const removed = entry.characterPresets[index];
@@ -829,6 +985,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async removeScene(templateId: string, index: number) {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) return;
     entry.scenes = entry.scenes.filter((_, i) => i !== index);
@@ -840,6 +997,7 @@ export class ProjectTemplateService extends EventTarget {
   // 기본값 VibeItem/ReferenceItem JSON 을 만들어 목록에 추가한다.
   @action
   async addVibe(templateId: string, base64: string): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const path = await this.storeImageForEditor(base64);
@@ -855,6 +1013,7 @@ export class ProjectTemplateService extends EventTarget {
     index: number,
     patch: Partial<IVibeItem>,
   ): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry || !(entry.vibes || [])[index]) return;
     entry.vibes = entry.vibes.map((v, i) =>
@@ -869,6 +1028,7 @@ export class ProjectTemplateService extends EventTarget {
     index: number,
     patch: Partial<IReferenceItem>,
   ): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry || !(entry.characterReferences || [])[index]) return;
     entry.characterReferences = entry.characterReferences.map((r, i) =>
@@ -879,6 +1039,7 @@ export class ProjectTemplateService extends EventTarget {
 
   @action
   async removeVibe(templateId: string, index: number): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) return;
     const removed = (entry.vibes || [])[index];
@@ -891,7 +1052,10 @@ export class ProjectTemplateService extends EventTarget {
   async addCharacterReference(
     templateId: string,
     base64: string,
+    // 넣은 원본 그림 크기(편집기가 잰 값) — 있으면 항목에 적어 V5 로 보낼 때 여백을 정확히 자른다.
+    sourceSize?: { srcWidth: number; srcHeight: number },
   ): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) throw new Error('템플릿을 찾을 수 없습니다');
     const path = await this.storeImageForEditor(base64);
@@ -902,6 +1066,7 @@ export class ProjectTemplateService extends EventTarget {
       fidelity: 1.0,
       referenceType: 'character',
       enabled: true,
+      ...(sourceSize ? { srcWidth: sourceSize.srcWidth, srcHeight: sourceSize.srcHeight } : {}),
     };
     entry.characterReferences = [...(entry.characterReferences || []), item];
     this.touch(entry);
@@ -912,6 +1077,7 @@ export class ProjectTemplateService extends EventTarget {
     templateId: string,
     index: number,
   ): Promise<void> {
+    this.store.assertWritable();
     const entry = this.get(templateId);
     if (!entry) return;
     const removed = (entry.characterReferences || [])[index];

@@ -27,7 +27,8 @@ jest.mock('../AppService', () => ({
     openProjectTrash: jest.fn(),
     openCharacterPresets: jest.fn(),
     openPieceEditor: jest.fn(),
-    projectBackupMenu: jest.fn(),
+    projectImportMenu: jest.fn(),
+    projectExportMenu: jest.fn(),
     openNewWindow: jest.fn(),
   },
 }));
@@ -46,7 +47,8 @@ const PROJECT_LABELS: Record<string, string> = {
   'add-session': '새 프로젝트',
   'character-presets': '캐릭터 프리셋',
   'scene-template': '씬 템플릿',
-  'backup-export': '백업',
+  'backup-import': '불러오기',
+  'backup-export': '내보내기',
   'delete-session': '삭제',
   'project-trash': '휴지통',
   'piece-editor': '프롬프트조각',
@@ -198,6 +200,7 @@ describe('렌더: 프로젝트 바 버튼 라벨', () => {
     'add-session',
     'character-presets',
     'scene-template',
+    'backup-import',
     'backup-export',
     'delete-session',
     'project-trash',
@@ -214,6 +217,8 @@ describe('렌더: 프로젝트 바 버튼 라벨', () => {
     expect(screen.getByRole('button', { name: '신규 프로젝트' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '프로젝트 휴지통' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '캐릭터 프리셋 관리' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '프로젝트 불러오기' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '프로젝트 내보내기' })).toBeTruthy();
     // 아이콘만이 아니므로 icon-only 클래스 없음
     expect(container.querySelector('.icon-only')).toBeNull();
   });

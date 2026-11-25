@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import {
@@ -25,6 +26,7 @@ import { interceptFileImportClick } from '../models/driveImport';
 import HelpIcon from './HelpIcon';
 import { ListSearchBar } from './ListSearchBar';
 import { compareNames } from '../models/listSearch';
+import { GLOBAL_STORE_TEXT } from '../models/storeFile';
 
 // 목록 정렬(2026-11-14 M4) — 보기 전용(저장 순서 불변). 작은 목록이라 검색은 두지 않는다.
 type SceneTemplateSort = 'order' | 'name';
@@ -58,6 +60,25 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
     const onUpdate = () => setVersion((v) => v + 1);
     sessionService.addEventListener('listupdated', onUpdate);
     return () => sessionService.removeEventListener('listupdated', onUpdate);
+  }, []);
+  // 지정 목록(templates.json)을 읽지 못해 막힌 상태면 창을 열 때 한 번 다시 읽는다(성공하면 차단이 풀린다, 2026-11-18 T3·T5).
+  // 막힌 동안은 「템플릿이 없습니다」 대신 읽지 못했다는 안내와 [다시 읽기]를 보인다(listUnavailable 은 observable).
+  const listUnavailable = templateService.listUnavailable;
+  const [reloading, setReloading] = useState(false);
+  const reloadList = async () => {
+    if (reloading) return;
+    setReloading(true);
+    try {
+      await templateService.reloadIfFailed();
+    } catch (e) {
+      console.error('템플릿 지정 목록 다시 읽기 실패:', e);
+    } finally {
+      setReloading(false);
+    }
+  };
+  useEffect(() => {
+    void reloadList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openTemplate = async (name: string) => {
@@ -191,7 +212,7 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
   };
 
   const btnClass =
-    'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium btn-neutral text-body transition-colors whitespace-nowrap disabled:opacity-40';
+    'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium btn-neutral text-body transition-colors whitespace-nowrap';
 
   // 크기 등급 M(2026-11-11 오버레이 묶음 1): 폭 720 고정·최소 높이 360 — 빈 목록에서도 창이 쪼그라들지 않는다.
   // 도구줄(만들기·복사·불러오기)은 toolbar 슬롯(스크롤 밖), 안내 문장은 본문 맨 위.
@@ -263,7 +284,7 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
       </div>
 
       {/* 정렬·개수(2026-11-14 M4) — 검색 없음 */}
-      {templates.length > 0 && (
+      {!listUnavailable && templates.length > 0 && (
         <ListSearchBar
           compact
           className="mb-2"
@@ -277,11 +298,27 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
         />
       )}
 
-      {/* 템플릿 목록 */}
-      {templates.length === 0 ? (
-        <div className="text-sm text-faint text-center py-16">
-          씬 템플릿이 없습니다 — 위 버튼으로 만들어 보세요
+      {/* 템플릿 목록 — 지정 목록을 읽지 못했으면 「없습니다」 대신 안내 + 다시 읽기 */}
+      {listUnavailable ? (
+        <div
+          className="flex flex-col items-center gap-3 py-12 text-center"
+          data-scene-template-unavailable=""
+        >
+          <div className="text-sm text-muted whitespace-pre-line">
+            {GLOBAL_STORE_TEXT.listUnavailable(templateService.storeLabel)}
+          </div>
+          <button
+            onClick={reloadList}
+            disabled={reloading}
+            className={btnClass}
+          >
+            {GLOBAL_STORE_TEXT.reloadAction}
+          </button>
         </div>
+      ) : templates.length === 0 ? (
+        <EmptyState className="py-16">
+          씬 템플릿이 없습니다 — 위 버튼으로 만들어 보세요
+        </EmptyState>
       ) : (
         <div className="flex flex-col gap-1.5">
           {shownTemplates.map((name) =>
@@ -303,7 +340,7 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
                     if (e.key === 'Enter') commitRename();
                     else if (e.key === 'Escape') setEditing(null);
                   }}
-                  className="flex-1 min-w-0 px-2 py-1 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  className="flex-1 min-w-0 px-2 py-1 rounded border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
                 />
                 <Tooltip content="확인">
                   <button
@@ -326,7 +363,7 @@ const SceneTemplateManager = observer(({ onClose }: { onClose: () => void }) => 
               <div
                 key={name}
                 onClick={() => openTemplate(name)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border line-color cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border line-color cursor-pointer hover-row transition-colors"
               >
                 <FaFilm
                   size={13}

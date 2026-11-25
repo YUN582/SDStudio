@@ -4,6 +4,7 @@ import { useContextMenu } from 'react-contexify';
 import {
   FaChevronLeft,
   FaChevronRight,
+  FaRegStar,
   FaSquare,
   FaStar,
   FaThLarge,
@@ -14,6 +15,7 @@ import { GenerationHistoryEntry } from '../models/ImageHistoryService';
 import { appState } from '../models/AppService';
 import { resolveLayout } from '../models/layoutTemplates';
 import { backStackService } from '../models/BackStackService';
+import { historyEntryCaption, openHistoryPreview, closeHistoryPreview } from '../models/historyPreview';
 import { ContextMenuType, GenericScene } from '../models/types';
 import { toggleImageFavorite } from '../models/imageStateUndo';
 import { FloatView } from './FloatView';
@@ -41,9 +43,11 @@ type HistoryPreview = {
 export function useHistoryImagePreview() {
   const [preview, setPreview] = useState<HistoryPreview>();
   const request = useRef(0);
+  useEffect(() => () => { request.current += 1; closeHistoryPreview(); }, []);
   const close = () => {
     request.current += 1;
     setPreview(undefined);
+    closeHistoryPreview();
   };
   const open = async (entry: GenerationHistoryEntry) => {
     const sequence = ++request.current;
@@ -61,7 +65,10 @@ export function useHistoryImagePreview() {
         if (sequence === request.current) appState.pushMessage('이미지 파일을 찾을 수 없습니다.');
         return;
       }
-      if (sequence === request.current) setPreview({ entry, source, getPaths, path: target });
+      if (sequence === request.current) {
+        setPreview({ entry, source, getPaths, path: target });
+        openHistoryPreview(entry.id);
+      }
     } catch {
       if (sequence === request.current) appState.pushMessage('히스토리 이미지를 열지 못했습니다.', 'error');
     }
@@ -181,10 +188,35 @@ const HistoryImageCell = observer(
               }}
             />
           )}
-          {isFav && (
-            <div className="absolute left-0 top-0 z-10 text-yellow-400 m-1">
-              <FaStar size={12} />
-            </div>
+          {/* 즐겨찾기 별 버튼(2026-11-22 — 칸 누름은 큰 미리 보기). 즐겨찾기면 항상 노란 별,
+              아니면 PC 는 칸에 올렸을 때만·모바일(hover 없음)은 항상 옅게. 누름은 칸으로 전파하지 않는다. */}
+          {/* 원본 씬을 찾은 뒤에만(못 찾으면 즐겨찾기 대상이 없다) */}
+          {!!scene && (
+            <button
+              className={
+                'absolute left-0 top-0 z-10 m-1 rounded-full card-overlay-btn flex items-center justify-center shadow ' +
+                (isMobile ? 'w-7 h-7 touch-hit ' : 'w-6 h-6 ') +
+                (isFav
+                  ? ''
+                  : isMobile
+                    ? 'opacity-60'
+                    : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100')
+              }
+              aria-label={isFav ? '즐겨찾기 해제' : '즐겨찾기'}
+              title={isFav ? '즐겨찾기 해제' : '즐겨찾기'}
+              aria-pressed={isFav}
+              data-history-fav-btn=""
+              onClick={(e) => {
+                e.stopPropagation();
+                imageHistoryService.toggleFavorite(entry);
+              }}
+            >
+              {isFav ? (
+                <FaStar size={14} className="text-yellow-400" />
+              ) : (
+                <FaRegStar size={14} />
+              )}
+            </button>
           )}
         </div>
         <div className="text-[11px] text-muted truncate text-center leading-tight mt-0.5 mb-1">
@@ -217,9 +249,9 @@ const HistoryList = observer(({ onOpenImage }: { onOpenImage?: (entry: Generatio
 
   if (entries.length === 0) {
     return (
-      <div className="flex-1 p-4 text-xs text-faint text-center">
+      <EmptyState className="flex-1 p-4">
         아직 생성된 이미지가 없습니다
-      </div>
+      </EmptyState>
     );
   }
   return (
@@ -240,7 +272,7 @@ const HistoryList = observer(({ onOpenImage }: { onOpenImage?: (entry: Generatio
           }
           onClick={() => {
             if (onOpenImage) onOpenImage(entry);
-            else void imageHistoryService.toggleFavorite(entry);
+
           }}
         />
       ))}
@@ -429,7 +461,7 @@ export const ImageHistoryHandle = observer(() => {
 });
 
 // 모바일 우측 오버레이 드로어 (ProjectDrawer의 애니메이션 패턴 미러)
-export const ImageHistoryDrawer = observer(() => {
+export const ImageHistoryDrawer = observer(({ onOpenImage }: { onOpenImage?: (entry: GenerationHistoryEntry) => void }) => {
   const open = appState.historyDrawerOpen;
   const [render, setRender] = useState(open);
   const [shown, setShown] = useState(open);
@@ -531,8 +563,9 @@ export const ImageHistoryDrawer = observer(() => {
             </button>
           </div>
         </div>
-        <HistoryList />
+        <HistoryList onOpenImage={onOpenImage} />
       </div>
     </div>
   );
 });
+import { EmptyState } from './EmptyState';

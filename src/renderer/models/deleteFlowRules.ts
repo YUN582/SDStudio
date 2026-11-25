@@ -22,6 +22,8 @@ import { josaEulReul, NAME_KIND_LABEL, type NameKind } from './nameInput';
 //  · 휴지통은 없지만 되돌리기(Ctrl+Z)로 되살아나는 삭제('undoable', 2026-11-15): 「{대상}을(를) 삭제할까요? /
 //    되돌리기(Ctrl+Z)로 되살릴 수 있습니다.」 [삭제] · danger 'permanent'(빨강 + Enter 무시 — 사용자 결정: 영구 삭제와
 //    같게). 파일(이미지·폴더)을 지우지 않고 되돌리기 기록(*Recorded·edit*·begin…commit)이 있는 삭제만 이 갈래.
+//    글로벌 프리셋·글로벌 캐릭터 삭제는 2026-11-24 부터 휴지통 갈래(`{ trashDays: GLOBAL_LIBRARY_TRASH_DAYS }`,
+//    models/globalLibraryTrash.ts) — 같은 저장소 파일 안 휴지통으로 옮기고 이미지는 영구 삭제 때만 지운다.
 //  · 대상: 단건 「{종류} "{이름}"」(이름 없으면 「이 {종류}」), 복수 「{종류} {count}개」(이미지 장·작가 명).
 //  · extra: 본문 끝에 덧붙일 줄(첨부 이미지도 함께 삭제됨·모든 프로젝트에 영향 등).
 
@@ -236,6 +238,23 @@ export function showImageDeleteSkipOption(count: number): boolean {
   return count >= 1;
 }
 
+/** 확인 창의 「이번 세션에서 다시 묻지 않음」 라벨 — 이미지 삭제(showSkipConfirm)·그림체 삭제(confirmCheck) 공용. */
+export const SKIP_DELETE_CONFIRM_LABEL = '이번 세션에서 다시 묻지 않음';
+
+// ── 그림체(사전 세팅) 삭제 확인 건너뛰기(2026-11-22) ──
+//
+// 이미지 삭제의 「이번 세션에서 다시 묻지 않음」과 같은 방식·같은 범위(개수 무관 — 줄 버튼·우클릭 단건과 일괄 삭제 창 모두).
+// 플래그는 그림체 전용 appState.skipPresetDeleteConfirm(실행 동안만, 저장하지 않음) — 이미지 플래그와 섞지 않는다.
+// 「마지막 사전 세팅은 삭제할 수 없습니다」 같은 차단은 확인 전에 그대로 하고, 건너뛸 때도 같은 삭제 경로를 탄다.
+
+/** 그림체 삭제 확인 창을 건너뛰어도 되는가 — 이번 실행에서 체크하고 확인한 적이 있고 지울 것이 1개 이상이면. */
+export function shouldSkipPresetDeleteConfirm(
+  skipSetting: boolean,
+  count: number,
+): boolean {
+  return !!skipSetting && count >= 1;
+}
+
 /** 선택한 이미지 삭제 확인 문구 — deleteConfirmText 로 위임(2026-10-03 E1). */
 export function selectedImagesDeleteText(
   count: number,
@@ -380,21 +399,33 @@ export const DELETE_RESULT_TEXT = {
     `프로젝트 "${shown}"을(를) "${newName}"(으)로 복원했습니다.`,
   /** 복원은 됐지만 즐겨찾기·북마크를 다시 붙이지 못함(2026-11-03 사이드카 보존 — 복원은 유지) */
   projectSidecarRestoreFailed: '즐겨찾기·북마크 일부는 되살리지 못했습니다.',
+  /** 복원은 됐지만 씬 템플릿 지정·적용 기록을 다시 붙이지 못함(2026-11-18 T2 — 지정 목록이 막힘 등, 복원은 유지) */
+  projectTemplateRestoreFailed: '템플릿 지정 일부는 되살리지 못했습니다.',
 } as const;
 
 /**
  * 휴지통 프로젝트 복원 결과 안내 한 줄(2026-11-03). shown = 휴지통 표시 이름(동명 번호 포함),
- * newName = 새 이름으로 복원했으면 그 이름, sidecarFailed = 사이드카 재적용에 실패한 항목이 있는가.
+ * newName = 새 이름으로 복원했으면 그 이름, sidecarFailed = 사이드카 재적용에 실패한 항목
+ * (ProjectRestoreOutcome.sidecarFailed — 'favorite'·'bookmark'·'template'). boolean 이면 종전처럼 즐겨찾기·북마크 문구.
  */
 export function projectRestoreResultText(
   shown: string,
   newName: string | undefined,
-  sidecarFailed: boolean,
+  sidecarFailed: boolean | readonly string[],
 ): string {
   const base = newName
     ? DELETE_RESULT_TEXT.projectRestoredAs(shown, newName)
     : DELETE_RESULT_TEXT.projectRestored(shown);
-  return sidecarFailed ? `${base} ${DELETE_RESULT_TEXT.projectSidecarRestoreFailed}` : base;
+  const parts: string[] = [];
+  if (typeof sidecarFailed === 'boolean') {
+    if (sidecarFailed) parts.push(DELETE_RESULT_TEXT.projectSidecarRestoreFailed);
+  } else {
+    if (sidecarFailed.some((p) => p !== 'template')) {
+      parts.push(DELETE_RESULT_TEXT.projectSidecarRestoreFailed);
+    }
+    if (sidecarFailed.includes('template')) parts.push(DELETE_RESULT_TEXT.projectTemplateRestoreFailed);
+  }
+  return parts.length > 0 ? `${base} ${parts.join(' ')}` : base;
 }
 
 /** 프로젝트 삭제 결과 안내 문구 — 실패면 failMessage 우선, 없으면 기본. */

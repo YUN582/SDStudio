@@ -35,11 +35,4 @@ test('mobile keeps its own project placement', () => {
   render(<ProjectTopBar />);
   expect(screen.queryByTestId('project-selector')).toBeNull();
 });
-test('startup shortcut help is opt-in and its setting reports changes', () => {
-  const change = jest.fn();
-  render(<PersonalTab showShortcutHelpOnStartup={false} setShowShortcutHelpOnStartup={change} />);
-  const checkbox = screen.getByRole('checkbox', { name: '시작 시 단축키 도움말 표시' }) as HTMLInputElement;
-  expect(checkbox.checked).toBe(false);
-  fireEvent.click(checkbox);
-  expect(change).toHaveBeenCalledWith(true);
-});
+// Startup help is now in LayoutTab; configScreenSplit.test.tsx covers its default, opt-in and save behavior.

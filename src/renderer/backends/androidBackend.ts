@@ -76,6 +76,12 @@ import DBCSV from '../../../assets/db.txt';
 import V5DBCSV from '../../../assets/db_v5.txt';
 import packageInfo from '../../../package.json';
 import ZipService from './zipService';
+import {
+  copyVerifiedThenRemoveSource,
+  ExportTransferError,
+  type TreeSize,
+  type VerifiedCopyOps,
+} from './verifiedExportCopy';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
@@ -143,6 +149,14 @@ function getDirName(filePath: string): string {
   const parts = filePath.split('/');
   parts.pop();
   return parts.join('/');
+}
+
+// Download/ 바로 아래 한 단계 이름만 허용한다(구분자·「..」·빈 이름 거부 — Download/ 밖으로 나가지 않게).
+function assertDownloadsSubfolderName(name: string): void {
+  // 구분자가 없으면 「a..b」 같은 이름은 한 단계 이름이라 안전하다(정확히 「.」「..」만 거부).
+  if (!name || /[\\/\0]/.test(name) || name === '.' || name === '..') {
+    throw new Error('다운로드 폴더 이름이 올바르지 않습니다.');
+  }
 }
 
 class AndroidFetcher implements NovelAiFetcher {
@@ -567,6 +581,9 @@ export class AndroidBackend extends Backend {
   async startFileDrag(_path: string): Promise<void> {
     // OS-native file dragging is a desktop interaction.
   }
+  async startImageDragOut(_path: string): Promise<boolean> {
+    return false;
+  }
 
   async publishExport(arg: string): Promise<void> {
     const normalized = arg.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -605,32 +622,21 @@ export class AndroidBackend extends Backend {
     }
 
     const destRel = `Download/${fileName}`;
-    await Filesystem.copy({
-      from: `${APP_DIR}/${normalized}`,
-      directory: Directory.Documents,
-      to: destRel,
-      toDirectory: Directory.ExternalStorage,
-    });
-
-    // 외부 복사가 성공한 뒤에만 내부 스테이징 사본을 정리한다. 복사 실패 시에는
-    // exports/ 원본이 남아 사용자가 설정의 폴더 정리 또는 재시도로 회수할 수 있다.
+    // 복사 → 사본 크기 확인 → 같을 때만 내부 스테이징 원본 삭제(2026-11-22 P1). 확인에 실패하면
+    // 원본은 exports/ 에 그대로 두고, 잘린 사본은 지우고, 실패 창을 띄운 뒤 던진다(호출부는
+    // isNotifiedExportTransferError 로 중복 안내를 피할 수 있다).
     let cleanupFailed = false;
     try {
-      if (sourceStat.type === 'directory') {
-        assertDeletableDirPath(normalized);
-        await Filesystem.rmdir({
-          path: `${APP_DIR}/${normalized}`,
-          directory: Directory.Documents,
-          recursive: true,
-        });
-      } else {
-        await Filesystem.deleteFile({
-          path: `${APP_DIR}/${normalized}`,
-          directory: Directory.Documents,
-        });
-      }
+      ({ cleanupFailed } = await copyVerifiedThenRemoveSource(
+        fileName,
+        this.exportCopyOps(normalized, destRel, sourceStat.type === 'directory'),
+      ));
     } catch (e) {
-      cleanupFailed = true;
+      if (e instanceof ExportTransferError) {
+        e.notified = true;
+        appState.pushDialog({ type: 'yes-only', text: e.message });
+      }
+      throw e;
     }
 
     const mime = (() => {
@@ -719,21 +725,85 @@ export class AndroidBackend extends Backend {
     }
 
     const destRel = `Download/${fileName}`;
-    await Filesystem.copy({
-      from: `${APP_DIR}/${normalized}`,
-      directory: Directory.Documents,
-      to: destRel,
-      toDirectory: Directory.ExternalStorage,
-    });
-    // 복사 결과를 한 번 더 확인한다(확인 실패 = 저장 실패로 보고 기존 데이터를 건드리지 않게).
-    await Filesystem.stat({ path: destRel, directory: Directory.ExternalStorage });
-    try {
-      await Filesystem.deleteFile({
-        path: `${APP_DIR}/${normalized}`,
-        directory: Directory.Documents,
-      });
-    } catch (e) {}
+    // 복사 결과의 크기까지 확인한다(확인 실패 = 저장 실패로 보고 기존 데이터를 건드리지 않게 — 호출부
+    // runProjectOverwrite 가 중단). 대화상자는 띄우지 않는다(이 경로는 조용한 저장 — 호출부가 알린다).
+    // 원본 정리 실패는 저장 성공을 뒤집지 않는다(기존과 같음).
+    await copyVerifiedThenRemoveSource(
+      fileName,
+      this.exportCopyOps(normalized, destRel, false),
+      { brief: true },
+    );
     return destRel;
+  }
+
+  // 내보내기 옮기기(publishExport·saveExportToDownloads)의 파일 시스템 연산 — 크기 확인은
+  // Filesystem.stat(파일)·readdir 재귀(폴더)로 잰다. Download/ 는 ExternalStorage 아래 실제 경로라
+  // stat 이 File.length() 를 그대로 돌려준다(MediaStore/SAF 를 거치지 않음). 여유 공간은 같은 볼륨
+  // (getExternalStorageDirectory)의 StatFs.
+  private exportCopyOps(
+    normalized: string,
+    destRel: string,
+    isDirectory: boolean,
+  ): VerifiedCopyOps {
+    const src = { path: `${APP_DIR}/${normalized}`, directory: Directory.Documents };
+    const dst = { path: destRel, directory: Directory.ExternalStorage };
+    return {
+      measureSource: () => this.measureTree(src.path, src.directory),
+      measureDest: () => this.measureTree(dst.path, dst.directory),
+      copy: async () => {
+        await Filesystem.copy({
+          from: src.path,
+          directory: src.directory,
+          to: dst.path,
+          toDirectory: dst.directory,
+        });
+      },
+      // 사본은 이번에 「비어 있음」을 확인하고 고른 새 이름이다(사용자 파일 아님).
+      removeDest: async () => {
+        const st = await Filesystem.stat(dst);
+        if (st.type === 'directory') {
+          await Filesystem.rmdir({ ...dst, recursive: true });
+        } else {
+          await Filesystem.deleteFile(dst);
+        }
+      },
+      removeSource: async () => {
+        if (isDirectory) {
+          assertDeletableDirPath(normalized);
+          await Filesystem.rmdir({ ...src, recursive: true });
+        } else {
+          await Filesystem.deleteFile(src);
+        }
+      },
+      freeSpace: () => this.getFreeSpace(),
+    };
+  }
+
+  // 파일이면 그 크기, 폴더면 하위 전체 파일 수·바이트 합.
+  private async measureTree(path: string, directory: Directory): Promise<TreeSize> {
+    const st = await Filesystem.stat({ path, directory });
+    if (st.type !== 'directory') {
+      const bytes = Number(st.size);
+      if (!Number.isFinite(bytes) || bytes < 0) throw new Error('파일 크기를 알 수 없습니다.');
+      return { bytes, files: 1 };
+    }
+    const total: TreeSize = { bytes: 0, files: 0 };
+    const walk = async (dir: string) => {
+      const { files } = await Filesystem.readdir({ path: dir, directory });
+      for (const f of files) {
+        const child = `${dir}/${f.name}`;
+        if (f.type === 'directory') {
+          await walk(child);
+        } else {
+          const bytes = Number(f.size);
+          if (!Number.isFinite(bytes) || bytes < 0) throw new Error('파일 크기를 알 수 없습니다.');
+          total.bytes += bytes;
+          total.files += 1;
+        }
+      }
+    };
+    await walk(path);
+    return total;
   }
 
   // ─── Google 드라이브 연동 (드라이브 API ④) — 네이티브 플러그인 GoogleDrive ───
@@ -965,18 +1035,62 @@ export class AndroidBackend extends Backend {
     }
   }
 
-  async copyToDownloads(path: string): Promise<void> {
+  // 기기 Download/ 아래 한 단계 이름(폴더·파일)이 있는지(여러 장 다운로드의 씬 이름 폴더 중복 확인용).
+  async existInDownloads(name: string): Promise<boolean> {
+    assertDownloadsSubfolderName(name);
+    try {
+      await Filesystem.stat({
+        path: `Download/${name}`,
+        directory: Directory.ExternalStorage,
+      });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async copyToDownloads(path: string, subfolder?: string): Promise<void> {
     // 파일 내용을 base64 문자열로 JS까지 왕복시키면 대용량 파일(원본 PNG 다수를 묶은
     // tar 등 수백 MB)에서 네이티브 힙 OOM으로 앱이 크래시하므로, 데이터를 브리지에
     // 태우지 않는 네이티브 파일 복사(Filesystem.copy)로 처리한다.
+    // subfolder(선택) = Download/<subfolder>/ 에 저장(여러 장 다운로드의 씬 이름 폴더). 생략 = 종전 그대로.
+    if (subfolder !== undefined) {
+      assertDownloadsSubfolderName(subfolder);
+      // 원본이 없으면 폴더를 만들기 전에 실패시킨다(빈 폴더를 남기지 않게).
+      await Filesystem.stat({ path: `${APP_DIR}/${path}`, directory: Directory.Documents });
+    }
+    const destDir = subfolder !== undefined ? `Download/${subfolder}` : 'Download';
     try {
       await Filesystem.mkdir({
-        path: 'Download',
+        path: destDir,
         directory: Directory.ExternalStorage,
+        recursive: true,
       });
     } catch (e) {}
-    const fileName = path.split('/').pop()!;
-    const destRel = 'Download/' + fileName;
+    let fileName = path.split('/').pop()!;
+    if (subfolder !== undefined) {
+      // 같은 폴더 안에서 다른 하위 경로의 같은 파일명이 겹치면 " (n)" 접미로 피한다(덮어쓰지 않음).
+      const dot = fileName.lastIndexOf('.');
+      const baseName = dot > 0 ? fileName.slice(0, dot) : fileName;
+      const extension = dot > 0 ? fileName.slice(dot) : '';
+      let n = 2;
+      while (true) {
+        try {
+          await Filesystem.stat({
+            path: `${destDir}/${fileName}`,
+            directory: Directory.ExternalStorage,
+          });
+        } catch (e) {
+          break;
+        }
+        if (n > 999) {
+          fileName = `${baseName} (${Date.now()})${extension}`;
+          break;
+        }
+        fileName = `${baseName} (${n++})${extension}`;
+      }
+    }
+    const destRel = `${destDir}/${fileName}`;
     await Filesystem.copy({
       from: `${APP_DIR}/${path}`,
       directory: Directory.Documents,
@@ -1002,7 +1116,12 @@ export class AndroidBackend extends Backend {
         await ZipService.scanMedia({ path: absPath, mime });
       } catch (e) {}
     }
-    await ZipService.showDownloads({});
+    // 한 장 저장은 종전처럼 시스템 다운로드 화면을 연다. 여러 장(subfolder) 저장은 열지 않는다 — 장마다 열면
+    // 첫 장에서 앱이 뒤로 밀리고(이후 화면 열기는 백그라운드 제한에 걸려 실패로 집계될 수 있음) 사용자는 화면이
+    // 계속 바뀐다. 결과는 호출부(ImageDownloadService)가 폴더 이름과 함께 안내한다(2026-11-19).
+    if (subfolder === undefined) {
+      await ZipService.showDownloads({});
+    }
   }
 
   async zipFiles(files: FileEntry[], outPath: string): Promise<void> {

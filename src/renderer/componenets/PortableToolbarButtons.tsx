@@ -13,6 +13,7 @@ import { ActionIcon } from './ActionIcon';
 import { appState } from '../models/AppService';
 import { CompanionButtonSlot } from './CompanionDnd';
 import { toolbarLabelOf } from '../models/uiLayout';
+import { PRESET_SELECT_PIECE_SHORT_LABEL } from '../models/presetSelectRow';
 
 // 렌더 컨텍스트: variant = 이 버튼이 실제로 표시되는 영역(스타일 적응 기준).
 // mobileIcon = 씬 툴바의 모바일 아이콘 축약 여부(현재 이관 버튼은 미사용이나 계약 유지).
@@ -31,6 +32,9 @@ export interface PortableButtonsContext {
   // 'measure' = 모습은 아이콘만(②·③ 단계)이고 폭 측정용 보이지 않는 글자만 둔다. 없으면 종전 렌더 그대로
   // (⋯ 메뉴 행·모바일·사이드 바·동반 슬롯).
   labels?: 'show' | 'measure';
+  // 동반 슬롯의 글자 버튼(2026-11-22, PC 사전세팅선택 행의 프롬프트조각) — iconOnly 가 아닐 때 글자 버튼을 그 행 높이(32px)·
+  // 글자 14px 로 맞추고 행 gap 이 간격을 맡아 ml-1 을 뺀다. 다른 버튼은 영향 없음(글자 버튼은 프롬프트조각뿐).
+  companionLabel?: boolean;
 }
 
 // 프로젝트 바 글자 단계의 버튼 클래스 덧붙임 — 높이는 그대로(아이콘 18px + p-1), 오른쪽만 pr-2 로 숨통.
@@ -240,17 +244,39 @@ export function portableToolbarButtons(
       () => appState.openNewWindow(),
       lab('new-window'),
     ),
-    // SessionSelect 로컬 맵에서 이관 — 홈(project)은 원본대로 icon-button(기본 크기),
-    // 씬으로 오면 씬 표준(배경형 18px+툴팁)으로 적응. 아이콘은 사전의 합성 아이콘(백업 본체+작은
-    // 내보내기 화살표, 2026-10-04) — 같은 메뉴를 여는 프로젝트 서랍·탐색 버튼과 같은 아이콘.
+    // 프로젝트 불러오기·내보내기(2026-11-19 백업 메뉴 분할 — 종전 「백업/내보내기」 한 버튼을 둘로).
+    // 홈(project)은 종전 backup-export 렌더 그대로 icon-button(기본 크기), 씬으로 오면 씬 표준(배경형 18px+툴팁)으로 적응.
+    // 아이콘은 사전의 합성 아이콘(백업 본체+작은 화살표 — 내보내기는 나가는, 불러오기는 들어오는 방향).
+    'backup-import':
+      variant === 'project' ? (
+        <Tooltip content="프로젝트 불러오기">
+          <button
+            className={`icon-button touch-hit relative mx-1${lab('backup-import')?.shown ? LABELED_BUTTON_CLASS : ''}`}
+            aria-label="프로젝트 불러오기"
+            onClick={() => {
+              appState.projectImportMenu();
+            }}
+          >
+            <ActionIcon id="backup-import" />
+            {lab('backup-import')?.node}
+          </button>
+        </Tooltip>
+      ) : (
+        iconButton(
+          variant,
+          '프로젝트 불러오기',
+          <ActionIcon id="backup-import" size={18} />,
+          () => appState.projectImportMenu(),
+        )
+      ),
     'backup-export':
       variant === 'project' ? (
-        <Tooltip content="프로젝트 백업/내보내기">
+        <Tooltip content="프로젝트 내보내기">
           <button
             className={`icon-button touch-hit relative mx-1${lab('backup-export')?.shown ? LABELED_BUTTON_CLASS : ''}`}
-            aria-label="프로젝트 백업/내보내기"
+            aria-label="프로젝트 내보내기"
             onClick={() => {
-              appState.projectBackupMenu();
+              appState.projectExportMenu();
             }}
           >
             <ActionIcon id="backup-export" />
@@ -260,9 +286,9 @@ export function portableToolbarButtons(
       ) : (
         iconButton(
           variant,
-          '프로젝트 백업/내보내기',
+          '프로젝트 내보내기',
           <ActionIcon id="backup-export" size={18} />,
-          () => appState.projectBackupMenu(),
+          () => appState.projectExportMenu(),
         )
       ),
     // SessionSelect 로컬 맵에서 이관 — 홈(project)은 원본대로 icon-button(무배경,
@@ -322,6 +348,10 @@ export function portableToolbarButtons(
             ? 'icon-button touch-hit relative mx-1 h-8 back-green' + (lab('piece-editor')?.shown ? LABELED_BUTTON_CLASS : '')
             : 'round-button back-green h-8 flex items-center gap-1'
         }
+        data-companion-label={ctx.companionLabel ? '' : undefined}
+        // 사전세팅선택 행(companionLabel)은 짧은 「조각」만 보이므로 전체 이름을 툴팁·접근성 이름으로
+        title={ctx.companionLabel ? toolbarLabelOf('piece-editor') ?? '프롬프트조각' : undefined}
+        aria-label={ctx.companionLabel ? toolbarLabelOf('piece-editor') ?? '프롬프트조각' : undefined}
         onClick={() => appState.openPieceEditor()}
       >
         <ActionIcon id="piece-editor" size={18} />
@@ -344,16 +374,21 @@ export function portableToolbarButtons(
 // 미지정 호출은 기존과 동일(감싸지 않음) — 시그니처 확장은 옵셔널이라 하위 호환.
 // variant(옵셔널, 기본 'companion'): 호스트 행의 이웃 버튼 스타일에 적응 — 사전세팅선택
 // 행처럼 무배경 icon-button 이 표준인 행은 'project' 로 무배경 적응(④ 실기 보정).
+// opts.labeled(2026-11-22): 글자 버튼(프롬프트조각)을 아이콘+이름 그대로 낸다 — PC 사전세팅선택 행에서 자리가 될 때만
+// (호출부가 행 폭으로 판정, models/presetSelectRow.ts). 없으면 종전대로 아이콘+툴팁.
 export function renderCompanionButtons(
   ids: string[],
   hostKey?: string,
   variant: 'companion' | 'project' = 'companion',
+  opts?: { labeled?: boolean },
 ): ReactNode[] {
   if (ids.length === 0) return [];
+  const labeled = !!opts?.labeled;
   const nodes = portableToolbarButtons({
     mobileIcon: false,
     variant,
-    iconOnly: true, // piece-editor 텍스트 축약(툴팁 대체)
+    iconOnly: !labeled, // piece-editor 텍스트 축약(툴팁 대체) — labeled 면 글자 버튼
+    companionLabel: labeled || undefined,
   });
   return ids
     .map((id) => {

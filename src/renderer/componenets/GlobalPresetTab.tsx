@@ -1,3 +1,4 @@
+import { EmptyState } from './EmptyState';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
@@ -47,6 +48,13 @@ import {
   setGlobalPresetDefaultRecorded,
   setGlobalPresetsDefaultRecorded,
 } from '../models/globalLibraryUndo';
+import { prepareGlobalDelete } from '../models/globalLibraryDeleteUndo';
+import { GLOBAL_LIBRARY_TRASH_DAYS } from '../models/globalLibraryTrash';
+import { GlobalLibraryTrashButton } from './GlobalLibraryTrashView';
+import {
+  GLOBAL_PRESET_PNG_TEXT,
+  runGlobalPresetPngExport,
+} from '../models/globalPresetPngExport';
 
 // 템플릿 관리(글로벌 프리셋 카드 선택)와 공유 — export
 export const GlobalVibeImage = observer(
@@ -178,10 +186,10 @@ const GenRow = observer(
     return (
       <div
         className={
-          'flex flex-col gap-2 p-3 border-2 rounded-lg mb-2 bg-[var(--c-surface-2)] ' +
+          'flex flex-col gap-2 p-3 border-2 rounded-lg mb-2 ' +
           (selected
-            ? 'border-sky-500 bg-sky-50 dark:bg-sky-900'
-            : 'line-color')
+            ? 'border-sky-500 list-row-selected font-normal'
+            : 'line-color bg-[var(--c-surface-2)]')
         }
       >
         {/* 1행: 기본 토글 + 이름 (전체 너비) */}
@@ -199,22 +207,23 @@ const GenRow = observer(
               )}
             </button>
           )}
-          <button
-            className="icon-button p-1 flex-none"
-            onClick={onToggleDefault}
-            title={entry.isDefault ? '기본 해제' : '기본으로 지정'}
-          >
-            <ActionIcon
-              id="pin-default"
-              className={entry.isDefault ? 'text-orange-500' : 'text-faint'}
-              size={22}
-            />
-          </button>
+          <Tooltip content={entry.isDefault ? '기본 해제' : '기본으로 지정'}>
+            <button
+              className="icon-button p-1 flex-none"
+              onClick={onToggleDefault}
+            >
+              <ActionIcon
+                id="pin-default"
+                className={entry.isDefault ? 'text-orange-500' : 'text-faint'}
+                size={22}
+              />
+            </button>
+          </Tooltip>
           <span className="flex-1 truncate text-default text-base font-medium">
             {entry.name}
           </span>
         </div>
-        {/* 2행: 액션 버튼들 */}
+        {/* 2행: 액션 버튼들 — 주 동작 「프로젝트로 복사」만 색, 보조는 중립 back-gray·삭제 back-red(2026-11-21 버튼 색 정돈 2차) */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             className="round-button back-sky text-base px-4 py-2 flex-1 md:flex-none"
@@ -226,7 +235,7 @@ const GenRow = observer(
           <div className="flex gap-2 md:ml-auto">
             <Tooltip content="이름 변경">
               <button
-                className="icon-button btn-solid-green p-3"
+                className="icon-button back-gray p-3"
                 onClick={onRename}
               >
                 <ActionIcon id="rename" size={16} />
@@ -234,7 +243,7 @@ const GenRow = observer(
             </Tooltip>
             <Tooltip content="PNG로 내보내기">
               <button
-                className="icon-button btn-solid-sky p-3"
+                className="icon-button back-gray p-3"
                 onClick={onExport}
               >
                 <ActionIcon id="export" size={16} />
@@ -242,7 +251,7 @@ const GenRow = observer(
             </Tooltip>
             <Tooltip content="삭제">
               <button
-                className="icon-button btn-solid-red p-3"
+                className="icon-button back-red p-3"
                 onClick={onDelete}
               >
                 <FaTrash size={16} />
@@ -364,14 +373,27 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
   };
 
 
-  const handleDelete = (entry: IGlobalPresetEntry) => {
+  const handleDelete = async (entry: IGlobalPresetEntry) => {
+    // 삭제 = 이 탭의 휴지통으로 이동(2026-11-24, 30일 보관 — 이미지 파일은 영구 삭제 때만 지움). 되돌리기(Ctrl+Z) = 휴지통에서 복원.
+    // 휴지통 갈래 문구·위험도(danger true)는 deleteConfirmText 의 trashDays 규칙 그대로
+    let plan;
+    try {
+      plan = await prepareGlobalDelete('presets', [entry.id]);
+    } catch (e: any) {
+      appState.pushMessage(e.message || '삭제 실패');
+      return;
+    }
     appState.pushDialog({
       type: 'confirm',
-      // 휴지통이 없다 — 영구 삭제(Enter 무시, 2026-10-03 E1)
-      ...deleteConfirmText({ kind: 'globalPreset', name: entry.name, outcome: 'permanent' }),
+      ...deleteConfirmText({
+        kind: 'globalPreset',
+        name: entry.name,
+        outcome: { trashDays: GLOBAL_LIBRARY_TRASH_DAYS },
+      }),
       callback: async () => {
         try {
-          await globalPresetService.delete(entry.id);
+          const r = await plan.run();
+          if (r.failed.length > 0) appState.pushMessage(r.failed[0].error || '삭제 실패');
         } catch (e: any) {
           appState.pushMessage(e.message || '삭제 실패');
         }
@@ -414,49 +436,32 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
 
   const handleExportSelected = async () => {
     const entries = allPresets.filter(entry => selectedIds.has(entry.id)).map(({ id, name }) => ({ id, name }));
-    if (!entries.length) return;
-    if (entries.length === 1) {
-      const entry = globalPresetService.get(entries[0].id);
-      if (entry) await handleExport(entry);
-      return;
-    }
-    try {
-      const folder = await backend.selectDir();
-      if (!folder) return;
-      appState.setProgressDialog({ text: '프리셋 PNG 저장 중...', done: 0, total: entries.length });
-      const result = await exportGlobalPresetPngs(entries, folder, (done, total) =>
-        appState.setProgressDialog({ text: '프리셋 PNG 저장 중...', done, total }));
-      appState.pushMessage(result.failed.length
-        ? `프리셋 PNG ${result.saved}개 저장, ${result.failed.length}개 실패: ${failedNamesLine(result.failed)}`
-        : `프리셋 PNG ${result.saved}개를 저장했습니다.`, result.failed.length ? 'error' : 'success');
-    } catch (error: any) {
-      appState.pushMessage('프리셋 PNG 내보내기 실패: ' + (error?.message || error), 'error');
-    } finally {
-      appState.setProgressDialog(undefined);
-    }
+    await runGlobalPresetPngExport(entries);
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    // 선택 여러 건 = 되돌리기 한 항목(2026-11-18). 2026-11-24 부터 크기와 관계없이 전부 휴지통으로(종전 16MB 초과 영구 갈래 없음)
+    let plan;
+    try {
+      plan = await prepareGlobalDelete('presets', ids);
+    } catch (e: any) {
+      appState.pushMessage(e.message || '삭제 실패');
+      return;
+    }
     appState.pushDialog({
       type: 'confirm',
       ...deleteConfirmText({
         kind: 'globalPreset',
-        count: selectedIds.size,
-        outcome: 'permanent',
+        count: ids.length,
+        outcome: { trashDays: GLOBAL_LIBRARY_TRASH_DAYS },
       }),
       callback: async () => {
         // 실패를 삼키지 않는다 — 건수와 이름을 알린다(X13)
-        const ids = Array.from(selectedIds);
-        const failedNames: string[] = [];
-        for (const id of ids) {
-          try {
-            await globalPresetService.delete(id);
-          } catch (e) {
-            console.error('글로벌 프리셋 삭제 실패:', id, e);
-            failedNames.push(globalPresetService.get(id)?.name ?? id);
-          }
-        }
+        const r = await plan.run();
+        const failedNames = r.failed.map((f) => f.name);
+        for (const f of r.failed) console.error('글로벌 프리셋 삭제 실패:', f.id, f.error);
         exitMultiSelect();
         if (failedNames.length > 0) {
           appState.pushDialog({
@@ -466,7 +471,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
               `삭제하지 못한 프리셋: ${failedNamesLine(failedNames)}`,
           });
         } else {
-          appState.pushMessage(`글로벌 프리셋 ${ids.length}개를 삭제했습니다.`);
+          appState.pushMessage(`글로벌 프리셋 ${ids.length}개를 휴지통으로 옮겼습니다.`);
         }
       },
     });
@@ -579,6 +584,7 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
           <GridToolbarGroup caption="백업" separate>
             <LibraryAction label="백업" hint="글로벌 프리셋 전체 백업" icon={<FaFileArchive />} onClick={() => appState.globalPresetBackupExport()} />
             <LibraryAction label="백업 불러오기" icon={<FaFileImport />} onClick={() => appState.globalPresetBackupImport()} />
+            <GlobalLibraryTrashButton kind="presets" className="round-button back-gray h-8 px-3 text-sm gap-1.5" />
           </GridToolbarGroup>
           {isMobile && <GridToolbarGroup caption="선택" separate>
             <LibraryAction label={isMobile ? (multiSelectMode ? '멀티선택 취소' : '멀티선택') : `선택 해제 (${selectedIds.size})`} pressed={multiSelectMode}
@@ -607,9 +613,9 @@ export const GlobalPresetTab = observer(({ isActive = true }: { isActive?: boole
         {reorder.drag && <ReorderDragPreview type="global-preset" drag={reorder.drag} />}
         {/* 통합 카드 그리드 (이지/일반 구분 없음) */}
         {total > 0 && visible.length === 0 && (
-          <div className="text-center text-muted py-10">
+          <EmptyState size="lg" className="py-10">
             "{query}" 검색 결과가 없습니다.
-          </div>
+          </EmptyState>
         )}
         {(visible.length > 0 || !q) && (
           <div className="flex flex-wrap gap-4">

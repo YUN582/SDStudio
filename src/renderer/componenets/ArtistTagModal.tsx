@@ -1,3 +1,4 @@
+import { ProgressBar } from './ProgressIndicators';
 import React, { useEffect, useState, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import ModalOverlay from './ModalOverlay';
@@ -131,8 +132,9 @@ const WdModelToggle = observer(
   }) => {
     const wdKey = artistTagService.wdModel;
     return (
+      // 택일 묶음 .seg-group(UI 정돈 그룹 2-c) — 좁은 자리라 작은 칸(.seg-sm 28px), stretch = 칸이 줄 폭을 나눠 채움(.seg-fill)
       <div
-        className="flex rounded-md overflow-hidden border line-color"
+        className={'seg-group seg-sm flex' + (stretch ? ' seg-fill' : '')}
         data-wd-model-toggle=""
       >
         {(
@@ -144,11 +146,7 @@ const WdModelToggle = observer(
           <button
             key={m.key}
             className={
-              'px-2.5 py-1 text-xs transition-colors ' +
-              (stretch ? 'flex-1 ' : '') +
-              (wdKey === m.key
-                ? 'bg-sky-600 text-white dark:bg-sky-500'
-                : 'bg-transparent text-muted hover:bg-gray-100 dark:hover:bg-slate-700')
+              'seg-item text-xs' + (wdKey === m.key ? ' seg-on' : '')
             }
             onClick={() => {
               if (wdKey !== m.key) {
@@ -230,12 +228,7 @@ const ModelInstallCard = observer(({ model }: { model: ArtistModelKey }) => {
         이 분석을 사용하려면 모델 설치가 필요합니다. (다운로드 {def.sizeText})
       </div>
       {busy && (
-        <div className="h-1.5 rounded bg-gray-200 dark:bg-slate-600 overflow-hidden">
-          <div
-            className="h-full bg-sky-500 transition-all"
-            style={{ width: `${artistTagService.downloadPercent}%` }}
-          />
-        </div>
+        <ProgressBar heightClass="h-1.5" percent={artistTagService.downloadPercent} />
       )}
       <button
         className="text-sm btn back-sky px-3 py-1.5 rounded disabled:opacity-50"

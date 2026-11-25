@@ -159,6 +159,9 @@ const UNDO_MODULES = [
   'models/projectDeleteUndo.ts',
   'models/globalLibraryUndo.ts',
   'models/sceneImportUndo.ts',
+  // 2026-11-18 묶음 4-b: 글로벌 프리셋·글로벌 캐릭터 삭제, 템플릿 재적용 계측 모듈 추가
+  'models/globalLibraryDeleteUndo.ts',
+  'models/templateReapplyUndo.ts',
 ];
 
 const RULES: Rule[] = [
@@ -222,8 +225,9 @@ const RULES: Rule[] = [
     allow: {
       'models/AppService.ts': 1,
       'models/ArtistLibraryService.ts': 1,
-      'models/BackupService.ts': 3,
-      'models/BatchProcessService.ts': 2,
+      // models/BackupService.ts: 0 — 2026-11-16 M5 묶음 b P8 3 → 2, 묶음 b-2 폴더 일괄 이미지 내보내기가 ExportPresetService 단계 함수를 써서 2 → 0
+      // 2026-11-21 WebP 변환 목적지 이름을 imageFormats.planWebpTargets 로 옮겨 2 → 1
+      'models/BatchProcessService.ts': 1,
       'models/ExportPresetService.ts': 3,
       'models/GlobalCharacterPresetService.ts': 3,
       'models/GlobalPresetService.ts': 2,
@@ -342,7 +346,7 @@ const RULES: Rule[] = [
     allow: {
       'componenets/ResultViewer.tsx': 1, // 몇 등 이하 삭제(숫자)
       'componenets/SceneQueueControl.tsx': 1, // 찾을 씬 검색어
-      'models/BackupService.ts': 4, // 캐릭터 이름(파일명 접두) 2·이미지 크기 1·파일명 구분자 1
+      // models/BackupService.ts: 0 — 2026-11-16 M5 묶음 b P8 4 → 1, 묶음 b-2 캐릭터 이름(prefix_ask) 질의를 ExportPresetService.askPresetCharacterName 으로 합쳐 1 → 0
       'models/BatchProcessService.ts': 5, // 순위 숫자 2·대체 문자 1·WebP 품질 2
       'models/customResolutionPrompt.ts': 2, // 해상도 너비·높이
       'models/ExportPresetService.ts': 1, // 캐릭터 접두

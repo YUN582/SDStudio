@@ -23,6 +23,7 @@ import {
 import { IBatchPlanItem, resolveBatchName } from './batchCreatePlan';
 import type { TemplateProtectArea } from './TemplateService';
 import type { ProjectSidecarSnapshot } from './TrashService';
+import type { ProjectTemplateTrashPart } from './templateTrashPart';
 import { getAppState } from './appStateRef';
 import { FileEntry } from '../backend';
 import { dataUriToBase64 } from './ImageService';
@@ -31,6 +32,14 @@ import { ResourceSyncService } from './ResourceSyncService';
 import { persistService } from './PersistenceService';
 import { isOutputImageFile } from './imageFormats';
 import { isWorkspaceBakHealCandidate } from './trashList';
+import {
+  copySceneAttachments,
+  defaultSceneCopyDeps,
+  sessionVariantAttachmentFiles,
+  sessionGenerationAttachmentFiles,
+  mergeAttachmentFiles,
+  type SceneAttachmentCopyStats,
+} from './sceneCopyFlow';
 import {
   projectPath,
   sceneOutputDir,
@@ -71,8 +80,8 @@ import * as legacy from './legacy';
 
 const SESSION_SERVICE_INTERVAL = 5000;
 
-/** 복원 때 다시 붙이지 못한 사이드카 항목(썸네일은 캐시라 제외). */
-export type ProjectSidecarPart = 'favorite' | 'bookmark';
+/** 복원 때 다시 붙이지 못한 사이드카 항목(썸네일은 캐시라 제외). template = 씬 템플릿 지정·적용 기록(2026-11-18 T2) */
+export type ProjectSidecarPart = 'favorite' | 'bookmark' | 'template';
 
 /** `SessionService.restoreProjectFromTrash` 결과(2026-11-03 — 되돌리기 2차가 재사용). */
 export interface ProjectRestoreOutcome {
@@ -1466,8 +1475,7 @@ export class SessionService extends ResourceSyncService<Session> {
         if (withImages) {
           await this.duplicateSessionDeep(session, newName, destFolder);
         } else {
-          const proj = await this.exportSessionShallow(session);
-          await this.importSessionShallow(proj, newName);
+          await this.cloneSessionShallow(session, newName);
           await this.moveToFolder(newName, destFolder);
         }
         cloned++;
@@ -1880,8 +1888,30 @@ export class SessionService extends ResourceSyncService<Session> {
     if (keysToDelete.length > 0 || hadSceneBookmarks) {
       await this.saveBookmarks();
     }
-    // 휴지통에 삭제 시점 기록 (신 배치는 폴더별 시각도 함께) + 사이드카 스냅숏
-    await trashService.moveProjectToTrash(name, trashDir, sidecar);
+    // 템플릿 몫(2026-11-18 T2): 씬 템플릿 지정·숨김·퀵 생성 지정·적용 기록을 떠서(읽기만) 스냅숏에 싣는다. 지정 목록이 막혔으면
+    // (null) 싣지 않고 종전대로 templates.json 에 남긴다(두 벌 금지). 실패해도 삭제는 이미 끝났으므로 막지 않는다.
+    let templatePart: ProjectTemplateTrashPart | undefined;
+    try {
+      templatePart = (await templateService.captureProjectForTrash(name)) ?? undefined;
+    } catch (e) {
+      console.warn('삭제 프로젝트 템플릿 지정 스냅숏 실패(종전대로 지정 유지):', name, e);
+      templatePart = undefined;
+    }
+    const snap: ProjectSidecarSnapshot | undefined = templatePart
+      ? { ...(sidecar ?? { favorite: false }), template: templatePart }
+      : sidecar;
+    // 휴지통에 삭제 시점 기록 (신 배치는 폴더별 시각도 함께) + 사이드카 스냅숏. 여기서 실패하면(trash.json 미로드 등) 아래
+    // 지정 빼기를 하지 않는다 — 지정은 templates.json 에 그대로 남는다.
+    await trashService.moveProjectToTrash(name, trashDir, snap);
+    // 휴지통 기록에 실은 뒤에만 templates.json 에서 뺀다. 쓰기 오류면 메모리는 뺀 상태로 dirty 가 남아 나중에 다시 저장되고,
+    // 그 사이 앱이 끝나 양쪽에 남아도 복원은 같은 지정을 두 번 걸지 않는다(TemplateService.restoreProjectFromTrash).
+    if (templatePart) {
+      try {
+        await templateService.releaseProjectForTrash(name, templatePart);
+      } catch (e) {
+        console.error('삭제 프로젝트 템플릿 지정 빼기 저장 실패(다시 시도 예정):', name, e);
+      }
+    }
   }
 
   // 프로젝트 하나의 루트 사이드카 몫을 스냅숏으로(읽기만). 이미지 북마크 키는 `이름:` 접두를 뗀다.
@@ -1937,6 +1967,18 @@ export class SessionService extends ResourceSyncService<Session> {
   ): Promise<{ restored: boolean; failed: ProjectSidecarPart[] }> {
     const failed: ProjectSidecarPart[] = [];
     if (!snap) return { restored: false, failed };
+    // 템플릿 몫(2026-11-18 T2)을 먼저 — 아래 목록 재스캔(update) 전에 숨김이 걸려 있게. 지정 목록이 막혀 되살리지 못하면
+    // 복원은 그대로 두고 알린다(즐겨찾기·북마크와 같은 규칙 — 스냅숏은 이미 휴지통 기록에서 꺼냈으므로 프로젝트는 일반
+    // 프로젝트로 보인다: 덜 숨기는 쪽).
+    if (snap.template) {
+      try {
+        const r = await templateService.restoreProjectFromTrash(name, snap.template);
+        if (!r.ok) failed.push('template');
+      } catch (e) {
+        console.warn('복원 프로젝트 템플릿 지정 저장 실패:', name, e);
+        failed.push('template');
+      }
+    }
     if (snap.favorite && !this.favorites.has(name)) {
       this.favorites.add(name);
       try {
@@ -2818,23 +2860,45 @@ export class SessionService extends ResourceSyncService<Session> {
     return projectPath('inpaint_masks', session.name, inpaint.name + '.png');
   }
 
-  async exportSessionShallow(session: Session) {
+  // 얕은 직렬화(이미지 제외 JSON). opts.includeVariants(2026-11-16, 플랜 2026-11-16-shallow-clone-variant-scenes):
+  //  · 생략(기본) = 종전 그대로 변형 씬(inpaints)을 버린다 — 프로젝트 파일 내보내기(JSON 한 장, 첨부 파일을 담지 못함)·
+  //    씬 템플릿(일반 씬 전용 형식)·순차 생성 파생 프로젝트.
+  //  · true = 변형 씬을 생성 씬과 같은 규칙(game·round·imageMap·mains 비움, imageAccounts 제거)으로 남긴다. 변형 씬이
+  //    가리키는 vibes·references 파일은 JSON 에 담지 않으므로 반드시 importSessionShallow(…, { attachmentsFrom }) 와
+  //    짝으로 쓴다(= cloneSessionShallow). 앱 안 복제 전용 — 파일로 내보내는 경로에는 쓰지 않는다.
+  //  · opts.keepSharedVibes(2026-11-18, 경로 20) = 공용 설정의 바이브 목록을 비우지 않는다. 바이브 파일은 JSON 에 담지 않으므로
+  //    역시 importSessionShallow(…, { attachmentsFrom }) 와 짝으로만 쓴다(= cloneSessionShallow). 생략 = 종전 그대로 비운다.
+  async exportSessionShallow(
+    session: Session,
+    opts?: { includeVariants?: boolean; keepSharedVibes?: boolean },
+  ) {
     const sess: ISession = session.toJSON();
-    if (sess.presetShareds.SDImageGenEasy) {
-      sess.presetShareds.SDImageGenEasy.vibes = [];
+    if (!opts?.keepSharedVibes) {
+      if (sess.presetShareds.SDImageGenEasy) {
+        sess.presetShareds.SDImageGenEasy.vibes = [];
+      }
+      if (sess.presetShareds.SDImageGen) {
+        sess.presetShareds.SDImageGen.vibes = [];
+      }
     }
-    if (sess.presetShareds.SDImageGen) {
-      sess.presetShareds.SDImageGen.vibes = [];
-    }
-    for (const scene of Object.values(sess.scenes)) {
+    const stripImageState = (scene: { game?: unknown; round?: unknown; imageMap: string[]; mains: string[]; imageAccounts?: unknown }) => {
       scene.game = undefined;
       scene.round = undefined;
       scene.imageMap = [];
       scene.mains = [];
       // 부스트 내부 표식(D8, 계정 이름)은 공유용 내보내기에 넣지 않는다.
       delete scene.imageAccounts;
+    };
+    for (const scene of Object.values(sess.scenes)) {
+      stripImageState(scene);
     }
-    sess.inpaints = {};
+    if (opts?.includeVariants) {
+      for (const scene of Object.values(sess.inpaints ?? {})) {
+        stripImageState(scene);
+      }
+    } else {
+      sess.inpaints = {};
+    }
 
     for (const presetSet of Object.values(sess.presets)) {
       for (const preset of presetSet) {
@@ -2855,14 +2919,21 @@ export class SessionService extends ResourceSyncService<Session> {
 
   // 프로젝트 깊은 백업에 포함할 파일 엔트리 목록을 만든다.
   // prefix를 주면 아카이브 내부 경로 앞에 붙는다 (폴더 백업에서 프로젝트별 네임스페이스용).
+  // opts.onListError: 이미지 폴더 목록 읽기가 실제 오류(「폴더 없음」은 backend 가 [] 로 돌려줘 해당 없음)로
+  // 실패했을 때 알려 준다 — 전체·폴더 백업 완료 창의 「이미지가 빠졌을 수 있음」 안내용(2026-11-22 P3).
+  // 반환값·「오류면 0장」 동작은 그대로다(다른 호출부 영향 없음).
   async buildSessionDeepEntries(
     session: Session,
     prefix: string = '',
+    opts: { onListError?: (kind: string, error: unknown) => void } = {},
   ): Promise<FileEntry[]> {
-    const ignoreError = async (f: Promise<any>) => {
+    const ignoreError = async (f: Promise<any>, kind: string = '') => {
       try {
         return await f;
       } catch (e) {
+        try {
+          opts.onListError?.(kind, e);
+        } catch (e2) {}
         return [];
       }
     };
@@ -2879,17 +2950,17 @@ export class SessionService extends ResourceSyncService<Session> {
       // 씬별 이미지 (병렬)
       Promise.all(sceneNames.map(async (name) => ({
         name,
-        files: await ignoreError(backend.listFiles(projectPath('outs', session.name, name))),
+        files: await ignoreError(backend.listFiles(projectPath('outs', session.name, name)), 'outs'),
       }))),
       // 인페인트별 이미지 (병렬)
       Promise.all(inpaintScenes.map(async (scene) => ({
         scene,
-        files: await ignoreError(backend.listFiles(sceneOutputDir(session.name, scene))),
+        files: await ignoreError(backend.listFiles(sceneOutputDir(session.name, scene)), 'inpaints'),
       }))),
-      ignoreError(backend.listFiles(projectPath('inpaint_orgs', session.name))),
-      ignoreError(backend.listFiles(projectPath('inpaint_masks', session.name))),
-      ignoreError(backend.listFiles(projectPath('vibes', session.name))),
-      ignoreError(backend.listFiles(projectPath('references', session.name))),
+      ignoreError(backend.listFiles(projectPath('inpaint_orgs', session.name)), 'inpaint_orgs'),
+      ignoreError(backend.listFiles(projectPath('inpaint_masks', session.name)), 'inpaint_masks'),
+      ignoreError(backend.listFiles(projectPath('vibes', session.name)), 'vibes'),
+      ignoreError(backend.listFiles(projectPath('references', session.name)), 'references'),
     ]);
 
     for (const { name, files } of sceneResults) {
@@ -2959,7 +3030,25 @@ export class SessionService extends ResourceSyncService<Session> {
     await zipService.zipFiles(entries, outPath);
   }
 
-  async importSessionShallow(session: ISession, name: string) {
+  // 앱 안 얕은 복제(폴더 복제·프로젝트 복제 「이미지 미포함」) — 변형 씬까지 생성 씬과 같은 수준으로 옮긴다
+  // (2026-11-16 사용자 판정 「생성 씬과 변형 씬은 기능상 동등」). 변형 씬 설정은 JSON 으로, 변형 씬이 가리키는
+  // 첨부 파일(원본·마스크·바이브·인코딩 캐시·캐릭터 레퍼런스·세션 미러 원본)은 새 프로젝트를 등록하기 전에 같은 이름으로
+  // 복사한다(sceneCopyFlow.copySceneAttachments 재사용 — 원본은 읽기·복사만). 이미지 파일 복사는 호출부(cloneFolder 「이미지 포함」).
+  // 2026-11-18(경로 20): 생성 쪽 첨부 파일도 함께 — 로컬 캐릭터 프리셋의 대표 이미지·바이브·캐릭터 레퍼런스, 공용 설정의 바이브·
+  // 캐릭터 레퍼런스(sceneCopyFlow.sessionGenerationAttachmentFiles). 공용 설정 바이브 목록도 비우지 않는다(keepSharedVibes).
+  async cloneSessionShallow(source: Session, newName: string): Promise<void> {
+    const proj = await this.exportSessionShallow(source, { includeVariants: true, keepSharedVibes: true });
+    await this.importSessionShallow(proj, newName, { attachmentsFrom: source });
+  }
+
+  // opts.attachmentsFrom(선택): 주면 session JSON 의 변형 씬·미러 원본·캐릭터 프리셋·공용 설정이 가리키는 첨부 파일을 그 프로젝트에서
+  // 새 프로젝트로 복사한다(createFrom 앞 — 새 프로젝트가 없는 파일을 가리키는 순간을 만들지 않는다). 같은 이름이 이미 있으면 건너뛰고,
+  // 원본에 없으면 경고 기록만. 생략 = 종전 그대로(파일 불러오기·템플릿 등).
+  async importSessionShallow(
+    session: ISession,
+    name: string,
+    opts?: { attachmentsFrom?: Session },
+  ) {
     if (this.isLoaded(name)) {
       throw new Error('Resource already exists');
     }
@@ -2998,6 +3087,35 @@ export class SessionService extends ResourceSyncService<Session> {
           }
         }
       }
+    }
+    if (opts?.attachmentsFrom) {
+      // 대상 경로는 이름으로만 해석된다(imageService.getVibesDir 등 → projectPath 관문, 신 배치는 위에서 선등록 완료).
+      const target = Session.fromJSON(session);
+      for (const work of target.inpaints.values()) {
+        await imageService.cloneWorkAssets(target, work, opts.attachmentsFrom);
+        work.meta.set(DETACHED_INPUT_META, true);
+      }
+      const variantAttachments = sessionVariantAttachmentFiles(target.toJSON());
+      variantAttachments.vibes = variantAttachments.vibes.filter(token => !sceneAssetOwner(token) && !managedWorkAsset(token));
+      const stats: SceneAttachmentCopyStats = { copied: 0, skipped: 0, missing: 0 };
+      await copySceneAttachments(
+        defaultSceneCopyDeps(),
+        opts.attachmentsFrom,
+        target,
+        mergeAttachmentFiles(
+          variantAttachments,
+          sessionGenerationAttachmentFiles(session),
+        ),
+        new Set<string>(),
+        stats,
+      );
+      if (stats.missing > 0) {
+        this.addSystemLog(
+          'warn',
+          `"${name}" 복제: 첨부 파일(변형 씬·캐릭터 프리셋·바이브·레퍼런스) ${stats.missing}개를 원본에서 찾지 못했습니다(프로젝트는 복제됨).`,
+        );
+      }
+      session = target.toJSON();
     }
     await this.createFrom(name, session);
   }
@@ -3541,3 +3659,4 @@ export function createImageWithText(
 
   return dataUriToBase64(canvas.toDataURL('image/png'));
 }
+import { DETACHED_INPUT_META } from './inpaintInput';

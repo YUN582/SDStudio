@@ -11,7 +11,8 @@ import { imageService, isMobile } from '../models';
 import { appState } from '../models/AppService';
 import { WFIInlineInput, wfiElementKey } from '../models/workflows/WorkFlow';
 import { ModelVersion } from '../backends/imageGen';
-import { isV5ModelVersion } from '../backends/genVendors/naiModelCapabilities';
+import { naiCapabilitiesOf } from '../backends/genVendors/naiModelCapabilities';
+import { referencesForModel } from '../backends/genVendors/naiReference';
 import { WFElementContext, PresetIconRowContext } from './wfElementContext';
 import { PresetIconRowLabelContext, StackedLabel, stackedButtonClass } from './PresetPanelLabel';
 import { presetIconRowLabelOf } from '../models/presetPanelLabels';
@@ -164,7 +165,7 @@ export const EditableSliderValue = ({
 
   return (
     <div
-      className="w-11 flex-none text-lg text-center back-lllgray cursor-pointer hover:ring-2 hover:ring-sky-400 rounded transition-all"
+      className="w-11 flex-none text-lg text-center back-lllgray cursor-pointer hover:ring-2 hover:ring-sky-400 rounded transition-shadow"
       onClick={startEditing}
       title="클릭하여 직접 입력"
     >
@@ -483,15 +484,17 @@ export const VibeButton = observer(({ input }: { input: WFIInlineInput }) => {
   };
 
   // v4.5에서 캐릭터 레퍼런스에 이미지가 있으면 바이브 잠금
+  // 실제로 보낼 레퍼런스 기준(작업 조립 TaskHandlers 와 같은 referencesForModel — 이 모델에 안 가는 의상 항목은 셈하지 않음).
   const hasCharacterReferences = (() => {
     const refs = shared?.characterReferences;
     if (!refs || !Array.isArray(refs)) return false;
-    return refs.some((ref: ReferenceItem) => ref.enabled !== false && ref.path);
+    return referencesForModel(refs as ReferenceItem[], modelVersion).length > 0;
   })();
   const isV4_5 = modelVersion === ModelVersion.V4_5 || modelVersion === ModelVersion.V4_5Curated;
-  const isV5 = isV5ModelVersion(modelVersion);
-  const locked = isV5 || (isV4_5 && hasCharacterReferences);
-  const lockedLabel = isV5
+  // 바이브를 받지 않는 모델(V5 계열) — 능력표 기준.
+  const noVibe = !naiCapabilitiesOf(modelVersion).supportsVibeTransfer;
+  const locked = noVibe || (isV4_5 && hasCharacterReferences);
+  const lockedLabel = noVibe
     ? '바이브 이미지 설정 (V5 미지원)'
     : '바이브 이미지 설정 (캐릭터 레퍼런스 사용 중)';
 
@@ -524,7 +527,7 @@ export const VibeButton = observer(({ input }: { input: WFIInlineInput }) => {
   // portable 버튼. 빈 배열이면 슬롯 없음 = 현행 렌더 100% 동일(회귀 기준).
   // hostKey 를 renderCompanionButtons/CompanionHostRow 에 넘겨 편집모드(PC) 드래그(E4)를 붙인다.
   const hostKey = wfiElementKey(input) ?? input.field;
-  const companionIds = resolveCompanionButtons(hostKey, appState.uiCompanionSlots);
+  const companionIds = resolveCompanionButtons(hostKey, appState.companionSlotsView);
   const companions = renderCompanionButtons(companionIds, hostKey);
   const hasCompanions = companions.length > 0;
 

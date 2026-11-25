@@ -22,6 +22,15 @@ export function outputImageExtOf(path: string): string {
   return (OUTPUT_IMAGE_EXTS as readonly string[]).includes(ext) ? ext : PNG_IMAGE_EXT;
 }
 
+// 앱 밖으로 끌어 놓을 수 있는 이미지 파일 확장자(PC 「끌어서 다른 프로그램에 놓기」, 2026-11-22).
+// main 프로세스(src/main/imageDragOut.ts)가 렌더러가 보낸 경로를 확인할 때 쓴다 — 생성 이미지(png·webp)와
+// 사용자가 넣은 jpg/jpeg. 대소문자 무관.
+export const DRAG_OUT_IMAGE_EXTS = [PNG_IMAGE_EXT, 'webp', 'jpg', 'jpeg'] as const;
+export function isDragOutImageFile(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return DRAG_OUT_IMAGE_EXTS.some((ext) => lower.endsWith('.' + ext));
+}
+
 // 이미 손실 압축 최적화된 포맷. export 최적화 시 재인코딩하면 이중 손실(화질 저하).
 export const OPTIMIZED_IMAGE_EXTS = ['webp', 'avif'] as const;
 export function isOptimizedImageFile(filename: string): boolean {
@@ -50,6 +59,33 @@ export function isImportImageMime(mime: string): boolean {
 // 확장자만 교체하며 대소문자 무관(.PNG 도 매칭). PNG 가 아니면 그대로 반환.
 export function pngPathToWebp(path: string): string {
   return path.replace(/\.png$/i, '.webp');
+}
+
+// WebP 일괄 변환의 목적지 이름 계획(PNG 이름 → 저장할 WebP 이름).
+// 같은 폴더에 같은 이름의 WebP 가 이미 있으면 덮지 않고 「이름 (2).webp」 처럼 비어 있는 이름을 준다
+// — WebP 를 외부 편집기로 고치면 편집기가 같은 이름의 PNG 를 옆에 저장할 수 있고, 그대로 변환하면
+// 원본 WebP 를 말없이 덮어쓴다(2026-11-21).
+// existing = 그 폴더에 지금 있는 파일 이름. 비교는 대소문자 무관(Windows·Android 공유 저장소 기준).
+export function planWebpTargets(
+  pngs: readonly string[],
+  existing: readonly string[],
+): Map<string, string> {
+  const key = (name: string) => name.toLowerCase();
+  const taken = new Set(existing.map(key));
+  const targets = new Map<string, string>();
+  for (const png of pngs) {
+    const base = pngPathToWebp(png);
+    const dot = base.lastIndexOf('.');
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const ext = dot > 0 ? base.slice(dot) : '';
+    let candidate = base;
+    for (let n = 2; taken.has(key(candidate)); n++) {
+      candidate = `${stem} (${n})${ext}`;
+    }
+    taken.add(key(candidate));
+    targets.set(png, candidate);
+  }
+  return targets;
 }
 
 // 접두사 없는 raw base64 의 시그니처로 이미지 확장자를 추정한다(알 수 없으면 png).

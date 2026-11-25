@@ -1,9 +1,10 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { FaArrowLeft, FaArrowRight, FaRedo, FaStar, FaPlus, FaTrash } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
-import ModalOverlay from './ModalOverlay';
+import ModalOverlay, { DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 import { useGuardedClose } from './backdropClose';
 import { appState } from '../models/AppService';
+import Tooltip from './Tooltip';
 
 interface Bookmark {
   id: string;
@@ -102,13 +103,13 @@ export const BookmarkDialog: React.FC<BookmarkDialogProps> = ({ mode, initialLab
         <>
           {/* [추가/저장][취소] 순서(2026-10-03 D1) — 바닥 버튼 규격은 내보내기 프리셋 관리와 같음 */}
           <button
-            className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+            className={DIALOG_PRIMARY_BTN}
             onClick={confirm}
           >
             {mode === 'add' ? '추가' : '저장'}
           </button>
           <button
-            className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+            className={DIALOG_SECONDARY_BTN}
             onClick={requestClose}
           >
             취소
@@ -364,19 +365,20 @@ const DesktopBrowser = ({ requestedPage }: { requestedPage: { url?: string } }) 
             {bm.label}
           </button>
         ))}
-        <button
-          className="flex-none text-xs px-2 py-1 rounded btn-ghost text-muted"
-          onClick={() => setDialog({ mode: 'add' })}
-          title="즐겨찾기 추가"
-        >
-          <FaPlus size={10} />
-        </button>
+        <Tooltip content="즐겨찾기 추가">
+          <button
+            className="flex-none text-xs px-2 py-1 rounded btn-ghost text-muted"
+            onClick={() => setDialog({ mode: 'add' })}
+          >
+            <FaPlus size={10} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* 네비게이션 바 */}
       <div className="flex-none flex items-center gap-1 px-2 py-1 border-b line-color">
         <button
-          className="p-1.5 rounded btn-ghost disabled:opacity-30 text-gray-700 dark:text-gray-300"
+          className="p-1.5 rounded btn-ghost text-gray-700 dark:text-gray-300"
           disabled={!canGoBack}
           aria-label="뒤로"
           onClick={() => webviewRef.current?.goBack()}
@@ -384,7 +386,7 @@ const DesktopBrowser = ({ requestedPage }: { requestedPage: { url?: string } }) 
           <FaArrowLeft size={14} />
         </button>
         <button
-          className="p-1.5 rounded btn-ghost disabled:opacity-30 text-gray-700 dark:text-gray-300"
+          className="p-1.5 rounded btn-ghost text-gray-700 dark:text-gray-300"
           disabled={!canGoForward}
           aria-label="앞으로"
           onClick={() => webviewRef.current?.goForward()}

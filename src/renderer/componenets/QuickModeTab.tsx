@@ -1,3 +1,4 @@
+import { getQuickGenCount, setQuickGenCount, SAMPLE_COUNT_MIN, SAMPLE_COUNT_MAX } from '../models/sampleCount';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { createPortal } from 'react-dom';
@@ -85,10 +86,7 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
   // 직전 자동 사이클에서 실제로 생성이 성공했는지 추적.
   // 지속 실패(토큰 만료·Anlas 소진 등) 시 실패→재예약→실패의 무한 루프(오류 요청 폭주)를 막는다.
   const producedRef = useRef(false);
-  const generationCount = Math.max(
-    1,
-    Math.min(99, Math.floor(Number(appState.samples) || 1)),
-  );
+  const generationCount = quickSession ? getQuickGenCount(ensureDefaultScene(quickSession)) : 1;
   const generationCountRef = useRef(generationCount);
   generationCountRef.current = generationCount;
 
@@ -438,8 +436,8 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
               </span>
               <input
                 aria-label="퀵 생성 개수"
-                min={1}
-                max={99}
+                min={SAMPLE_COUNT_MIN}
+                max={SAMPLE_COUNT_MAX}
                 className={
                   v2Bar
                     ? 'p-1 w-12 h-10 text-center gray-input'
@@ -448,10 +446,9 @@ const QuickModeTab = observer(({ isActive = true }: { isActive?: boolean }) => {
                 type="number"
                 value={generationCount}
                 onChange={(event) => {
-                  const value = Number.parseInt(event.currentTarget.value, 10);
-                  appState.samples = Number.isFinite(value)
-                    ? Math.max(1, Math.min(99, value))
-                    : 1;
+                  if (!quickSession) return;
+                  setQuickGenCount(ensureDefaultScene(quickSession), event.currentTarget.value);
+                  sessionService.markDirty(quickSession.name);
                 }}
               />
               <UndoInlineSlot />

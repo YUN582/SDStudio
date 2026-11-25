@@ -8,6 +8,7 @@ import SceneQueueMenu from './SceneQueueMenu';
 import {
   Fragment,
   ReactNode,
+  forwardRef,
   memo,
   useContext,
   useEffect,
@@ -45,6 +46,17 @@ import SceneQuickPromptModal from './SceneQuickPromptModal';
 import { base64ToDataUri } from './BrushTool';
 import SceneSelector from './SceneSelector';
 import Tooltip from './Tooltip';
+import { ButtonNameSlot, useButtonNameStage } from './ToolbarButtonName';
+import SceneTotalsBadge from './SceneTotalsBadge';
+import SizeSlider from './SizeSlider';
+import {
+  SCENE_CARD_FIXED_HEIGHT_VAR,
+  SIZE_SLIDER_TEXT,
+  effectiveSceneCardPercent,
+  sceneCardFixedHeightPx,
+  sceneCardMinWidthPx,
+} from '../models/sizeSlider';
+import { BUTTON_NAME_GAP_ICON_PX, BUTTON_NAME_GAP_LABEL_PX } from '../models/buttonNameStage';
 import { HScrollHintArrow, useHScrollHint } from './HScrollHint';
 import { ImageOptimizeMethod } from '../backend';
 import {
@@ -93,11 +105,13 @@ import {
 import { IMPORT_IMAGE_ACCEPT } from '../models/imageFormats';
 import { platform } from '../models/platform';
 import {
+  SCENE_TOOLBAR_MORE_LABEL,
   TOOLBAR_GROUP_OTHER,
   TOOLBAR_GROUP_OTHER_HINT,
   TOOLBAR_VIEW_MAIN,
   groupToolbarIds,
   resolveToolbarView,
+  sceneToolbarLabelOf,
 } from '../models/uiLayout';
 import { companionAssignedIds } from '../models/companionSlots';
 import ToolbarOverflowMenu from './ToolbarOverflowMenu';
@@ -457,7 +471,9 @@ interface SceneCellProps {
   sceneIndex?: number;
   isActive?: boolean;
   curSession: Session;
-  cellSize: number;
+  // 「높이 고정」 카드의 이미지 칸 높이(px) — 끌기 미리 보기(App.tsx)처럼 씬 목록 그리드 밖에서 그릴 때만 준다.
+  // 그리드 안에서는 그리드가 CSS 변수(SCENE_CARD_FIXED_HEIGHT_VAR)로 넘겨 크기 슬라이더를 끄는 동안 카드가 다시 그려지지 않는다(2026-11-23).
+  fixedCardHeightPx?: number;
   getImage: (scene: GenericScene) => Promise<string | null>;
   setDisplayScene?: (scene: GenericScene) => void;
   onFocusScene?: (scene: GenericScene) => void;
@@ -491,7 +507,7 @@ export const SceneCell = observer(
     moveScenes,
     setEditingScene,
     curSession,
-    cellSize,
+    fixedCardHeightPx,
     style,
     isBookmarked,
     onToggleBookmark,
@@ -532,16 +548,18 @@ export const SceneCell = observer(
     const aspectClass = aspectMap[cardStyle];
     // 모바일: 반응형 그리드(QueueControl 의 gridTemplateColumns)가 열 폭을 정하므로 카드는
     // 셀을 채우는 정사각형이다(과거 w-36 h-36 고정 → 오른쪽 빈 띠·폭 불변 문제, 2026-09-20).
-    const cellSizes = isMobile
-      ? ['w-full aspect-square', 'w-full aspect-square', 'w-full aspect-square']
+    // PC 「높이 고정」 = 크기 슬라이더의 연속 높이(2026-11-23, 종전 h-48·h-64·h-96 세 단계 — models/sizeSlider.ts).
+    // 높이는 씬 목록 그리드가 CSS 변수로 넘기고, 그리드 밖(끌기 미리 보기)은 fixedCardHeightPx 로 카드 자신에 둔다.
+    const imageCellClass = isMobile
+      ? 'w-full aspect-square'
       : aspectClass
-        ? [
-            `w-full ${aspectClass}`,
-            `w-full ${aspectClass}`,
-            `w-full ${aspectClass}`,
-          ]
-        : ['w-full h-48', 'w-full h-64', 'w-full h-96'];
-    const cellSizes3 = ['', '', ''];
+        ? `w-full ${aspectClass}`
+        : // Tailwind 가 소스 글자로 클래스를 찾으므로 변수 이름을 그대로 적는다(= SCENE_CARD_FIXED_HEIGHT_VAR, 검사 sizeSlider)
+          'w-full h-[var(--scene-card-fixed-h)]';
+    const ownFixedHeightStyle =
+      fixedCardHeightPx != null
+        ? ({ [SCENE_CARD_FIXED_HEIGHT_VAR]: `${fixedCardHeightPx}px` } as React.CSSProperties)
+        : undefined;
 
     const originalOutputs = gameService.getOutputs(curSession, scene);
     const outputs = imageService.getSceneGalleryEntries(curSession, scene);
@@ -679,6 +697,13 @@ export const SceneCell = observer(
         canDrag: () => isMobile,
         item: () => {
           const cardWidth = cardElRef.current?.offsetWidth;
+          // 「높이 고정」 높이 — 끌기 시작 때 그리드가 넘긴 값을 읽어 미리 보기 카드에 그대로 준다
+          const fixedHeightRaw = cardElRef.current
+            ? parseFloat(
+                getComputedStyle(cardElRef.current).getPropertyValue(SCENE_CARD_FIXED_HEIGHT_VAR),
+              )
+            : NaN;
+          const fixedCardHeightPx = Number.isFinite(fixedHeightRaw) ? fixedHeightRaw : undefined;
           const isSelected = isSceneSelected(
             { names: appState.selectedScenes, type: appState.selectedScenesType },
             scene,
@@ -691,7 +716,7 @@ export const SceneCell = observer(
             curIndex,
             getImage,
             curSession,
-            cellSize,
+            fixedCardHeightPx,
             cardWidth,
             selectedSceneNames,
           };
@@ -717,7 +742,7 @@ export const SceneCell = observer(
           }
         },
       }),
-      [curIndex, scene, cellSize],
+      [curIndex, scene],
     );
 
     useEffect(() => {
@@ -887,6 +912,9 @@ export const SceneCell = observer(
       const btnClass = overlay
         ? 'round-button scene-btn'
         : 'round-button scene-btn';
+      // overlay(PC 호버, 이미지 위) 네 버튼의 색은 종전 그대로 둔다 — 2026-11-21 「한 자리에 주 동작 하나만 색」 정돈을
+      // 여기에도 적용했다가 같은 날 되돌림(사용자: 매우 자주 보던 버튼이라 바뀌면 혼란). 다른 카드의 .card-overlay-btn 규칙을
+      // 이 네 버튼에 다시 적용하지 않는다.
       const green = overlay ? 'bg-green-500 text-white' : 'back-green';
       const gray = overlay ? 'bg-gray-500 text-white' : 'back-gray';
       const orange = overlay ? 'bg-orange-500 text-white' : 'back-orange';
@@ -1032,10 +1060,10 @@ export const SceneCell = observer(
             (isDragging || isReordering) ? 'opacity-30 no-touch ' : ''
           }${(isOver || isDropTarget) ? ' outline outline-sky-500' : ''}${
             isSelected
-              ? ' ring-2 ring-sky-500 bg-sky-50 dark:bg-sky-900/20'
+              ? ' card-selected card-check-none bg-sky-50 dark:bg-sky-900/20'
               : ''
           }${focusRing}`}
-          style={style}
+          style={ownFixedHeightStyle ? { ...ownFixedHeightStyle, ...style } : style}
           ref={cardRef}
           onContextMenu={onContext}
           onMouseEnter={() => {
@@ -1056,7 +1084,7 @@ export const SceneCell = observer(
             onClick={onClickCard}
           >
             <div
-              className={`p-2 flex text-lg text-default ${cellSizes3[cellSize]}`}
+              className="p-2 flex text-lg text-default"
             >
               <div className="truncate flex-1">
                 {isBookmarked && (
@@ -1079,7 +1107,7 @@ export const SceneCell = observer(
               {seedGroupBadge}
               {combinationQuickToggle}
               <div
-                className={`relative image-cell overflow-hidden ${cellSizes[cellSize]}`}
+                className={`relative image-cell overflow-hidden ${imageCellClass}`}
               >
                 {(previewImage || image) && (
                   <div className="relative w-full h-full">
@@ -1160,9 +1188,7 @@ export const SceneCell = observer(
             {seedGroupBadge}
             {combinationQuickToggle}
             <div
-              className={`relative image-cell overflow-hidden rounded-md ${
-                cellSizes[cellSize]
-              }`}
+              className={`relative image-cell overflow-hidden rounded-md ${imageCellClass}`}
             >
               {(previewImage || image) && (
                 <div className="relative w-full h-full">
@@ -1228,6 +1254,53 @@ export const SceneCell = observer(
 );
 
 // 씬 휴지통 목록은 componenets/TrashViews.tsx 의 SceneTrashView 로 이전(2026-10-02 T1).
+
+// 씬 카드 크기 슬라이더(2026-11-23) — PC 씬 도구줄 보기 설정 묶음의 카드 모양 칸 오른쪽. 이미지생성·이미지변형 탭 공용 값.
+const SceneCardSizeControl = observer(() => (
+  <SizeSlider
+    label={SIZE_SLIDER_TEXT.sceneCard}
+    value={appState.sceneCardSizePercent}
+    onChange={(v) => appState.setSceneCardSizePercent(v)}
+  />
+));
+
+// 씬 목록 그리드 상자(2026-11-23) — 크기 슬라이더 값을 여기서만 읽는다(observer). 끄는 동안 이 상자의 style 만 바뀌고
+// children(카드 목록)은 부모가 만든 같은 요소라 다시 그려지지 않는다.
+// · 열 최소 폭 = sceneCardMinWidthPx, 「높이 고정」 카드 높이 = CSS 변수(SCENE_CARD_FIXED_HEIGHT_VAR)로 카드에 넘김.
+// · 패널 없는 목록(이미지 그리드 안 「인페인트 씬」 탭)은 75% 이상(종전 늘 라지뷰) — effectiveSceneCardPercent.
+// · 모바일은 반응형 그리드 그대로(최소 트랙 min(9rem, 50%), 크기 조절 없음).
+const SceneCardGrid = observer(
+  forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { hasPanel: boolean; children: ReactNode }>(({ hasPanel, children, ...gridProps }, ref) => {
+    const percent = effectiveSceneCardPercent(appState.sceneCardSizePercent, hasPanel);
+    // 모바일도 CSS grid(2026-09-20): 최소 트랙이 min(9rem, 50%) 라 아무리 좁아도 2열이
+    // 확보되고, 넓으면 열이 늘며, 1fr 로 폭을 채워 좌우 대칭이 된다.
+    const gridMinTrack = isMobile ? 'min(9rem, 50%)' : `${sceneCardMinWidthPx(percent)}px`;
+    return (
+      <div
+        {...gridProps}
+        ref={ref}
+        className="overflow-auto w-full content-start relative outline-none"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(auto-fill, minmax(${gridMinTrack}, 1fr))`,
+          alignItems: 'start',
+          alignContent: 'start',
+          ...(isMobile
+            ? // 모바일은 스크롤바(8px)가 레이아웃 폭을 차지해 오른쪽 여백만 커진다 →
+              // 양쪽에 같은 자리를 잡아 카드 열을 화면 중앙에 맞춘다.
+              { scrollbarGutter: 'stable both-edges' }
+            : ({ [SCENE_CARD_FIXED_HEIGHT_VAR]: `${sceneCardFixedHeightPx(percent)}px` } as React.CSSProperties)),
+          // 되돌리기 버튼 바(UndoRedoBar)가 하단 막대 위로 바 높이만큼 격자 아래 끝을 덮는다 → 스크롤 바닥에
+          // 같은 높이의 여백을 두어 끝까지 내리면 마지막 줄 카드가 바 위로 올라오게(PC·모바일 공통, 상시).
+          // 패딩은 스크롤 영역 안 끝에만 붙으므로 선택 상자 좌표(toGridContentXY = 위·왼쪽 기준+스크롤)는 불변.
+          paddingBottom: UNDO_BAR_HEIGHT_PX,
+        }}
+      >
+        {children}
+      </div>
+    );
+  }),
+);
 
 interface QueueControlProps {
   type: 'scene' | 'inpaint';
@@ -1295,7 +1368,6 @@ const QueueControl = observer(
         { equals: (a, b) => a[0] === b[0] && a[1] === b[1] },
       );
     }, [type, editingScene, displayScene, curSession]);
-    const [cellSize, setCellSize] = useState(1);
     const [focusedScene, setFocusedScene] = useState<GenericScene | null>(null);
     const gridContainerRef = useRef<HTMLDivElement>(null);
     const [sceneSearchQuery, setSceneSearchQuery] = useState('');
@@ -2096,9 +2168,10 @@ const QueueControl = observer(
       return await imageService.fetchVibeImage(curSession!, imgPath);
     };
 
-    const cellSizes = ['스몰뷰', '미디엄뷰', '라지뷰'];
-
+    // id = 이미지 상세 PC 버튼 줄의 묶음·색 판정용(2026-11-22) — 라벨·className 은 모바일 V2·좁은 폭이 그대로 쓴다
     const favButton = {
+      id: 'favorite',
+      isOn: (path: string) => isMainImage(path),
       text: (path: string) => {
         return isMainImage(path) ? '즐겨찾기 해제' : '즐겨찾기 지정';
       },
@@ -2136,6 +2209,7 @@ const QueueControl = observer(
         ? [
             favButton,
             {
+              id: 'inpaint',
               text: '인페인팅 씬 생성',
               className: 'back-green',
               onClick: async (
@@ -2150,6 +2224,7 @@ const QueueControl = observer(
         : [
             favButton,
             {
+              id: 'inpaint',
               text: '해당 이미지로 인페인트',
               className: 'back-orange',
               onClick: async (
@@ -2163,6 +2238,7 @@ const QueueControl = observer(
               },
             },
             {
+              id: 'copy-to-original',
               text: '원본 씬으로 이미지 복사',
               className: 'back-green',
               onClick: async (
@@ -2223,6 +2299,7 @@ const QueueControl = observer(
             },
           ];
     buttons.push({
+      id: 'variant',
       text: '이미지 변형',
       className: 'back-gray',
       // @ts-ignore
@@ -2525,6 +2602,18 @@ const QueueControl = observer(
       },
       [toolbarRowDrop, toolbarScrollRef],
     );
+    // PC 씬 툴바 버튼 이름(2026-11-18, 아이콘 아래 작은 이름 — 환경설정 「버튼 이름 표시」, 기본 켬).
+    // PC 그룹 툴바의 아이콘 모드만(모바일·클래식 툴바·레거시 글자 설정은 종전 그대로). 이미지생성·이미지변형 탭 공용.
+    // 한 줄에 다 들어가면 이름 보임('show'), 아니면 이름 숨김('measure' — 지금 모습 + 측정용 숨은 이름).
+    const buttonNamesEnabled =
+      !isMobile &&
+      !appState.uiToolbar.classic &&
+      !appState.sceneToolbarLegacyText &&
+      appState.uiToolbarButtonNames &&
+      !!showPannel &&
+      !v2Layout;
+    const { rowRef: toolbarOuterRef, mode: buttonNameMode } =
+      useButtonNameStage(buttonNamesEnabled);
 
     const [bmRev, setBmRev] = useState(0);
     useEffect(() => {
@@ -2620,6 +2709,13 @@ const QueueControl = observer(
       ),
       'queue-add': (
         <SceneQueueMenu session={curSession} type={type} selectedOnly={selectedCount > 0}>
+          <Tooltip
+            content={
+              selectedCount > 0
+                ? `선택한 씬 예약 추가 (${selectedCount})`
+                : '모든 씬 예약 추가'
+            }
+          >
           <button
             className={`round-button${iconMode && selectedCount === 0 ? ' icon-only' : ''} back-sky`}
             aria-label={
@@ -2649,6 +2745,7 @@ const QueueControl = observer(
               '모두 예약추가'
             )}
           </button>
+          </Tooltip>
         </SceneQueueMenu>
       ),
       'export-images': (
@@ -2795,10 +2892,10 @@ const QueueControl = observer(
         </Tooltip>
       ),
       'scene-find': (
-        <Tooltip content="필터하지 않고 씬 위치로 이동">
+        <Tooltip content="목록을 좁히지 않고 씬 위치로 이동">
           <button className={`round-button${iconMode ? ' icon-only' : ''} back-gray`} onClick={findScene}>
             <ActionIcon id="scene-find" size={18} />
-            {!iconMode && <span className="ml-1">씬 찾기</span>}
+            {!iconMode && <span className="ml-1">씬 위치로 이동</span>}
           </button>
         </Tooltip>
       ),
@@ -2895,7 +2992,7 @@ const QueueControl = observer(
       TOOLBAR_VIEW_MAIN,
       appState.uiToolbar,
       isMobile,
-      companionAssignedIds(appState.uiCompanionSlots),
+      companionAssignedIds(appState.companionSlotsView),
     );
     const sceneArea = sceneView.find((a) => a.area === 'scene');
     const toolbarLayout = {
@@ -2931,7 +3028,9 @@ const QueueControl = observer(
         index={toolbarLayout.inline.indexOf(id)}
         disabled={!!appState.uiToolbar.classic}
       >
-        {buttonNode(id)}
+        <ButtonNameSlot name={sceneToolbarLabelOf(id)} mode={buttonNameMode}>
+          {buttonNode(id)}
+        </ButtonNameSlot>
       </DraggableToolbarButton>
     );
     const toolbarSegments = groupedToolbar
@@ -3028,6 +3127,7 @@ const QueueControl = observer(
             <div className={mobileIcon ? 'relative min-w-0 max-w-full' : 'contents'}>
             <div
               ref={toolbarRowRef}
+              data-bn-row=""
               onScroll={mobileIcon ? updateToolbarScrollHint : undefined}
               className={`scene-toolbar-row flex ${
                 groupedToolbar
@@ -3037,13 +3137,14 @@ const QueueControl = observer(
                         ? 'flex-nowrap overflow-x-auto no-scrollbars min-w-0 max-w-full [&>*]:flex-none'
                         : 'flex-wrap'
                     }`
-              }${toolbarRowHighlightClass(toolbarDrag, toolbarRowOver)}`}
+              }${buttonNameMode === 'show' ? ' scene-toolbar-named' : ''}${toolbarRowHighlightClass(toolbarDrag, toolbarRowOver)}`}
             >
               {(appState.sceneSelectionMode || appState.selectedSceneCount(type)>0) && (
                 <Tooltip content="현재 표시된 씬 모두 선택">
                   <button
                     // 그룹 툴바는 행 gap 이 없어(칸 간격은 구분선 칸이 맡음) 첫 칸과 12px 띄운다
-                    className={`round-button back-sky${groupedToolbar ? ' mr-3' : ''}`}
+                    // 이름 보임 단계에서는 이름 몫만큼 띄워 버튼 줄 높이에 맞춘다(tb-name-offset — 이 버튼은 「전체」 글자가 있어 이름 없음)
+                    className={`round-button back-sky${groupedToolbar ? ' mr-3 tb-name-offset' : ''}`}
                     onClick={() =>
                       appState.addScenesToSelection(
                         getFilteredScenes().map((scene) => scene.name),
@@ -3091,6 +3192,7 @@ const QueueControl = observer(
                       positionClass="right-full"
                     />
                   )}
+                  <ButtonNameSlot name={SCENE_TOOLBAR_MORE_LABEL} mode={groupedToolbar ? buttonNameMode : undefined}>
                   <ToolbarMenuDropTarget group="scene" area="scene">
                     <Tooltip content="더보기">
                       <button
@@ -3106,6 +3208,7 @@ const QueueControl = observer(
                       </button>
                     </Tooltip>
                   </ToolbarMenuDropTarget>
+                  </ButtonNameSlot>
                   {/* PC 팝오버는 relative 앵커 안에서 렌더. 모바일 메뉴(ModalOverlay)는
                       sticky 가 만드는 스태킹 컨텍스트에 갇히면 씬 그리드에 덮이므로 바깥에서 렌더 */}
                   {!isMobile && (
@@ -3160,10 +3263,16 @@ const QueueControl = observer(
               />
             )}
             <ToolbarHideZone group="scene" />
-            <div className="ml-auto mr-2 hidden md:flex items-center gap-2">
+            {/* relative + data-scene-totals-anchor = 합계 표시(SceneTotalsBadge)가 이 묶음 왼쪽 바깥에 absolute 로 뜨는 기준.
+                합계 표시는 flex 항목이 아니라 묶음 폭·버튼 이름 판정·줄바꿈에 들어가지 않는다(2026-11-23). */}
+            <div
+              className="relative ml-auto mr-2 hidden md:flex items-center gap-2 tb-name-offset"
+              data-scene-totals-anchor=""
+            >
+              {!isMobile && <SceneTotalsBadge session={curSession} type={type} />}
               {!appState.classicSceneCard && (
                 <select
-                  className="gray-input text-sm py-1 px-2"
+                  className="app-select app-select-tight text-sm h-8"
                   value={curSession.sceneCardStyle?.[type] ?? 'portrait'}
                   onChange={(e) => {
                     curSession.sceneCardStyle = {
@@ -3179,59 +3288,27 @@ const QueueControl = observer(
                   <option value="fixedHeight">높이 고정</option>
                 </select>
               )}
-              <button
-                onClick={() => setCellSize((cellSize + 1) % 3)}
-                className="round-button back-gray"
-              >
-                {cellSizes[cellSize]}
-              </button>
+              {/* 씬 카드 크기 슬라이더(2026-11-23 — 종전 「스몰뷰/미디엄뷰/라지뷰」 순환 버튼 자리). 값을 읽는 곳을 이 작은
+                  observer 로 가둬 끄는 동안 QueueControl 전체가 다시 그려지지 않게 한다. */}
+              <SceneCardSizeControl />
             </div>
           </div>
         )}
         <div className="flex flex-1 overflow-hidden">
           {(() => {
-            const effectiveCellSize = showPannel || isMobile ? cellSize : 2;
-            const minWidths = ['180px', '240px', '320px'];
-            // 모바일도 CSS grid(2026-09-20): 최소 트랙이 min(9rem, 50%) 라 아무리 좁아도 2열이
-            // 확보되고, 넓으면 열이 늘며, 1fr 로 폭을 채워 좌우 대칭이 된다.
-            const useGrid = true;
-            const gridMinTrack = isMobile
-              ? 'min(9rem, 50%)'
-              : minWidths[effectiveCellSize];
+            // 열 최소 폭·「높이 고정」 높이 = 씬 카드 크기 슬라이더(appState.sceneCardSizePercent) — SceneCardGrid 가 읽는다.
+            // 그 값을 여기(QueueControl)서 읽지 않아 끄는 동안 이 컴포넌트와 카드 목록이 다시 그려지지 않는다.
             const renderedScenes = getFilteredScenes();
             const sceneIndices = new Map(
               curSession.getScenes(type).map((scene, index) => [scene, index]),
             );
             return (
-              <div
+              <SceneCardGrid
                 ref={gridContainerRef}
+                hasPanel={!!showPannel}
                 tabIndex={0}
                 aria-label="씬 이미지 그리드"
                 onMouseDownCapture={(event) => { focusGridSurface(event); sceneReorder.start(event); }}
-                className={
-                  useGrid
-                    ? 'overflow-auto w-full content-start relative outline-none'
-                    : 'flex flex-wrap overflow-auto justify-start items-start content-start relative outline-none'
-                }
-                style={
-                  useGrid
-                    ? {
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fill, minmax(${gridMinTrack}, 1fr))`,
-                        alignItems: 'start',
-                        alignContent: 'start',
-                        // 모바일은 스크롤바(8px)가 레이아웃 폭을 차지해 오른쪽 여백만 커진다 →
-                        // 양쪽에 같은 자리를 잡아 카드 열을 화면 중앙에 맞춘다.
-                        ...(isMobile
-                          ? { scrollbarGutter: 'stable both-edges' }
-                          : {}),
-                        // 되돌리기 버튼 바(UndoRedoBar)가 하단 막대 위로 바 높이만큼 격자 아래 끝을 덮는다 → 스크롤 바닥에
-                        // 같은 높이의 여백을 두어 끝까지 내리면 마지막 줄 카드가 바 위로 올라오게(PC·모바일 공통, 상시).
-                        // 패딩은 스크롤 영역 안 끝에만 붙으므로 선택 상자 좌표(toGridContentXY = 위·왼쪽 기준+스크롤)는 불변.
-                        paddingBottom: UNDO_BAR_HEIGHT_PX,
-                      }
-                    : { paddingBottom: UNDO_BAR_HEIGHT_PX }
-                }
               >
                 {dragBox && isDraggingRef.current && !mainDragSurface && (
                   <div
@@ -3247,7 +3324,6 @@ const QueueControl = observer(
                 {sceneReorder.drag && <ReorderDragPreview type="scene" drag={sceneReorder.drag} />}
                 {renderedScenes.map((scene) => (
                   <SceneCell
-                    cellSize={effectiveCellSize}
                     key={scene.name}
                     scene={scene}
                     sceneIndex={sceneIndices.get(scene)}
@@ -3288,9 +3364,9 @@ const QueueControl = observer(
                     <button
                       type="button"
                       data-add-scene-card=""
-                      className={`${isMobile ? 'm-[5px]' : appState.classicSceneCard ? 'm-[10.5px]' : 'm-[8.5px]'} ${
-                        appState.classicSceneCard ? '' : 'rounded-lg '
-                      }border-2 border-dashed line-color bg-transparent flex flex-col items-center justify-center gap-1.5 text-sub clickable select-none`}
+                      className={`add-slot ${isMobile ? 'm-[5px]' : appState.classicSceneCard ? 'm-[10.5px]' : 'm-[8.5px]'} ${
+                        appState.classicSceneCard ? 'rounded-none ' : ''
+                      }flex flex-col items-center justify-center gap-1.5 cursor-pointer select-none`}
                       // 폭·높이 모두 칸에 맞춘다(같은 줄 씬 카드와 같은 높이). 혼자 줄에 놓이면 aspectRatio 가 높이를 정한다.
                       style={{ alignSelf: 'stretch', justifySelf: 'stretch', aspectRatio: '1 / 1.15' }}
                       onClick={addScene}
@@ -3313,7 +3389,7 @@ const QueueControl = observer(
                     )}
                   </div>
                 )}
-              </div>
+              </SceneCardGrid>
             );
           })()}
         </div>
@@ -3468,7 +3544,7 @@ const QueueControl = observer(
                 <ToolbarOverflowMenu
                   isOpen={v2Menu === 'find'}
                   onClose={() => setV2Menu(null)}
-                  title="찾기·이동"
+                  title="위치·북마크 이동"
                   group="scene"
                   items={['scene-find', 'bookmark-jump']
                     .filter((id) => !!buttonNode(id))
@@ -3497,14 +3573,16 @@ const QueueControl = observer(
                             <FaTimes size={14} />
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            aria-label="씬 찾기·북마크 이동"
-                            className="flex-none w-6 h-[30px] flex items-center justify-center rounded-md clickable text-muted"
-                            onClick={() => setV2Menu('find')}
-                          >
-                            <FaChevronDown size={14} />
-                          </button>
+                          <Tooltip content="씬 위치·북마크 이동">
+                            <button
+                              type="button"
+                              aria-label="씬 위치·북마크 이동"
+                              className="flex-none w-6 h-[30px] flex items-center justify-center rounded-md clickable text-muted"
+                              onClick={() => setV2Menu('find')}
+                            >
+                              <FaChevronDown size={14} />
+                            </button>
+                          </Tooltip>
                         )}
                       </label>
                     </>,

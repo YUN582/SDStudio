@@ -18,26 +18,47 @@ import { CharacterPreset } from '../models/types';
 import { imageService, globalCharacterPresetService } from '../models';
 import { appState } from '../models/AppService';
 import type { IGlobalCharacterPresetEntry } from '../models/GlobalCharacterPresetService';
+import { getImageDimensions } from './BrushTool';
 
 // CharacterPresetEditor.tsx 에서 분리된 카드/이미지 표시 계열.
 // 프리셋 편집기의 이미지 저장/표시 백엔드 (로컬=세션 디렉터리, 글로벌=글로벌 디렉터리)
+/** 레퍼런스 저장 결과 — 원본 크기(못 읽으면 없음)는 항목의 srcWidth·srcHeight 로 적는다(V5 로 보낼 때 여백 자르기). */
+export interface StoredReference {
+  path: string;
+  srcWidth?: number;
+  srcHeight?: number;
+}
+
+/** 원본을 그대로 보관하는 저장소(글로벌·템플릿)용 — 저장한 뒤 원본 크기를 잰다. */
+export async function storeWithSourceSize(
+  store: (base64: string) => Promise<string>,
+  base64: string,
+): Promise<StoredReference> {
+  const path = await store(base64);
+  const size = await getImageDimensions(base64).catch(() => undefined);
+  return size && size.width > 0 && size.height > 0
+    ? { path, srcWidth: size.width, srcHeight: size.height }
+    : { path };
+}
+
 export interface PresetImageBackend {
   storeVibe: (base64: string) => Promise<string>;
-  storeReference: (base64: string) => Promise<string>;
+  storeReference: (base64: string) => Promise<StoredReference>;
   vibePath: (token: string) => string;
   referencePath: (token: string) => string;
 }
 
 export const makeSessionImageBackend = (session: any): PresetImageBackend => ({
   storeVibe: (b) => imageService.storeVibeImage(session, b),
-  storeReference: (b) => imageService.storeReferenceImage(session, b),
+  storeReference: (b) => imageService.storeReferenceImageWithSize(session, b),
   vibePath: (t) => imageService.getVibeImagePath(session, t),
   referencePath: (t) => imageService.getReferenceImagePath(session, t),
 });
 
 export const globalImageBackend: PresetImageBackend = {
   storeVibe: (b) => globalCharacterPresetService.storeVibeForEditor(b),
-  storeReference: (b) => globalCharacterPresetService.storeReferenceForEditor(b),
+  storeReference: (b) =>
+    storeWithSourceSize((x) => globalCharacterPresetService.storeReferenceForEditor(x), b),
   vibePath: (t) => globalCharacterPresetService.getImagePath(t),
   referencePath: (t) => globalCharacterPresetService.getImagePath(t),
 };
@@ -196,9 +217,10 @@ export const CharacterPresetCard = observer(({
     <div
       ref={ref}
       className={
-        'group relative rounded-lg bg-[var(--c-surface-2)] border-2 overflow-hidden cursor-pointer transition-all hover:shadow-lg ' +
+        'group relative rounded-lg bg-[var(--c-surface-2)] border-2 overflow-hidden cursor-pointer transition-[box-shadow,opacity] hover:shadow-lg ' +
         (isDragging ? 'opacity-30 ' : '') +
-        (isOver ? 'border-sky-400 ring-2 ring-sky-400 ' : 'line-color ')
+        'line-color ' +
+        (isOver ? 'card-drop-target ' : '')
       }
     >
       {/* 이미지 영역 (탭/클릭 = 편집. 편집 버튼은 제거하고 카드 탭으로 통일) */}
@@ -227,12 +249,13 @@ export const CharacterPresetCard = observer(({
             {preset.vibes.length === 0 && preset.characterReferences.length === 0 && '이미지 없음'}
         </LibraryCardCaption>
       </div>
-      {/* 액션 버튼 (PC: 호버 시 표시, 모바일: 항상 표시, 순차 생성 모드: 숨김) */}
+      {/* 액션 버튼 (PC: 호버 시 표시, 모바일: 항상 표시, 순차 생성 모드: 숨김). 이미지 위 중립 모양 .card-overlay-btn 하나 —
+          삭제만 올렸을 때 빨강(2026-11-21, 종전 하늘·노랑·주황·보라·빨강 솔리드). 글로벌 카드와 같은 규칙. */}
       {!hideActions && <div className="absolute top-0 left-0 right-0 flex justify-center items-center gap-1 z-20 py-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
         {isEasyMode && (
           <Tooltip content="이지모드 적용">
             <button
-              className="w-8 h-8 rounded-full btn-solid-sky flex items-center justify-center shadow-lg transition-colors"
+              className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onApplyEasy(); }}
             >
               <FaFont size={14} />
@@ -241,7 +264,7 @@ export const CharacterPresetCard = observer(({
         )}
         <Tooltip content="캐릭터 프롬프트 적용">
           <button
-            className="w-8 h-8 rounded-full btn-solid-yellow flex items-center justify-center shadow-lg transition-colors"
+            className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
             onClick={(e) => { e.stopPropagation(); onApplyCharacter(); }}
           >
             <FaUserAlt size={14} />
@@ -249,7 +272,7 @@ export const CharacterPresetCard = observer(({
         </Tooltip>
         <Tooltip content="복제">
           <button
-            className="w-8 h-8 rounded-full btn-solid-orange flex items-center justify-center shadow-lg transition-colors"
+            className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
             onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
           >
             <ActionIcon id="duplicate" size={14} />
@@ -258,7 +281,7 @@ export const CharacterPresetCard = observer(({
         {onCopyToGlobal && (
           <Tooltip content="글로벌로 복사">
             <button
-              className="w-8 h-8 rounded-full btn-solid-purple flex items-center justify-center shadow-lg transition-colors"
+              className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onCopyToGlobal(); }}
             >
               <ActionIcon id="copy-to-global" size={14} />
@@ -267,7 +290,7 @@ export const CharacterPresetCard = observer(({
         )}
         <Tooltip content="삭제">
           <button
-            className="w-8 h-8 rounded-full btn-solid-red flex items-center justify-center shadow-lg transition-colors"
+            className="w-8 h-8 rounded-full card-overlay-btn card-overlay-btn-danger flex items-center justify-center shadow-lg transition-colors"
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
           >
             <FaTrash size={14} />
@@ -333,17 +356,19 @@ export const GlobalFolderFilterChips = observer(
               {f} ({count})
               {/* 선택된 칩에만 이름 변경 아이콘 노출 (롱프레스 불필요) */}
               {selected && onRenameFolder && (
-                <span
-                  role="button"
-                  aria-label="폴더 이름 변경"
-                  className="-mr-0.5 p-0.5 rounded hover:bg-white/20"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRenameFolder(f);
-                  }}
-                >
-                  <FaPen size={9} />
-                </span>
+                <Tooltip content="폴더 이름 변경">
+                  <span
+                    role="button"
+                    aria-label="폴더 이름 변경"
+                    className="-mr-0.5 p-0.5 rounded hover:bg-white/20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRenameFolder(f);
+                    }}
+                  >
+                    <FaPen size={9} />
+                  </span>
+                </Tooltip>
               )}
             </button>
           );
@@ -534,7 +559,7 @@ export const GlobalCharacterPresetCard = observer(({
           {isEasyMode && !workspace && (
             <Tooltip content="프로젝트로 복사해 이지모드 적용">
               <button
-                className="w-8 h-8 rounded-full btn-solid-sky flex items-center justify-center shadow-lg transition-colors"
+                className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
                 onClick={(e) => { e.stopPropagation(); onApplyEasy(); }}
               >
                 <FaFont size={14} />
@@ -552,7 +577,7 @@ export const GlobalCharacterPresetCard = observer(({
           </Tooltip>
           {!workspace && <Tooltip content="프로젝트로 복사">
             <button
-              className="w-8 h-8 rounded-full btn-solid-purple flex items-center justify-center shadow-lg transition-colors"
+              className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onLoad(); }}
             >
               <ActionIcon id="copy-to-project" size={14} />
@@ -560,7 +585,7 @@ export const GlobalCharacterPresetCard = observer(({
           </Tooltip>}
           <Tooltip content="복제">
             <button
-              className="w-8 h-8 rounded-full btn-solid-orange flex items-center justify-center shadow-lg transition-colors"
+              className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
             >
               <ActionIcon id="duplicate" size={14} />
@@ -569,7 +594,7 @@ export const GlobalCharacterPresetCard = observer(({
           {onMoveToFolder && (
             <Tooltip content="폴더로 이동">
               <button
-                className="w-8 h-8 rounded-full btn-solid-indigo flex items-center justify-center shadow-lg transition-colors"
+                className="w-8 h-8 rounded-full card-overlay-btn flex items-center justify-center shadow-lg transition-colors"
                 onClick={(e) => { e.stopPropagation(); onMoveToFolder(); }}
               >
                 <FaFolder size={14} />
@@ -578,7 +603,7 @@ export const GlobalCharacterPresetCard = observer(({
           )}
           <Tooltip content="삭제">
             <button
-              className="w-8 h-8 rounded-full btn-solid-red flex items-center justify-center shadow-lg transition-colors"
+              className="w-8 h-8 rounded-full card-overlay-btn card-overlay-btn-danger flex items-center justify-center shadow-lg transition-colors"
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
             >
               <FaTrash size={14} />

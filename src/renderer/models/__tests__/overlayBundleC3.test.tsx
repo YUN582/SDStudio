@@ -24,6 +24,8 @@ jest.mock('../index', () => ({
   },
   backend: {},
   imageService: {},
+  // 캐릭터 프리셋 편집기의 전역 모델 훅(useGlobalModelVersion)이 config-changed 를 구독한다
+  sessionService: { addEventListener: jest.fn(), removeEventListener: jest.fn() },
   cyclingSessionService: { state: 'idle', start: jest.fn() },
   taskQueueService: { isGenerationHost: true },
   templateService: { importSceneTemplate: jest.fn(async () => null) },
@@ -272,12 +274,13 @@ describe('C-3 캐릭터 프리셋 관리 — 등급·슬롯(PC)', () => {
     await openWindow();
     const tb = slot('toolbar')!;
     expect(buttonByText('순차 생성 모드', tb)).toBeTruthy();
-    expect(buttonByText('선택', tb)).toBeTruthy();
-    expect(tb.textContent).toContain('내보내기');
-    expect(tb.textContent).toContain('불러오기');
+    expect(buttonByText('선택 모드', tb)).toBeTruthy();
+    // 2026-11-16 M5 묶음 b R1: 프로젝트 전체 파일 = 「백업」/「백업 불러오기」
+    expect(tb.textContent).toContain('백업');
+    expect(tb.textContent).toContain('백업 불러오기');
     expect(q('[data-list-search]', tb)).not.toBeNull();
     expect(q('[data-character-selection-bar]')).toBeNull();
-    await click(buttonByText('선택', tb));
+    await click(buttonByText('선택 모드', tb));
     const bar = q('[data-character-selection-bar]', slot('toolbar')!)!;
     expect(bar).not.toBeNull();
     expect(bar.textContent).toContain('0개');
@@ -297,7 +300,7 @@ describe('C-3 캐릭터 프리셋 관리 — 등급·슬롯(PC)', () => {
     expect(q('[data-character-grid="global"]', body)).not.toBeNull();
     expect(q('[data-list-search]', body)).toBeNull();
     expect(q('[data-character-view-toggle]', body)).toBeNull();
-    expect(buttonByText('선택', body)).toBeUndefined();
+    expect(buttonByText('선택 모드', body)).toBeUndefined();
     const root0 = q('[data-character-preset-body]', body)!;
     expect(root0.style.minHeight).toBe('');
   });
@@ -327,7 +330,7 @@ describe('C-3 캐릭터 프리셋 관리 — 등급·슬롯(PC)', () => {
     await click(buttonByText('전체 선택', cards));
     expect(q('[data-cycling-summary]')!.textContent).toBe('프리셋 3개 × 씬 0개 · 샘플 10장');
     // 끄면 바닥줄이 사라진다
-    await click(buttonByText('순차 생성 모드 끄기', slot('toolbar')!));
+    await click(buttonByText('순차 생성 모드', slot('toolbar')!));
     expect(slot('footer')).toBeNull();
     expect(q('[data-cycling-columns]')).toBeNull();
   });
@@ -380,7 +383,7 @@ describe('character workspace', () => {
   test('media uploads support multiple attachments, click removal and save without mutating the source', async () => {
     const preset: any = { name: 'Media', characterPrompt: 'prompt', characterUC: 'negative', vibes: [], characterReferences: [], representativeImage: 'old.png', filenamePrefix: '', filenameSuffix: '' };
     const save = jest.fn();
-    const imageBackend = { storeVibe: jest.fn(async () => 'vibe.png'), storeReference: jest.fn(async () => 'ref.png'), vibePath: (path: string) => path, referencePath: (path: string) => path };
+    const imageBackend = { storeVibe: jest.fn(async () => 'vibe.png'), storeReference: jest.fn(async () => ({ path: 'ref.png', srcWidth: 512, srcHeight: 768 })), vibePath: (path: string) => path, referencePath: (path: string) => path };
     await act(async () => root.render(<CharacterPresetInnerEditor preset={preset} onSave={save} onCancel={jest.fn()} isNew={false} imageBackend={imageBackend} layout="frame" />));
     expect(q('input[aria-label="파일명 접두사"]')).not.toBeNull();
     const first = new File(['a'], 'first.png', { type: 'image/png' }), second = new File(['b'], 'second.png', { type: 'image/png' });
@@ -429,7 +432,8 @@ describe('C-3 안쪽 편집 — layout="frame"(PC)', () => {
     const bar = q('[data-overlay-footer-bar]', frame)!;
     expect(bar.className).toBe('flex-none flex items-center gap-2 px-5 py-3 border-t line-color');
     const save = buttonByText('프리셋 추가', bar);
-    expect(save.className).toBe('px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors');
+    // 그룹 2-b: 창 확정 버튼 공용 상수 DIALOG_PRIMARY_BTN(솔리드 알약 — r-btn, 클래식은 rounded 4px)
+    expect(save.className).toBe('dialog-btn px-4 py-2 rounded r-btn text-sm font-medium transition-colors btn-solid-sky');
     expect(buttonByText('취소', bar).className).toContain('btn-neutral text-body text-sm');
     expect(q('[data-modal-size]')!.getAttribute('data-modal-size')).toBe('xl');
   });

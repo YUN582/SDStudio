@@ -4,6 +4,9 @@ import { observer } from 'mobx-react-lite';
 import {
   FaArrowLeft,
   FaCheck,
+  FaChevronDown,
+  FaChevronRight,
+  FaChevronUp,
   FaToggleOff,
   FaToggleOn,
   FaTrash,
@@ -13,11 +16,23 @@ import { CharacterPreset, ReferenceItem, VibeItem } from '../models/types';
 import { appState } from '../models/AppService';
 import PromptEditTextArea from './PromptEditTextArea';
 import { getRefDefaults } from './CharacterReferenceEditor';
+import { useGlobalModelVersion } from './useGlobalModelVersion';
+import { effectiveSameOutfit } from '../backends/genVendors/naiReference';
+import {
+  newReferenceType,
+  REFERENCE_EDITOR_TEXT,
+  referenceEditorSpec,
+  referenceTypeLabel,
+  referenceTypeOptions,
+  showCostumeUnsupported,
+  showSameOutfitToggle,
+} from '../models/referenceEditorSpec';
 import { EditableSliderValue } from './VibeEditor';
+import { ReferenceStrengthSlider } from './ReferenceStrengthSlider';
 import { PresetImageBackend, VibeImage } from './CharacterPresetCards';
 import { useBackLayer } from '../models/BackStackService';
 import { useGuardedClose } from './backdropClose';
-import { OverlayFooterBar } from './ModalOverlay';
+import { OverlayFooterBar, DIALOG_PRIMARY_BTN, DIALOG_SECONDARY_BTN } from './ModalOverlay';
 
 function PresetMediaPanel({ title, onUpload, multiple = false, children, footer }: {
   title: string; onUpload: (base64: string) => Promise<void>; multiple?: boolean; children?: React.ReactNode; footer?: React.ReactNode;
@@ -97,6 +112,8 @@ export const CharacterPresetInnerEditor = observer(({
   layout = 'inline',
   active = true,
 }: CharacterPresetInnerEditorProps) => {
+  // 레퍼런스 편집 규칙(상한·Fidelity·의상) — 전역 생성 모델 기준(세 편집기 공용 referenceEditorSpec).
+  const refSpec = referenceEditorSpec(useGlobalModelVersion());
   const [name, setName] = useState(preset.name);
   const [characterPrompt, setCharacterPrompt] = useState(preset.characterPrompt);
   const [characterUC, setCharacterUC] = useState(preset.characterUC);
@@ -149,14 +166,18 @@ export const CharacterPresetInnerEditor = observer(({
   // 캐릭터 레퍼런스 이미지 추가
   const handleReferenceChange = async (reference: string) => {
     if (!reference) return;
-    const path = await imageBackend.storeReference(reference);
+    // 사용자가 원본을 직접 넣는 경로 — 원본 크기를 항목에 적는다.
+    const stored = await imageBackend.storeReference(reference);
     const defaults = getRefDefaults();
     const newRef = ReferenceItem.fromJSON({
-      path: path,
+      path: stored.path,
       info: 1.0,
       strength: defaults.strength,
       fidelity: defaults.fidelity,
-      referenceType: defaults.referenceType,
+      referenceType: newReferenceType(refSpec, defaults.referenceType),
+      ...(stored.srcWidth && stored.srcHeight
+        ? { srcWidth: stored.srcWidth, srcHeight: stored.srcHeight }
+        : {}),
     }) as ReferenceItem;
     setCharacterReferences((prev) => [...prev, newRef]);
   };
@@ -185,6 +206,8 @@ export const CharacterPresetInnerEditor = observer(({
       const updated = [...prev];
       const ref = ReferenceItem.fromJSON(updated[index].toJSON());
       (ref as any)[field] = value;
+      // 종류를 바꾸면 「같은 의상 선호」 명시 값을 지워 그 종류의 기본으로
+      if (field === 'referenceType') ref.preferSameOutfit = undefined;
       updated[index] = ref;
       return updated;
     });
@@ -248,7 +271,7 @@ export const CharacterPresetInnerEditor = observer(({
       <div className="mb-4">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">프리셋 이름 *</label>
         <input
-          className="w-full px-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+          className="w-full px-3 py-2 rounded-lg border line-color bg-[var(--c-input-bg)] text-default text-sm focus:outline-none focus:ring-2 focus:ring-[color:var(--c-focus-ring)]"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -337,14 +360,14 @@ export const CharacterPresetInnerEditor = observer(({
   const saveBar = (
       <div className="flex gap-2 pt-2 border-t line-color">
         <button
-          className="flex-1 px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+          className={DIALOG_PRIMARY_BTN + ' flex-1'}
           onClick={handleSave}
         >
           <FaCheck className="inline mr-1.5" size={11} />
           {isNew ? '프리셋 추가' : '프리셋 저장'}
         </button>
         <button
-          className="flex-1 px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+          className={DIALOG_SECONDARY_BTN + ' flex-1'}
           onClick={requestBackToList}
         >
           취소
@@ -387,14 +410,14 @@ export const CharacterPresetInnerEditor = observer(({
       </div>
       <OverlayFooterBar>
         <button
-          className="px-4 py-2 rounded-lg btn-solid-sky text-sm font-medium transition-colors"
+          className={DIALOG_PRIMARY_BTN}
           onClick={handleSave}
           data-preset-editor-save=""
         >
           {isNew ? '프리셋 추가' : '프리셋 저장'}
         </button>
         <button
-          className="px-4 py-2 rounded-lg btn-neutral text-body text-sm transition-colors"
+          className={DIALOG_SECONDARY_BTN}
           onClick={requestBackToList}
         >
           취소
