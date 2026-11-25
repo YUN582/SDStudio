@@ -13,6 +13,7 @@ import {
   FaRedoAlt,
   FaSearchPlus,
   FaShareSquare,
+  FaThLarge,
 } from 'react-icons/fa';
 import { ActionIcon } from './ActionIcon';
 import { MenuItemLabel } from './ContextMenuList';
@@ -1254,35 +1255,34 @@ export const AppContextMenu = observer(() => {
         <Item id="metadata" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>메타 정보 보기</MenuItemLabel>
         </Item>
-        <Item id="upscale" onClick={handleHistoryItemClick}>
-          <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
-        </Item>
-        <Item id="goto-scene" onClick={handleHistoryItemClick}>
-          {/* 사전 scene-find = 「씬 위치로 이동」(그 씬 자리로) */}
-          <MenuItemLabel icon={<ActionIcon id="scene-find" size={I} />}>해당 씬으로 이동</MenuItemLabel>
-        </Item>
-        <Item id="open-grid" onClick={handleHistoryItemClick}>
-          {/* 같은 기능의 아이콘이 없다 → 빈 칸 */}
-          <MenuItemLabel>이미지 그리드에서 보기</MenuItemLabel>
-        </Item>
         <Item id="fav" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
-        <Item id="download" onClick={handleHistoryItemClick}>
-          <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
+        <Separator />
+        <Item id="upscale" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
-        {!isMobile && (
-          <Item id="reveal" onClick={handleHistoryItemClick}>
-            <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
-          </Item>
-        )}
         {!isMobile && (
           <Item id="image-edit" onClick={handleHistoryItemClick}>
             <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
         <Separator />
-        {/* 그리드·이미지 메뉴와 같은 글로벌 프리셋 추가 동작. PC·모바일 공통 */}
+        <Item id="goto-scene" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="scene-find" size={I} />}>해당 씬으로 이동</MenuItemLabel>
+        </Item>
+        <Item id="open-grid" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<FaThLarge size={I} />}>이미지 그리드로 이동</MenuItemLabel>
+        </Item>
+        {!isMobile && (
+          <Item id="reveal" onClick={handleHistoryItemClick}>
+            <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
+          </Item>
+        )}
+        <Separator />
+        <Item id="download" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
+        </Item>
         <Item id="save-global" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>
