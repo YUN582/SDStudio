@@ -95,6 +95,6 @@ export default function SceneQueueMenu({ children, session, type, selectedOnly, 
         <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('empty')}>빈 씬만 일괄 예약</button>
         <button type="button" className="btn-ghost text-left px-3 py-2" onClick={() => reserve('no-favorites')}>즐겨찾기 이미지 없는 씬만 예약</button>
       </>}
-    </div>, document.body)}
+    </div>, themePortalRoot(anchor.current))}
   </span>;
 }

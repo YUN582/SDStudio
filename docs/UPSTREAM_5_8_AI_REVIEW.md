@@ -2,6 +2,17 @@
 
 Codex/GPT-assisted integration, 2026-11-25. Human-readable decisions: [Korean overview](UPSTREAM_5_8_INTEGRATION.ko.md). Machine-readable validation: [results](UPSTREAM_5_8_VALIDATION.json).
 
+## Follow-up review draft
+
+Gemini review confirmed actual merge regressions, not only source-test mismatches. Follow-up fixes are recorded separately from the viewer redesign. The user approved the prototype before production UI implementation; installation must follow verification and an installation backup.
+
+- Consolidate duplicate image edit, metadata/settings and history global-preset entries. Wire visible edit/metadata actions to actual handlers. History supplies scene context only for the current project.
+- Render `FloatViewPane`, propagate `headerSlot` updates, and retain per-pane `FloatViewActiveContext` so only the top overlay accepts its keyboard actions.
+- Portal `SceneQueueMenu` into the nearest theme root. Start image watching only after external editor launch succeeds.
+- Focused regression run: 4 suites, 47 tests passed. Covers rendered menus and click handlers, failed editor launch, foreign-project history, header portals, nested active panes and queue popup placement. TypeScript check passed again after adding these tests.
+
+The original full-run inventory below remains historical evidence. These focused fixes do not establish that all 126 failed tests are resolved. Unwired upstream viewer details, retained fork interactions and brittle source assertions need separate review.
+
 ## Exact references
 
 - Upstream: `Dd154663/SDStudio`, `d95c674061aef309bbc506aaaea3d61790451b96` (5.8.0).

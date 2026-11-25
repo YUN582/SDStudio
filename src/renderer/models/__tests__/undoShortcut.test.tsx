@@ -38,6 +38,7 @@ jest.mock('../BackStackService', () => ({
 jest.mock('../../componenets/backdropClose', () => ({ confirmDiscardChanges: async () => true }));
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { render } from '@testing-library/react';
 import {
   isShortcutActionActive,
@@ -45,7 +46,12 @@ import {
   ShortcutAction,
   ShortcutGateState,
 } from '../KeyboardShortcutService';
-import { FloatView, FloatViewProvider } from '../../componenets/FloatView';
+import {
+  FloatView,
+  FloatViewActiveContext,
+  FloatViewProvider,
+  useFloatViewHeaderSlot,
+} from '../../componenets/FloatView';
 
 const base: ShortcutGateState = {
   imageGridFocusable: false,
@@ -173,5 +179,54 @@ describe('FloatView allowUndo 장부', () => {
     view.unmount();
     expect(mockAppState.floatViewCount).toBe(0);
     expect(mockAppState.undoFloatViewCount).toBe(0);
+  });
+});
+
+function HeaderProbe({ name }: { name: string }) {
+  const header = useFloatViewHeaderSlot();
+  const active = React.useContext(FloatViewActiveContext);
+  return (
+    <div data-testid={name} data-active={String(active)}>
+      {header && createPortal(<span>{name} header</span>, header)}
+    </div>
+  );
+}
+
+describe('FloatView header and active overlay integration', () => {
+  test('header content reaches the actual pane and follows headerSlot updates', () => {
+    const build = (headerSlot: boolean) => (
+      <FloatViewProvider>
+        <FloatView priority={2} headerSlot={headerSlot}>
+          <HeaderProbe name="viewer" />
+        </FloatView>
+      </FloatViewProvider>
+    );
+    const view = render(build(true));
+    expect(document.querySelector('[data-float-view-header-slot]')?.textContent).toBe('viewer header');
+    view.rerender(build(false));
+    expect(document.querySelector('[data-float-view-header-slot]')).toBeNull();
+    expect(view.queryByText('viewer header')).toBeNull();
+    view.rerender(build(true));
+    expect(document.querySelector('[data-float-view-header-slot]')?.textContent).toBe('viewer header');
+    view.unmount();
+  });
+
+  test('only the top pane is active; closing it reactivates the earlier viewer', () => {
+    const build = (nested: boolean) => (
+      <FloatViewProvider>
+        <FloatView priority={2} headerSlot><HeaderProbe name="base" /></FloatView>
+        {nested && <FloatView priority={3} headerSlot><HeaderProbe name="nested" /></FloatView>}
+      </FloatViewProvider>
+    );
+    const view = render(build(false));
+    expect(view.getByTestId('base').getAttribute('data-active')).toBe('true');
+    view.rerender(build(true));
+    expect(view.getByTestId('base').getAttribute('data-active')).toBe('false');
+    expect(view.getByTestId('nested').getAttribute('data-active')).toBe('true');
+    const headers = Array.from(document.querySelectorAll('[data-float-view-header-slot]'));
+    expect(headers.map((el) => el.textContent).sort()).toEqual(['base header', 'nested header']);
+    view.rerender(build(false));
+    expect(view.getByTestId('base').getAttribute('data-active')).toBe('true');
+    view.unmount();
   });
 });

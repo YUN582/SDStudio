@@ -68,9 +68,11 @@ export const useFloatViewHeaderSlot = (): HTMLElement | null =>
 // 거짓이면 예전 그대로(Provider 는 DOM 을 만들지 않는다).
 const FloatViewPane = ({
   view,
+  active,
   onClose,
 }: {
   view: FloatView;
+  active: boolean;
   onClose: () => void;
 }) => {
   const [headerSlotEl, setHeaderSlotEl] = useState<HTMLElement | null>(null);
@@ -107,7 +109,9 @@ const FloatViewPane = ({
         </div>
         <div className="flex-1 overflow-hidden">
           <FloatViewHeaderSlotContext.Provider value={view.headerSlot ? headerSlotEl : null}>
-            {view.component}
+            <FloatViewActiveContext.Provider value={active}>
+              {view.component}
+            </FloatViewActiveContext.Provider>
           </FloatViewHeaderSlotContext.Provider>
         </div>
       </div>
@@ -232,35 +236,7 @@ export const FloatViewProvider: React.FC<FloatViewProviderProps> = observer(({
       }
     >
       {views.map((view) => (
-        <div
-          key={view.id}
-          className="bg-[var(--c-surface)] h-full w-full"
-          style={{ position: 'absolute', zIndex: view.id }}
-        >
-          <div className="flex flex-col h-full w-full">
-            {/* relative: 되돌리기 버튼 바 구석 자리(undoCorner)의 기준 */}
-            <div className="relative flex-none border-b line-color">
-              {/* 전체 화면 보기의 닫기 = 좌상단 「뒤로」 ✕ 하나(모달은 우상단 — SPEC §5 닫기 규칙, 2026-10-03 E2-1) */}
-              <button
-                className="text-default button"
-                aria-label="뒤로"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  closeTopView();
-                }}
-              >
-                <FaTimes size={20} />
-              </button>
-              {view.undoCorner && <UndoCornerSlot />}
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <FloatViewActiveContext.Provider value={view.id === views[0].id}>
-                {view.component}
-              </FloatViewActiveContext.Provider>
-            </div>
-          </div>
-        </div>
+        <FloatViewPane key={view.id} view={view} active={view.id === views[0].id} onClose={closeTopView} />
       ))}
     </div>
   );
@@ -323,8 +299,8 @@ export const FloatView: React.FC<FloatViewProps> = memo(
     // 부모가 다시 그리면 오버레이 내용도 따라간다(children 은 렌더마다 새 요소라 매 렌더 갱신 — 제자리 갱신이라 가볍다)
     useEffect(() => {
       if (!mounted.current) return;
-      updateView(id.current, { component: children, onEscape, dirty, showToolbar, undoCorner });
-    }, [children, onEscape, dirty, showToolbar, undoCorner]);
+      updateView(id.current, { component: children, onEscape, dirty, showToolbar, undoCorner, headerSlot });
+    }, [children, onEscape, dirty, showToolbar, undoCorner, headerSlot]);
 
     return null;
   },

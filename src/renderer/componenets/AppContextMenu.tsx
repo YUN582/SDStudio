@@ -833,8 +833,8 @@ export const AppContextMenu = observer(() => {
   const editImage = async (path: string | undefined) => {
     if (!path) return;
     try {
-      await backend.watchImage(path);
       await backend.openImageEditor(path);
+      await backend.watchImage(path);
     } catch {
       appState.pushMessage('이미지 편집기를 열지 못했습니다. 설정에서 실행 파일을 확인해주세요.', 'error');
     }
@@ -855,7 +855,7 @@ export const AppContextMenu = observer(() => {
       type: 'gallary_image',
       path: [props.ctx.path],
     };
-    if (id === 'metadata') {
+    if (id === 'metadata' || id === 'image-settings') {
       void viewImageMetadata(ctx2.path[0], ctx2.scene);
     } else if (id === 'duplicate') {
       duplicateImage(ctx2);
@@ -877,7 +877,7 @@ export const AppContextMenu = observer(() => {
       saveImageToArtistLibrary(ctx2);
     } else if (id === 'reveal') {
       revealImageInExplorer(ctx2.path[0]);
-    } else if (id === 'edit-image') {
+    } else if (id === 'image-edit' || id === 'edit-image') {
       editImage(ctx2.path[0]);
     }
   };
@@ -987,8 +987,8 @@ export const AppContextMenu = observer(() => {
   };
   const handleHistoryItemClick = ({ id, props }: any) => {
     const ctx = props.ctx as HistoryImageContextAlt;
-    if (id === 'metadata') {
-      void viewImageMetadata(ctx.entry.path);
+    if (id === 'metadata' || id === 'image-settings') {
+      void historyImageSettings(ctx);
     } else if (id === 'save-global') {
       void appState.saveImageAsGlobalPreset(ctx.entry.path);
     } else if (id === 'goto-scene') {
@@ -1005,7 +1005,7 @@ export const AppContextMenu = observer(() => {
       historyDeleteImage(ctx);
     } else if (id === 'reveal') {
       revealImageInExplorer(ctx.entry.path);
-    } else if (id === 'edit-image') {
+    } else if (id === 'image-edit' || id === 'edit-image') {
       editImage(ctx.entry.path);
     }
   };
@@ -1164,15 +1164,6 @@ export const AppContextMenu = observer(() => {
         <Item id="export-images" onClick={handleImageItemClick2}>
           <MenuItemLabel icon={<ActionIcon id="export" size={I} />}>이미지 내보내기</MenuItemLabel>
         </Item>
-        {!isMobile && (
-          <Item
-            id="edit-image"
-            onClick={handleImageItemClick2}
-            hidden={({ props }) => props?.ctx?.path?.length !== 1}
-          >
-            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
-          </Item>
-        )}
         <Item id="fav" onClick={handleImageItemClick2}>
           <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
@@ -1209,9 +1200,6 @@ export const AppContextMenu = observer(() => {
             <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
-        <Item id="image-settings" onClick={handleImageItemClick2} hidden={(p) => p.props?.ctx?.path?.length !== 1}>
-          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
-        </Item>
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick2}>
           <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
@@ -1221,18 +1209,15 @@ export const AppContextMenu = observer(() => {
         </Item>
       </Menu>
       <Menu id={ContextMenuType.Image} onVisibilityChange={contextMenuBackLayer(ContextMenuType.Image)}>
-        <Item id="metadata" onClick={handleImageItemClick}>메타 정보 보기</Item>
+        <Item id="metadata" onClick={handleImageItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>메타 정보 보기</MenuItemLabel>
+        </Item>
         <Item id="upscale" onClick={handleImageItemClick}>
           <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
         <Item id="download" onClick={handleImageItemClick}>
           <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
-        {!isMobile && (
-          <Item id="edit-image" onClick={handleImageItemClick}>
-            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
-          </Item>
-        )}
         <Item id="fav" onClick={handleImageItemClick}>
           <MenuItemLabel icon={<ActionIcon id="favorite" size={I} />}>즐겨찾기 토글</MenuItemLabel>
         </Item>
@@ -1257,9 +1242,6 @@ export const AppContextMenu = observer(() => {
             <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
-        <Item id="image-settings" onClick={handleImageItemClick}>
-          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
-        </Item>
         <Separator />
         <Item id="save-global" onClick={handleImageItemClick}>
           <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
@@ -1269,7 +1251,9 @@ export const AppContextMenu = observer(() => {
         </Item>
       </Menu>
       <Menu id={ContextMenuType.HistoryImage} onVisibilityChange={contextMenuBackLayer(ContextMenuType.HistoryImage)}>
-        <Item id="metadata" onClick={handleHistoryItemClick}>메타 정보 보기</Item>
+        <Item id="metadata" onClick={handleHistoryItemClick}>
+          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>메타 정보 보기</MenuItemLabel>
+        </Item>
         <Item id="upscale" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<FaSearchPlus size={I} />}>업스케일 ×2 (Anlas)</MenuItemLabel>
         </Item>
@@ -1288,11 +1272,6 @@ export const AppContextMenu = observer(() => {
           <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
         {!isMobile && (
-          <Item id="edit-image" onClick={handleHistoryItemClick}>
-            <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
-          </Item>
-        )}
-        {!isMobile && (
           <Item id="reveal" onClick={handleHistoryItemClick}>
             <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>
           </Item>
@@ -1302,15 +1281,8 @@ export const AppContextMenu = observer(() => {
             <MenuItemLabel icon={<ActionIcon id="edit" size={I} />}>이미지 편집</MenuItemLabel>
           </Item>
         )}
-        <Item id="image-settings" onClick={handleHistoryItemClick}>
-          <MenuItemLabel icon={<ActionIcon id="gen-settings" size={I} />}>생성 설정 적용</MenuItemLabel>
-        </Item>
         <Separator />
-        {/* 그리드·이미지 메뉴와 같은 항목·자리(「생성 설정 적용」 뒤 구분선 다음, 2026-11-22). PC·모바일 공통 */}
-        <Item id="save-global" onClick={handleHistoryItemClick}>
-          <MenuItemLabel icon={<ActionIcon id="copy-to-global" size={I} />}>글로벌 프리셋으로 복사</MenuItemLabel>
-        </Item>
-        <Separator />
+        {/* 그리드·이미지 메뉴와 같은 글로벌 프리셋 추가 동작. PC·모바일 공통 */}
         <Item id="save-global" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>

@@ -84,6 +84,7 @@ test('disabled combinations do not report queued work or trigger play on an old 
 test('hover does not open; arrow opens options; option reserves once; Escape closes', async () => {
   (global as any).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement('div');
+  container.setAttribute('data-app-theme-root', '');
   document.body.appendChild(container);
   const root = createRoot(container);
   try {
@@ -94,6 +95,7 @@ test('hover does not open; arrow opens options; option reserves once; Escape clo
     expect(document.querySelector('[aria-label="부분 일괄 예약"]')).toBeNull();
     await act(async () => (container.querySelector('[aria-label="부분 일괄 예약 옵션"]') as HTMLButtonElement).click());
     expect(document.querySelector('[aria-label="부분 일괄 예약"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="부분 일괄 예약"]')).not.toBeNull();
     expect(queueWorkflow).not.toHaveBeenCalled();
     const option = document.querySelector('[aria-label="부분 일괄 예약"] button') as HTMLButtonElement;
     await act(async () => option.click());
