@@ -66,3 +66,59 @@ test('expanded prompt keeps backdrop clicks open, searches and replaces through 
   fireEvent.click(screen.getByRole('button', { name: '크게 편집 닫기' }));
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+test('inline editors retain the existing expansion button without the duplicated inline finder', () => {
+  const view = render(<Fixture />);
+  expect(view.container.querySelectorAll('[data-prompt-expand-toggle]')).toHaveLength(1);
+  expect(view.container.querySelector('[data-prompt-find-toggle]')).toBeNull();
+  expect(document.querySelector('[data-prompt-find-bar]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '크게 편집' }));
+  expect(screen.getByRole('textbox', { name: '프롬프트 검색' })).toBeDefined();
+  expect(screen.getByRole('textbox', { name: '프롬프트 바꿀 내용' })).toBeDefined();
+});
+
+test('read-only expansion reuses the themed shared viewer and supports selection and search', async () => {
+  const theme = document.createElement('div');
+  theme.setAttribute('data-app-theme-root', '');
+  theme.className = 'dark';
+  const clipped = document.createElement('div');
+  theme.appendChild(clipped); document.body.appendChild(theme);
+  const onChange = jest.fn(), onClose = jest.fn();
+  const view = render(<PromptEditTextArea value="alpha, beta, ALPHA" disabled initialExpanded
+    onExpandedClose={onClose} onChange={onChange} />, { container: clipped });
+  const dialog = screen.getByRole('dialog', { name: '프롬프트 확대 보기' });
+  expect(dialog.closest('[data-app-theme-root]')).toBe(theme);
+  expect(clipped.querySelector('[role=dialog]')).toBeNull();
+  expect(dialog.querySelector('[contenteditable=false]')?.hasAttribute('data-selectable-text')).toBe(true);
+  expect(document.activeElement).toBe(dialog.querySelector('[contenteditable=false]'));
+  fireEvent.keyDown(document.activeElement!, { key: 'f', ctrlKey: true });
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '프롬프트 검색' }));
+  expect(screen.queryByRole('textbox', { name: '프롬프트 바꿀 내용' })).toBeNull();
+  fireEvent.change(screen.getByRole('textbox', { name: '프롬프트 검색' }), { target: { value: 'alpha' } });
+  fireEvent.click(screen.getByRole('button', { name: '다음 검색 결과' }));
+  await waitFor(() => expect(window.getSelection()?.toString()).toBe('alpha'));
+  fireEvent.click(document.querySelector('[data-prompt-expanded-backdrop]')!);
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  fireEvent.click(screen.getByRole('button', { name: '확대 보기 닫기' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  view.unmount(); theme.remove();
+});
+
+test('read-only expansion blocks weight/comment/paste edits and Escape closes just the viewer', async () => {
+  const onChange = jest.fn(), onClose = jest.fn();
+  render(<PromptEditTextArea value="alpha, beta" disabled initialExpanded onExpandedClose={onClose} onChange={onChange} />);
+  const editor = document.querySelector('[contenteditable=false]') as HTMLElement;
+  const range = document.createRange(); range.selectNodeContents(editor); range.collapse(true);
+  window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+  onChange.mockClear();
+  fireEvent.keyDown(editor, { key: 'ArrowUp', ctrlKey: true });
+  fireEvent.keyDown(editor, { key: '3', code: 'Digit3', ctrlKey: true });
+  fireEvent.wheel(editor, { ctrlKey: true, deltaY: -100 });
+  fireEvent.paste(editor, { clipboardData: { getData: () => 'modified' } });
+  expect(editor.textContent).toBe('alpha, beta');
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onClose).toHaveBeenCalledTimes(1);
+});

@@ -30,6 +30,18 @@ describe('isTextEntryElement / isTextEntryFocused', () => {
     input.focus();
     expect(isTextEntryFocused()).toBe(true);
   });
+
+  test('읽기 전용 프롬프트도 Ctrl+F 같은 키를 화면 뒤 단축키에 넘기지 않는다', () => {
+    const preview = document.createElement('div');
+    preview.setAttribute('role', 'textbox');
+    preview.setAttribute('aria-readonly', 'true');
+    preview.tabIndex = 0;
+    const text = document.createElement('span'); preview.appendChild(text);
+    document.body.appendChild(preview); preview.focus();
+    expect(isTextEntryElement(preview)).toBe(true);
+    expect(isTextEntryElement(text)).toBe(true);
+    expect(isTextEntryFocused()).toBe(true);
+  });
 });
 
 describe('shouldIgnoreViewerRawKey', () => {

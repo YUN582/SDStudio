@@ -41,7 +41,7 @@ import Denque from 'denque';
 import { writeFileSync } from 'original-fs';
 import { windowsStore } from 'process';
 import Scrollbars from 'react-custom-scrollbars-2';
-import PromptEditTextArea from './PromptEditTextArea';
+import PromptEditTextArea, { PromptExpandButton } from './PromptEditTextArea';
 import PreSetEditor, { EditorField, UnionPreSetEditor, V5MediumNegativeNotice } from './PreSetEdtior';
 import { useModelFamilySwitch } from './ModelFamilySwitch';
 import { TaskProgressBar } from './TaskQueueControl';
@@ -149,21 +149,42 @@ interface Props {
 interface PromptHighlighterProps {
   text: string;
   className?: string;
+  expandable?: boolean;
 }
 
 export const PromptHighlighter = observer(
-  ({ className, text }: PromptHighlighterProps) => {
+  ({ className, text, expandable = false }: PromptHighlighterProps) => {
     const { curSession } = appState;
-    return (
+    const [expanded, setExpanded] = useState(false);
+    const content = (
       <div
         data-selectable-text
         tabIndex={0}
         className={
           'max-w-full break-words bg-[var(--c-input-bg)] ' +
+          (expandable ? 'pr-8 ' : '') +
           (className ?? '')
         }
         dangerouslySetInnerHTML={{ __html: highlightPrompt(curSession!, text) }}
       ></div>
+    );
+    if (!expandable) return content;
+    return (
+      <div className="relative w-full">
+        {content}
+        <div className="absolute top-0 right-0 z-10">
+          <PromptExpandButton label="프롬프트 확대 보기" onClick={() => setExpanded(true)} />
+        </div>
+        {expanded && (
+          <PromptEditTextArea
+            value={text}
+            disabled
+            initialExpanded
+            onExpandedClose={() => setExpanded(false)}
+            onChange={() => {}}
+          />
+        )}
+      </div>
     );
   },
 );

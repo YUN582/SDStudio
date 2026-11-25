@@ -16,6 +16,14 @@ Gemini review confirmed actual merge regressions, not only source-test mismatche
 
 The original full-run inventory below remains historical evidence. These focused fixes do not establish that all 126 failed tests are resolved. Unwired upstream viewer details, retained fork interactions and brittle source assertions need separate review.
 
+## Prompt preview follow-up, prepared for review
+
+- Reuse the existing expansion button and expanded prompt frame in image details and metadata previews. Read-only views support selection/copy and search, without edit or replace operations. They claim text-entry keyboard focus so Ctrl+F does not trigger background favorite actions.
+- Metadata positive prompt caps at `min(40vh, 28rem)`; negative stays at 112px. A 1600x1200 isolated Windows check measured 448px and 112px respectively.
+- Eight focused suites / 63 tests passed. Production builds and isolated native checks passed; final typecheck status is in the follow-up result file. Obsolete inline-finder UI tests were replaced with retained mobile-control and expanded-view behavior coverage. The default full suite was not rerun; earlier failures remain outside this evidence.
+- Tested both detail and metadata expansion, theme portal, search, read-only protection, text selection, explicit close and Escape returning to the parent. Test requests were blocked; personal projects and the installed archive were not modified. The candidate is prepared, not installed.
+- Evidence: [prompt preview results](PROMPT_PREVIEW_VALIDATION_20261125.json).
+
 ## Exact references
 
 - Upstream: `Dd154663/SDStudio`, `d95c674061aef309bbc506aaaea3d61790451b96` (5.8.0).
@@ -52,7 +60,7 @@ The merge initially accepted nonconflicting hunks and preferred fork hunks at di
 - PC/mobile autocomplete share comment-aware boundaries and include `|`, CR and LF. Completion does not insert a new space after a comment; actual separator whitespace is preserved.
 - Fork randomizer parsing stays ahead of final comment removal. Do not strip comments before choosing candidates when that would destroy pipe structure.
 - Fork Ctrl+3 includes a following comma, leaves following separator spaces outside, and supports selections. This intentionally differs from upstream exact-selection expectations.
-- Inline find controls use upstream helpers; expanded prompt editing retains the fork portal, blur, search/replace and explicit closing behavior. Caret-coordinate retry checks selection again after animation-frame delay.
+- The initial integration accepted upstream inline find controls. A later user-requested follow-up removes those PC/mobile controls and their unused component; the expanded fork editor retains find/replace, theme portal, blur and explicit closing. Existing mobile weight/comment and selected-tag search controls remain. Caret-coordinate retry still checks selection after animation-frame delay.
 - Queue and SDWorkFlow retain one source-image combination, empty-mask I2I, drawing/live-input behavior, source metadata and existing-queue resume rules. No paid generation request was made.
 - History uses the fork image viewer and internal/external drag behavior. Preview state gates background scene/grid actions while allowing its own active viewer and undo. Both panel and mobile drawer pass the opening callback.
 

@@ -123,7 +123,7 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
           title="프롬프트"
           right={<CopyButton text={info.prompt} label="프롬프트 복사" message="프롬프트를 복사했습니다" />}
         />
-        <PromptHighlighter text={info.prompt} className={DETAIL_PROMPT_BOX} />
+        <PromptHighlighter text={info.prompt} expandable className={DETAIL_PROMPT_BOX} />
       </section>,
     );
   }
@@ -134,7 +134,7 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
           title="네거티브 프롬프트"
           right={<CopyButton text={info.uc} label="네거티브 프롬프트 복사" message="네거티브 프롬프트를 복사했습니다" />}
         />
-        <PromptHighlighter text={info.uc} className={DETAIL_PROMPT_BOX} />
+        <PromptHighlighter text={info.uc} expandable className={DETAIL_PROMPT_BOX} />
       </section>,
     );
   }
@@ -163,7 +163,7 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
             ) : undefined
           }
         />
-        {c.prompt && <PromptHighlighter text={c.prompt} className={DETAIL_PROMPT_BOX} />}
+        {c.prompt && <PromptHighlighter text={c.prompt} expandable className={DETAIL_PROMPT_BOX} />}
         {c.uc && (
           <>
             <GroupHead
@@ -172,7 +172,7 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
                 <CopyButton text={c.uc} label={`${name} 네거티브 복사`} message={`${name} 네거티브를 복사했습니다`} />
               }
             />
-            <PromptHighlighter text={c.uc} className={DETAIL_PROMPT_BOX} />
+            <PromptHighlighter text={c.uc} expandable className={DETAIL_PROMPT_BOX} />
           </>
         )}
       </section>,
@@ -244,7 +244,7 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
                     title={<span className="font-normal">{p.label}</span>}
                     right={<CopyButton text={p.text} label={`${p.label} 복사`} message={`${p.label}을(를) 복사했습니다`} />}
                   />
-                  <PromptHighlighter text={p.text} className={DETAIL_PROMPT_BOX} />
+                  <PromptHighlighter text={p.text} expandable className={DETAIL_PROMPT_BOX} />
                 </div>
               ),
             )}

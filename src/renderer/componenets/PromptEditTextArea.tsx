@@ -991,6 +991,9 @@ interface PromptEditTextAreaProps {
   // 인라인 뿌리(div)에 덧붙일 클래스 — 호스트가 flex 열 안에서 높이를 주고 싶을 때(`flex-1 min-h-0`).
   // 전체화면(fixed) 때는 흐름 밖이라 영향 없음(2026-11-15 프롬프트 칸 최소·최대 줄 수).
   className?: string;
+  /** Open an existing prompt directly in the shared expanded viewer. */
+  initialExpanded?: boolean;
+  onExpandedClose?: () => void;
 }
 
 function useLatest(value: any) {
@@ -1126,9 +1129,14 @@ const EmulatedEditTextArea = observer(
         editorModelRef.current = editor;
         editor.closeAutoComplete = closeAutoComplete;
         editor.syncValue(value);
-        const handleKeyDown = (e: any) => editor.handleKeyDown(e);
+        const handleKeyDown = (e: any) => {
+          if (!disabledRef.current) editor.handleKeyDown(e);
+        };
         editorRef.current.addEventListener('keydown', handleKeyDown);
-        const handleBeforeInput = (e: any) => editor.handleBeforeInput(e);
+        const handleBeforeInput = (e: any) => {
+          if (disabledRef.current) e.preventDefault();
+          else editor.handleBeforeInput(e);
+        };
         editorRef.current.addEventListener('beforeinput', handleBeforeInput);
         const handleCompositionUpdate = (e: any) =>
           editor.handleCompositionUpdate(e);
@@ -1138,11 +1146,15 @@ const EmulatedEditTextArea = observer(
             handleCompositionUpdate,
           );
         }
-        const handlePaste = (e: ClipboardEvent) => editor.handlePaste(e);
+        const handlePaste = (e: ClipboardEvent) => {
+          if (disabledRef.current) e.preventDefault();
+          else editor.handlePaste(e);
+        };
         editorRef.current.addEventListener('paste', handlePaste);
         const handleWheel = (e: WheelEvent) => {
           if (!e.ctrlKey || e.deltaY === 0) return;
           e.preventDefault();
+          if (disabledRef.current) return;
           closeAutoComplete();
           mutex.runExclusive(async () => {
             await editor.adjustWeight(e.deltaY < 0 ? 0.05 : -0.05);
@@ -1153,10 +1165,12 @@ const EmulatedEditTextArea = observer(
         });
         const handleWindowMouseDown = (e: any) => {
           closeAutoComplete();
-          editor.handleWindowMouseDown(e);
+          if (!disabledRef.current) editor.handleWindowMouseDown(e);
         };
         window.addEventListener('mousedown', handleWindowMouseDown);
-        const handleMouseDown = (e: any) => editor.handleMouseDown(e);
+        const handleMouseDown = (e: any) => {
+          if (!disabledRef.current) editor.handleMouseDown(e);
+        };
         editorRef.current.addEventListener('mousedown', handleMouseDown);
         return () => {
           window.removeEventListener('mousedown', handleWindowMouseDown);
@@ -1250,7 +1264,11 @@ const EmulatedEditTextArea = observer(
               }
               ref={editorRef}
               contentEditable={disabled ? 'false' : 'true'}
+              role="textbox"
+              aria-multiline="true"
+              aria-readonly={disabled ? true : undefined}
               tabIndex={disabled ? 0 : undefined}
+              data-selectable-text={disabled ? '' : undefined}
             ></div>
           </div>
           <textarea
@@ -1635,6 +1653,19 @@ export const PromptAccessorySlotContext = createContext<
   ((node: React.ReactNode) => void) | null
 >(null);
 
+export const PromptExpandButton = ({ onClick, label = '크게 편집' }: {
+  onClick: () => void;
+  label?: string;
+}) => (
+  <Tooltip content={label}>
+    <button type="button" data-prompt-expand-toggle aria-label={label}
+      onClick={onClick}
+      className="text-[var(--c-icon-text)] opacity-[0.85] hover:opacity-100 mr-1 mt-1">
+      <FaExpand />
+    </button>
+  </Tooltip>
+);
+
 const PromptEditTextArea = observer(
   ({
     value,
@@ -1644,6 +1675,8 @@ const PromptEditTextArea = observer(
     lineHighlight,
     innerRef,
     className: extraClassName,
+    initialExpanded = false,
+    onExpandedClose,
   }: PromptEditTextAreaProps) => {
     const { curSession } = appState;
     const editorRef = useRef<EditTextAreaRef | null>(null);
@@ -1667,9 +1700,9 @@ const PromptEditTextArea = observer(
     const cntRef = useRef(0);
     const selectedTagRef = useLatest(selectedTag);
     const curWordRef = useLatest(curWord);
-    const [fullScreen, setFullScreen] = useState(false);
+    const [fullScreen, setFullScreen] = useState(initialExpanded);
     const searchRef = useRef<PromptSearchHandle>(null);
-    const portalHost = useRef<Element>(document.body);
+    const portalHost = useRef<Element>(document.querySelector('[data-app-theme-root]') ?? document.body);
     const accessorySlot = useContext(PromptAccessorySlotContext);
     // 모바일 「탭=확장 창」(클래식 동작). 자체 집중 모드가 있는 곳(V2 시트·PromptFocusShell·씬 편집 창)은 false 로 감싼다.
     const autoExpand = useContext(PromptAutoExpandContext);
@@ -1738,11 +1771,13 @@ const PromptEditTextArea = observer(
     const closeFullScreenRef = useRef<() => void>(() => {});
     useEffect(() => {
       if (!fullScreen) return undefined;
+      if (initialExpanded) rootRef.current?.querySelector<HTMLElement>('[contenteditable]')?.focus();
       appState.incrementModalOverlay();
       const handle = backStackService.push(() => closeFullScreenRef.current());
       return () => { handle.remove(); appState.decrementModalOverlay(); };
-    }, [fullScreen]);
-    const EditTextAreaImpl = isMobile
+    }, [fullScreen, initialExpanded]);
+    // Read-only previews use selectable rendered text without opening a mobile keyboard.
+    const EditTextAreaImpl = isMobile && !(initialExpanded && disabled)
       ? NativeEditTextArea
       : EmulatedEditTextArea;
 
@@ -1873,6 +1908,7 @@ const PromptEditTextArea = observer(
     };
     const closeFullScreen = () => {
       setFullScreen(false);
+      onExpandedClose?.();
       // 배경 탭·뒤로 가기 = 편집 끝. 포커스도 풀어 키보드를 내린다(X 버튼은 인라인 편집을 이어갈 수 있게 포커스 유지).
       const active = document.activeElement as HTMLElement | null;
       if (active && typeof active.blur === 'function') active.blur();
@@ -1931,16 +1967,10 @@ const PromptEditTextArea = observer(
     if (fullScreen) bgColor = 'bg-[var(--c-input-bg)] shadow-lg';
 
     const expandButton = (
-      <Tooltip content="크게 편집">
-        <button type="button" data-prompt-expand-toggle aria-label="크게 편집"
-          onClick={() => {
-            portalHost.current = rootRef.current?.closest('[data-app-theme-root]') ?? document.body;
-            setTags([]); setFullScreen(true);
-          }}
-          className="text-[var(--c-icon-text)] opacity-[0.85] hover:opacity-100 mr-1 mt-1">
-          <FaExpand />
-        </button>
-      </Tooltip>
+      <PromptExpandButton onClick={() => {
+        portalHost.current = rootRef.current?.closest('[data-app-theme-root]') ?? document.body;
+        setTags([]); setFullScreen(true);
+      }} />
     );
 
     const contents = (
@@ -1971,7 +2001,7 @@ const PromptEditTextArea = observer(
           spellCheck={false}
           role={fullScreen ? 'dialog' : undefined}
           aria-modal={fullScreen ? true : undefined}
-          aria-label={fullScreen ? '프롬프트 확대 편집' : undefined}
+          aria-label={fullScreen ? (disabled ? '프롬프트 확대 보기' : '프롬프트 확대 편집') : undefined}
           onKeyDownCapture={event => {
             if (!fullScreen) return;
             if (event.key === 'Escape' && tagsRef.current.length) {
@@ -1997,10 +2027,10 @@ const PromptEditTextArea = observer(
         >
           {fullScreen && <>
             <div className="flex-none flex items-center justify-between gap-3 px-4 py-3 bg-[var(--c-zone)] border-b line-color">
-              <h2 className="text-base font-semibold text-default m-0">프롬프트 편집</h2>
+              <h2 className="text-base font-semibold text-default m-0">{disabled ? '프롬프트 보기' : '프롬프트 편집'}</h2>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted">Esc로 닫기</span>
-                <button type="button" aria-label="크게 편집 닫기" className={OVERLAY_CLOSE_BUTTON_CLASS} onClick={closeFullScreen}><FaTimes size={OVERLAY_CLOSE_ICON_SIZE} /></button>
+                <button type="button" aria-label={disabled ? '확대 보기 닫기' : '크게 편집 닫기'} className={OVERLAY_CLOSE_BUTTON_CLASS} onClick={closeFullScreen}><FaTimes size={OVERLAY_CLOSE_ICON_SIZE} /></button>
               </div>
             </div>
             <PromptSearchBar ref={searchRef} value={value} editor={editorRef} disabled={disabled} />
@@ -2013,8 +2043,7 @@ const PromptEditTextArea = observer(
               {expandButton}
             </div>
           ) : (
-            // PC: 오른쪽 띠에 세로로 [크게 편집][돋보기][작가](DOM 순서도 이 순서). 칸이 낮으면 이 칸만
-            // flex-row-reverse 로 종전 가로 모습 [작가][돋보기][크게 편집]. leading-none = 아이콘 높이를 1em 으로 줄여 낮은 칸에서도 쌓이게.
+            // PC: 기존 확대·작가 버튼만 유지. 찾기·바꾸기는 확대 창에서 사용한다.
             <div
               ref={iconBoxRef}
               data-prompt-icon-column={iconStack ? 'stack' : 'row'}
@@ -2085,9 +2114,9 @@ const PromptEditTextArea = observer(
       </>
     );
     return fullScreen ? <>
-      <div className={'h-full ' + (extraClassName ?? '')} />
+      {!initialExpanded && <div className={'h-full ' + (extraClassName ?? '')} />}
       {createPortal(contents, portalHost.current)}
-    </> : contents;
+    </> : initialExpanded ? null : contents;
   },
 );
 

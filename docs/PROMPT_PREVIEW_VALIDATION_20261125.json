@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-25",
+  "scope": [
+    "metadata positive prompt height",
+    "shared read-only prompt expansion",
+    "duplicate inline finder removal"
+  ],
+  "status": "prepared for review; not installed",
+  "tests": {
+    "suitesPassed": 8,
+    "suitesFailed": 0,
+    "passed": 63,
+    "failed": 0
+  },
+  "productionBuild": {
+    "main": "passed",
+    "renderer": "passed"
+  },
+  "typecheck": "passed",
+  "isolatedWindowsRuntime": {
+    "heights": {
+      "positive": 448,
+      "negative": 112
+    },
+    "detailExpansion": true,
+    "metadataExpansion": true,
+    "sharedSearch": true,
+    "readOnly": true,
+    "selection": true,
+    "escapeKeepsParent": true,
+    "backdropDoesNotClose": true,
+    "inlineFinderRemoved": true,
+    "networkBlocked": true
+  },
+  "candidateSha256": "dc6bc03f5654dda90f1c519870fee380eba2fea7f1e447d1b7cbcbb18cee5496",
+  "installedSha256": "83975035a545320482b853b37c8c3161ee65d6eacda6ed97badd3fc52df5b1f1",
+  "screenshotFiles": [
+    "metadata-positive.png",
+    "detail-expanded.png",
+    "metadata-expanded.png"
+  ],
+  "limits": [
+    "Default full suite not rerun; previous unrelated failures remain.",
+    "Android/iOS runtime not exercised.",
+    "No paid generation or personal-project mutation."
+  ]
+}

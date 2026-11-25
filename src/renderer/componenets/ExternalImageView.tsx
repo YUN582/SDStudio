@@ -529,21 +529,24 @@ export const ExternalImageView = observer(
                     ] as [string, string, boolean][]).map(([label, text, selected]) => (
                       <div key={label}>
                         <div className="flex items-center gap-2 text-xs text-muted mb-1">{label}{!selected && <span>적용 안 함</span>}</div>
-                        {text?.trim() ? <PromptHighlighter text={text} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
+                        {text?.trim() ? <PromptHighlighter text={text} expandable className="w-full max-h-[min(40vh,28rem)] overflow-auto text-sm p-2 rounded" />
                           : <div className="text-xs text-muted px-2">비어 있음</div>}
                       </div>
                     ))}
                   </div>
-                ) : <PromptHighlighter text={job.prompt} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />}
+                ) : <PromptHighlighter text={job.prompt} expandable className="w-full max-h-[min(40vh,28rem)] overflow-auto text-sm p-2 rounded" />}
               </MetadataSection>
               <MetadataSection label="네거티브 프롬프트" selected={options.uc}>
-                <PromptHighlighter text={job.uc} className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
+                <PromptHighlighter text={job.uc} expandable className="w-full max-h-28 overflow-auto text-sm p-2 rounded" />
               </MetadataSection>
               {hasCharacters && <MetadataSection label="캐릭터 프롬프트" selected={options.characters}>
                 {job.characterPrompts.map(cp => <div key={cp.id} className="mb-2 p-2.5 bg-[var(--c-surface)] rounded-lg text-sm">
                   <div className="text-muted text-xs mb-1">Pos: ({cp.position?.x?.toFixed(2) ?? '-'}, {cp.position?.y?.toFixed(2) ?? '-'})</div>
-                  <div className="text-body break-words">{cp.prompt}</div>
-                  {cp.uc && <div className="text-muted mt-1 break-words text-xs">UC: {cp.uc}</div>}
+                  {cp.prompt?.trim() && <PromptHighlighter text={cp.prompt} expandable className="w-full max-h-[min(30vh,20rem)] overflow-auto text-sm p-2 rounded" />}
+                  {cp.uc?.trim() && <>
+                    <div className="text-muted mt-2 mb-1 text-xs">네거티브</div>
+                    <PromptHighlighter text={cp.uc} expandable className="w-full max-h-28 overflow-auto text-xs p-2 rounded" />
+                  </>}
                 </div>)}
               </MetadataSection>}
               {hasVibes && <MetadataSection label={`바이브 트랜스퍼 (${job.vibes.length}개)`} selected={options.vibes && !isGlobalTarget}>

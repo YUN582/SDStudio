@@ -11,6 +11,7 @@ export function isTextEntryElement(el: Element | null | undefined): boolean {
   const tag = el.tagName.toLowerCase();
   if (tag === 'input' || tag === 'textarea') return true;
   if ((el as HTMLElement).isContentEditable) return true;
+  if (el.closest?.('[role="textbox"][aria-readonly="true"]')) return true;
   // webview 내부 포커스도 입력 중으로 본다
   if (tag === 'webview') return true;
   return false;
