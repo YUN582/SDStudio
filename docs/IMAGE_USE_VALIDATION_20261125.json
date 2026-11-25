@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-25",
+  "status": "prepared for user review; not installed",
+  "upstream581Merged": false,
+  "focusedTests": {
+    "suites": 5,
+    "passed": 65,
+    "failed": 0,
+    "affectedMetadataRetestPassed": 15
+  },
+  "typecheck": "passed",
+  "productionRendererBuild": "passed",
+  "mainBundle": "reused previously verified unchanged build",
+  "isolatedWindows": {
+    "metadataAbsenceFinishes": true,
+    "vibeAppend": true,
+    "referenceAppend": true,
+    "referenceSourceSize": {
+      "width": 832,
+      "height": 1216
+    },
+    "i2iSingleWork": true,
+    "i2iPromptFromCurrent": true,
+    "sourceLinkPreserved": true,
+    "escapeReturnsMetadata": true,
+    "networkBlocked": true
+  },
+  "candidateSha256": "61e33b7f7b5f353ce240ffd9491122aea3c64aaaa37baab89a5f4758d884d811",
+  "installedSha256": "97dbc34f04acb2b8b268ec42a9b283b54e9707ac2eca43d8d62e88df47b65a75",
+  "runtimeFilesPreserved": 942,
+  "limits": [
+    "Default full suite was not rerun; earlier failures remain outside this focused evidence.",
+    "Android/iOS runtime was not exercised.",
+    "No paid generation or live personal-project mutation."
+  ],
+  "reviewArtifacts": [
+    "metadata-no-information.png",
+    "metadata-image-actions.png",
+    "imported-i2i-editor.png"
+  ]
+}

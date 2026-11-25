@@ -2,6 +2,8 @@
 
 Current integration: upstream 5.8.0 was merged in `a918f0b396c01903242cbfd13d778078234a8781`. Read [the current integration review](docs/UPSTREAM_5_8_AI_REVIEW.md) and its explicit validation limits first.
 
+New upstream 5.8.1 is reviewed separately and has not been merged: [plain-language recommendations](docs/UPSTREAM_5_8_1_REVIEW.ko.md), [conflicts and integration boundaries](docs/UPSTREAM_5_8_1_AI_REVIEW.md). The independent metadata/image-use follow-up is prepared for review, not installed.
+
 The remainder records the historical 2026-11-21 review handoff; its unmerged-upstream counts and test snapshot are historical. Code and documentation were authored/modified with Codex/GPT assistance. Human-facing overview: [CHANGES.ko.md](CHANGES.ko.md).
 
 ## Review scope and immutable references
