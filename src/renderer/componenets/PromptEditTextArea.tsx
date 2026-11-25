@@ -19,7 +19,6 @@ import {
   FaBox,
   FaDatabase,
   FaExpand,
-  FaSearch,
   FaTag,
   FaTimes,
   FaUndo,
@@ -32,10 +31,9 @@ import { isMobile, backend, artistLibraryService, sessionService } from '../mode
 import { isTextEntryElement } from '../models/keyTargetGuard';
 import { holdSceneFieldEdit } from '../models/sceneFieldUndo';
 import { offerWeightSpacing } from '../models/promptWeightSpacingFlow';
-import { backStackService, useBackLayer } from '../models/BackStackService';
+import { backStackService } from '../models/BackStackService';
 import type { PromptFindEditResult, PromptFindTarget } from '../models/promptFind';
 import { promptOffsetToDomPoint } from '../models/promptFindDom';
-import { PromptFindBar, usePromptFind } from './PromptFindBar';
 import { fitsPromptIconStack } from '../models/promptEditIcons';
 import {
   artistNameOfSegment,
@@ -1683,7 +1681,7 @@ const PromptEditTextArea = observer(
     // 칸 높이가 모자라면 그 칸만 종전 가로 배치. 글자 여백은 두 배치 모두 같아서 전환해도 글자가 다시 줄바꿈되지 않는다.
     const iconBoxRef = useRef<HTMLDivElement | null>(null);
     const [iconStack, setIconStack] = useState(true);
-    const iconCount = 2 + (caretArtist && !accessorySlot ? 1 : 0);
+    const iconCount = 1 + (caretArtist && !accessorySlot ? 1 : 0);
     useLayoutEffect(() => {
       if (isMobile) return undefined;
       const root = rootRef.current;
@@ -1754,56 +1752,6 @@ const PromptEditTextArea = observer(
       editorRef.current!.onCloseAutoComplete();
       setId((id) => id + 1);
     };
-
-    // 「이 칸에서 찾기·바꾸기」(2026-11-22) — PC 는 아이콘 줄 돋보기 + 칸 밖에 뜨는 검색 줄(PromptFindBar),
-    // 모바일은 키보드 위 칩(MobileKeyboardChip)의 찾기 모드. 키보드 단축키는 만들지 않는다(사용자 결정).
-    // 닫힘: ✕·돋보기 다시 누름·검색 줄 입력 칸 Esc(닫기 관문 맨 위 층) = 편집기로 포커스 복귀,
-    // 검색 줄과 이 칸 밖 pointerdown·포커스 이동 = 포커스는 건드리지 않음. 한 번에 한 칸만(다른 칸 돋보기 = 밖 누름).
-    const [findOpen, setFindOpen] = useState(false);
-    const findOpenRef = useRef(false);
-    const findBarRef = useRef<HTMLDivElement | null>(null);
-    const findTarget =
-      !isMobile && findOpen ? editorRef.current?.getFindTarget() ?? null : null;
-    const finder = usePromptFind(findTarget, findOpen && !isMobile);
-    const finderRef = useRef(finder);
-    finderRef.current = finder;
-    const closeFind = (focusEditor: boolean) => {
-      if (!findOpenRef.current) return;
-      findOpenRef.current = false;
-      setFindOpen(false);
-      if (focusEditor) finderRef.current.focusBack();
-    };
-    const openFind = () => {
-      closeAutoComplete();
-      findOpenRef.current = true;
-      setFindOpen(true);
-    };
-    useBackLayer(findOpen, () => closeFind(true));
-    useEffect(() => {
-      if (!findOpen) return undefined;
-      const inside = (t: EventTarget | null) => {
-        const n = t as Node | null;
-        if (!n) return false;
-        return !!(
-          rootRef.current?.contains(n) || findBarRef.current?.contains(n)
-        );
-      };
-      const onDown = (e: Event) => {
-        if (!inside(e.target)) closeFind(false);
-      };
-      const onFocusIn = (e: Event) => {
-        if (!inside(e.target)) closeFind(false);
-      };
-      window.addEventListener('pointerdown', onDown, true);
-      window.addEventListener('mousedown', onDown, true);
-      document.addEventListener('focusin', onFocusIn);
-      return () => {
-        window.removeEventListener('pointerdown', onDown, true);
-        window.removeEventListener('mousedown', onDown, true);
-        document.removeEventListener('focusin', onFocusIn);
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [findOpen]);
 
     const onUpArrow = () => {
       if (tagsRef.current.length === 0) return;
@@ -1899,15 +1847,6 @@ const PromptEditTextArea = observer(
         const active = document.activeElement;
         // 같은 편집기 안의 다른 입력 요소로 옮겼거나 창 전환(포커스 유지)이면 아직 편집 중.
         if (root && active && root.contains(active) && isTextEntryElement(active)) {
-          release();
-          return;
-        }
-        // 이 칸의 「찾기·바꾸기」 검색 줄(PC)·키보드 위 칩 찾기 모드(모바일)로 옮긴 것도 같은 편집기 안(2026-11-22).
-        if (
-          active &&
-          typeof (active as Element).closest === 'function' &&
-          (active as Element).closest('[data-prompt-find-bar]')
-        ) {
           release();
           return;
         }
@@ -2087,31 +2026,6 @@ const PromptEditTextArea = observer(
               }
             >
               {expandButton}
-              <Tooltip content="이 칸에서 찾기">
-                <button
-                  type="button"
-                  data-prompt-find-toggle
-                  aria-label="이 칸에서 찾기"
-                  aria-pressed={findOpen}
-                  // 편집기의 선택·포커스를 지킨다(고른 글자를 찾는 말로 넣기 위해). 비활성 칸에서도 열린다(찾기만).
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (findOpenRef.current) closeFind(true);
-                    else openFind();
-                  }}
-                  // 크게 편집 버튼과 같은 색 규칙, 열려 있는 동안은 켜짐 색(--c-focus-ring)
-                  className={
-                    (findOpen
-                      ? 'text-[color:var(--c-focus-ring)] opacity-100'
-                      : 'text-[var(--c-icon-text)] opacity-[0.85] hover:opacity-100') +
-                    // 세로 = 크게 편집과 같은 띠(mr-1), 가로 = 종전(mt-1)
-                    (iconStack ? ' mr-1' : ' mt-1')
-                  }
-                >
-                  <FaSearch></FaSearch>
-                </button>
-              </Tooltip>
               {caretArtist &&
                 !accessorySlot &&
                 (iconStack
@@ -2162,18 +2076,6 @@ const PromptEditTextArea = observer(
           selectedTag={selectedTag}
           onSelectTag={onSelectTag}
         />
-        {findOpen && !isMobile && (
-          <PromptFindBar
-            ref={findBarRef}
-            finder={finder}
-            anchor={rootRef.current}
-            layoutKey={fullScreen}
-            onClose={() => closeFind(true)}
-            onLeave={(e) => {
-              if (isTextEntryElement(e.target as Element)) onTextBlur();
-            }}
-          />
-        )}
         {fullScreen && (
           <div
             data-prompt-expanded-backdrop=""

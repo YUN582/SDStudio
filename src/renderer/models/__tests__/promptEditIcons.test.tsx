@@ -1,4 +1,4 @@
-// 프롬프트 칸(PC) 오른쪽 위 아이콘 세로 쌓기(2026-11-22) — 순서 = 크게 편집 → 돋보기 → 작가,
+// 프롬프트 칸(PC) 오른쪽 위 아이콘 세로 쌓기 — 순서 = 크게 편집 → 작가,
 // 칸이 낮으면 그 칸만 종전 가로, 모바일 아이콘 줄은 그대로.
 import fs from 'fs';
 import path from 'path';
@@ -48,7 +48,7 @@ describe('세로 쌓기 판정', () => {
 });
 
 describe('PC 아이콘 띠', () => {
-  test('기본은 세로 쌓기, 순서 = 크게 편집 → 돋보기', () => {
+  test('기존 확대 아이콘만 보이고 중복 인라인 찾기 아이콘은 없다', () => {
     const { container } = render(
       <PromptEditTextArea value="very aesthetic, cat" onChange={jest.fn()} />,
     );
@@ -58,37 +58,18 @@ describe('PC 아이콘 띠', () => {
     const buttons = Array.from(box.querySelectorAll('button'));
     expect(buttons[0].getAttribute('data-prompt-expand-toggle')).not.toBeNull();
     expect(buttons[0].getAttribute('aria-label')).toBe('크게 편집');
-    expect(buttons[1].getAttribute('data-prompt-find-toggle')).not.toBeNull();
-    expect(buttons[1].className).toContain('mr-1');
+    expect(buttons).toHaveLength(1);
+    expect(box.querySelector('[data-prompt-find-toggle]')).toBeNull();
   });
 
-  test('칸이 아이콘 둘을 쌓기에 낮으면 그 칸만 종전 가로(flex-row-reverse)', () => {
-    jest
-      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
-      .mockReturnValue(20);
-    jest
-      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
-      .mockReturnValue(14);
-    const { container } = render(
-      <PromptEditTextArea value="cat" onChange={jest.fn()} />,
-    );
-    const box = container.querySelector('[data-prompt-icon-column]')!;
-    expect(box.getAttribute('data-prompt-icon-column')).toBe('row');
-    expect(box.className).toContain('flex-row-reverse');
-    // DOM 순서는 그대로(뒤집어 그려서 화면은 [돋보기][크게 편집])
-    const buttons = Array.from(box.querySelectorAll('button'));
-    expect(buttons[0].getAttribute('aria-label')).toBe('크게 편집');
-    expect(buttons[1].className).toContain('mt-1');
-  });
-
-  test('작가 버튼은 돋보기 다음(세로 = 아이콘 하나, 가로 = 종전 이름 알약)', () => {
+  test('작가 버튼은 확대 다음(세로 = 아이콘 하나, 가로 = 종전 이름 알약)', () => {
     const pc = SRC.slice(SRC.indexOf('ref={iconBoxRef}'));
     const iExpand = pc.indexOf('{expandButton}');
     const iFind = pc.indexOf('data-prompt-find-toggle');
     const iArtist = pc.indexOf('artistStackButton(caretArtist)');
     expect(iExpand).toBeGreaterThan(-1);
-    expect(iFind).toBeGreaterThan(iExpand);
-    expect(iArtist).toBeGreaterThan(iFind);
+    expect(iFind).toBe(-1);
+    expect(iArtist).toBeGreaterThan(iExpand);
     expect(pc.slice(iArtist)).toMatch(/: artistButton\(caretArtist, 'mt-1'\)\)\}/);
   });
 
