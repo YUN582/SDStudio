@@ -1,6 +1,14 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 const extract = jest.fn();
+const appendImage = jest.fn(async (..._args: any[]) => {});
+const createI2I = jest.fn(async (..._args: any[]): Promise<any> => undefined);
+jest.mock('../importedImageActions', () => ({ appendImportedImage: (...args: any[]) => appendImage(...args), createImportedI2I: (...args: any[]) => createI2I(...args) }));
+jest.mock('../../componenets/CharacterReferenceEditor', () => ({ getRefDefaults: () => ({ strength: 0.6, fidelity: 1, referenceType: 'character' }) }));
+jest.mock('../../componenets/useGlobalModelVersion', () => ({ useGlobalModelVersion: () => 'v4.5' }));
+jest.mock('../../componenets/FloatView', () => ({ FloatView: ({ children }: any) => <div>{children}</div> }));
+jest.mock('../../componenets/InPaintEditor', () => ({ __esModule: true, default: ({ onConfirm }: any) => <div><span>I2I editor fixture</span><button onClick={onConfirm}>편집 마치기</button></div> }));
+
 const close = jest.fn();
 const record = { preset: jest.fn(), shared: jest.fn(), scene: jest.fn(), presetAdded: jest.fn(), commit: jest.fn() };
 const confirmAsync = jest.fn(async () => true);
@@ -164,4 +172,31 @@ test('shows a terminal failure instead of an endless loading message', async () 
   render(<ExternalImageView image="broken-image" onClose={close} />);
   await screen.findByRole('alert');
   expect(screen.queryByText('메타데이터를 추출하는 중...')).toBeNull();
+});
+
+test('uses the image pixels as a vibe without requiring or applying metadata', async () => {
+  extract.mockResolvedValue(undefined);
+  render(<ExternalImageView image="plain-image" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  fireEvent.click(screen.getByRole('button', { name: '바이브로 추가' }));
+  await waitFor(() => expect(appendImage).toHaveBeenCalledWith(session, 'plain-image', 'vibe', 'v4.5', expect.any(Object)));
+  expect((screen.getByRole('button', { name: '바이브 추가됨' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(preset.frontPrompt).toBe('old front');
+  expect(close).not.toHaveBeenCalled();
+});
+
+test('adds a reference and opens I2I while metadata is absent', async () => {
+  extract.mockResolvedValue(undefined);
+  createI2I.mockResolvedValueOnce({ name: 'imported' });
+  render(<ExternalImageView image="plain-image" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  fireEvent.click(screen.getByRole('button', { name: '레퍼런스로 추가' }));
+  await waitFor(() => expect(appendImage).toHaveBeenCalledWith(session, 'plain-image', 'reference', 'v4.5', expect.any(Object)));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'I2I 편집' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
+  await screen.findByText('I2I editor fixture');
+  expect(createI2I).toHaveBeenCalledWith(session, 'plain-image', undefined, { scene: undefined, path: undefined });
+  fireEvent.click(screen.getByRole('button', { name: '편집 마치기' }));
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  expect(close).not.toHaveBeenCalled();
 });

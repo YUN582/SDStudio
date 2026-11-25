@@ -182,6 +182,7 @@ export class AppState {
   private recovering = false;
   @observable accessor externalImage: string | undefined = undefined;
   @observable.ref accessor externalImageScene: GenericScene | undefined = undefined;
+  @observable accessor externalImagePath: string | undefined = undefined;
   // 프로젝트 좌측 드로어 / 그리드 탐색기 모달 열림 상태 (앱 전역)
   @observable accessor projectDrawerOpen: boolean = false;
   @observable accessor projectBrowserOpen: boolean = false;
@@ -1851,14 +1852,16 @@ export class AppState {
     this.pushDialog({ type: 'yes-only', text: resultText });
   }
 
-  openExternalImage(image: string, scene?: GenericScene) {
+  openExternalImage(image: string, scene?: GenericScene, path?: string) {
     this.externalImage = image;
     this.externalImageScene = scene;
+    this.externalImagePath = path;
   }
 
   closeExternalImage() {
     this.externalImage = undefined;
     this.externalImageScene = undefined;
+    this.externalImagePath = undefined;
   }
 
   @action

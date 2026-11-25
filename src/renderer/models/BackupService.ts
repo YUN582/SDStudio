@@ -2316,7 +2316,7 @@ export class BackupService {
 
     if (!hasPreset) {
       // 프리셋 메타 없음 → 프롬프트 추출 뷰로
-      appState.externalImage = base64;
+      appState.openExternalImage(base64);
       return;
     }
 
@@ -2366,7 +2366,7 @@ export class BackupService {
                 text: `"${preset.name}" 프리셋을 현재 세션으로 불러왔습니다.`,
               });
             } else {
-              appState.externalImage = base64;
+              appState.openExternalImage(base64);
             }
           } catch (e: any) {
             appState.pushMessage('세션으로 불러오기 실패: ' + (e.message || e));
@@ -2386,7 +2386,7 @@ export class BackupService {
             appState.pushMessage('글로벌 프리셋으로 불러오기 실패: ' + (e.message || e));
           }
         } else if (option === 'extract') {
-          appState.externalImage = base64;
+          appState.openExternalImage(base64);
         }
       },
     });

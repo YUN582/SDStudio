@@ -1,8 +1,9 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   GenericScene,
+  InpaintScene,
   ImportableMetadata,
   PromptPiece,
   VibeItem,
@@ -42,6 +43,12 @@ import { beginMetaApplyRecord } from '../models/imageStateUndo';
 import { undoService, UNDO_TEXT } from '../models/undoService';
 import { v4 } from 'uuid';
 import ModalOverlay from './ModalOverlay';
+import { appendImportedImage, createImportedI2I, ImportedImageUse } from '../models/importedImageActions';
+import { getRefDefaults } from './CharacterReferenceEditor';
+import { useGlobalModelVersion } from './useGlobalModelVersion';
+import { naiCapabilitiesOf } from '../backends/genVendors/naiModelCapabilities';
+import { FloatView } from './FloatView';
+import InPaintEditor from './InPaintEditor';
 
 interface ImportOptions {
   prompt: boolean;
@@ -64,10 +71,11 @@ interface ExternalImageViewProps {
   image: string;
   onClose: () => void;
   scene?: GenericScene;
+  sourcePath?: string;
 }
 
 export const ExternalImageView = observer(
-  ({ image, onClose, scene }: ExternalImageViewProps) => {
+  ({ image, onClose, scene, sourcePath }: ExternalImageViewProps) => {
     const [job, setJob] = useState<ImportableMetadata | undefined>(undefined);
     const [metadataState, setMetadataState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
     const [target, setTarget] = useState<string>('new-normal');
@@ -118,6 +126,32 @@ export const ExternalImageView = observer(
       })();
       return () => { active = false; };
     }, [image]);
+
+    const modelVersion = useGlobalModelVersion();
+    const capabilities = naiCapabilitiesOf(modelVersion);
+    const [usingImage, setUsingImage] = useState(false);
+    const useRequest = useRef(false);
+    const [addedUses, setAddedUses] = useState<ImportedImageUse[]>([]);
+    const [editingWork, setEditingWork] = useState<InpaintScene | undefined>();
+    useEffect(() => { setAddedUses([]); setEditingWork(undefined); }, [image, appState.curSession, appState.curSession?.selectedWorkflow?.workflowType, appState.curSession?.selectedWorkflow?.presetName]);
+    const useImage = async (use: ImportedImageUse | 'i2i') => {
+      const session = appState.curSession;
+      if (useRequest.current || !session || !image) return;
+      useRequest.current = true; setUsingImage(true);
+      try {
+        if (use === 'i2i') {
+          const work = await createImportedI2I(session, image, job, { scene, path: sourcePath });
+          if (work && appState.curSession === session) setEditingWork(work);
+        } else {
+          await appendImportedImage(session, image, use, modelVersion, getRefDefaults());
+          setAddedUses(previous => [...previous, use]);
+          appState.pushMessage(use === 'vibe' ? '바이브 트랜스퍼에 추가했습니다.' : '캐릭터 레퍼런스에 추가했습니다.');
+        }
+      } catch (error) {
+        appState.pushMessage((error as Error).message || '이미지를 사용하지 못했습니다.', 'error');
+      } finally { useRequest.current = false; setUsingImage(false); }
+    };
+    const imageUseDisabled = importing || usingImage || !image || !appState.curSession?.selectedWorkflow;
 
     const setOpt = (key: keyof ImportOptions, value: boolean) => {
       setOptions((prev) => ({ ...prev, [key]: value }));
@@ -471,11 +505,26 @@ export const ExternalImageView = observer(
       </p>
     </div>;
 
-    return createPortal(
-      <ModalOverlay isOpen onClose={() => { if (!importing) onClose(); }} title="메타데이터 적용" size="xl" expandedHeight bodyPadding="none"
+    return <>
+      {createPortal(
+      <ModalOverlay isOpen={!editingWork} onClose={() => { if (!importing && !usingImage) onClose(); }} title="메타데이터 적용" size="xl" expandedHeight bodyPadding="none"
         toolbar={controls}
-        footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || !job}>
-          {importing ? '적용 중...' : '적용'}
+        footerStart={<div role="group" aria-label="이미지 사용" className="flex flex-wrap items-center gap-2">
+            <button type="button" className="round-button back-gray px-3 py-2 text-sm"
+              title={capabilities.supportsVibeTransfer ? '불러온 이미지 자체를 현재 설정의 바이브에 추가합니다' : '현재 모델은 바이브 트랜스퍼를 지원하지 않습니다'}
+              disabled={imageUseDisabled || !capabilities.supportsVibeTransfer || addedUses.includes('vibe')} onClick={() => void useImage('vibe')}>
+              {addedUses.includes('vibe') ? '바이브 추가됨' : '바이브로 추가'}
+            </button>
+            <button type="button" className="round-button back-gray px-3 py-2 text-sm"
+              title={capabilities.supportsCharacterReference ? '불러온 이미지 자체를 현재 설정의 레퍼런스에 추가합니다' : '현재 모델은 캐릭터 레퍼런스를 지원하지 않습니다'}
+              disabled={imageUseDisabled || !capabilities.supportsCharacterReference || addedUses.includes('reference')} onClick={() => void useImage('reference')}>
+              {addedUses.includes('reference') ? '레퍼런스 추가됨' : '레퍼런스로 추가'}
+            </button>
+            <button type="button" className="round-button back-green px-3 py-2 text-sm"
+              title="이 이미지로 새 I2I 편집 작업을 엽니다" disabled={imageUseDisabled || metadataState === 'loading'} onClick={() => void useImage('i2i')}>I2I 편집</button>
+        </div>}
+        footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || usingImage || !job}>
+            {importing ? '적용 중...' : '적용'}
         </button>}>
         <div className="h-full min-h-0 flex flex-col md:flex-row overflow-hidden" data-metadata-import="">
           <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-5" data-metadata-preview="" data-selectable-text tabIndex={0}>
@@ -612,7 +661,11 @@ export const ExternalImageView = observer(
         </div>
       </ModalOverlay>,
       document.querySelector('[data-app-theme-root]') ?? document.body,
-    );
+      )}
+      {editingWork && <FloatView priority={3} ownsGenControl onEscape={() => setEditingWork(undefined)}>
+        <InPaintEditor editingScene={editingWork} onConfirm={() => setEditingWork(undefined)} onDelete={() => setEditingWork(undefined)} />
+      </FloatView>}
+    </>;
   },
 );
 

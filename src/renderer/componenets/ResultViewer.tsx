@@ -1584,6 +1584,7 @@ export const ResultDetailView = observer(
       appState.openExternalImage(
         dataUriToBase64(image),
         session === appState.curSession ? scene : undefined,
+        session === appState.curSession ? viewedImagePath : undefined,
       );
     };
     const currentUpscaleInfo = upscaleInfo?.path === viewedImagePath ? upscaleInfo : undefined;

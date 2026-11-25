@@ -845,7 +845,7 @@ export const AppContextMenu = observer(() => {
     try {
       const image = await imageService.fetchImage(path);
       if (!image) throw new Error('이미지 파일을 찾을 수 없습니다.');
-      appState.openExternalImage(dataUriToBase64(image), scene);
+      appState.openExternalImage(dataUriToBase64(image), scene, scene ? path : undefined);
     } catch (error: any) {
       appState.pushMessage(error.message || '이미지 메타 정보를 열지 못했습니다.', 'error');
     }

@@ -209,7 +209,7 @@ test('failed external editor launch leaves no file watcher', async () => {
 test('foreign history settings never attach the foreign scene to the current project', async () => {
   mount({ session: { name: 'other', inpaints: new Map() }, historyEntry: { path: paths[0] } }); await loaded();
   fireEvent.click(screen.getByRole('button', { name: '생성 설정 적용' }));
-  expect(mockState.openExternalImage).toHaveBeenCalledWith(btoa(paths[0]), undefined);
+  expect(mockState.openExternalImage).toHaveBeenCalledWith(btoa(paths[0]), undefined, undefined);
 });
 
 test('mobile V2 keeps favorite and inpaint actions even without inherited plugin buttons', async () => {

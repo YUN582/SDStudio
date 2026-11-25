@@ -112,14 +112,14 @@ test.each(imageMenus)('%s does not leave a watcher after a failed editor launch'
 
 test.each(imageMenus)('%s opens metadata for the selected image with its current-project scene', async (name) => {
   fireEvent.click(mountMenu(name).getByRole('menuitem', { name: '메타 정보 보기' }));
-  await waitFor(() => expect(mockState.openExternalImage).toHaveBeenCalledWith('metadata-base64', scene));
+  await waitFor(() => expect(mockState.openExternalImage).toHaveBeenCalledWith('metadata-base64', scene, 'source.png'));
   expect(mockImages.fetchImage).toHaveBeenCalledWith('source.png');
 });
 
 test('history from another project never supplies that scene as the current apply target', async () => {
   mockHistory.resolve.mockResolvedValue({ session: {}, scene });
   fireEvent.click(mountMenu('history_image').getByRole('menuitem', { name: '메타 정보 보기' }));
-  await waitFor(() => expect(mockState.openExternalImage).toHaveBeenCalledWith('metadata-base64', undefined));
+  await waitFor(() => expect(mockState.openExternalImage).toHaveBeenCalledWith('metadata-base64', undefined, undefined));
 });
 
 test('batch gallery selection hides the single-file editor and metadata action', () => {
