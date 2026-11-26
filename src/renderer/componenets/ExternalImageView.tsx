@@ -454,6 +454,28 @@ export const ExternalImageView = observer(
       }
     };
 
+    const generationRows: { label: string; value: React.ReactNode; applied?: boolean }[] = job ? [
+      { label: '모델', value: job.naiDiagnostics?.model ?? importedModel ?? '알 수 없음' },
+      ...(job.naiDiagnostics?.modelHash ? [{ label: '모델 해시', value: job.naiDiagnostics.modelHash }] : []),
+      ...(job.naiDiagnostics ? [
+        { label: '요청 형식', value: job.naiDiagnostics.paramsVersion !== undefined ? 'params ' + job.naiDiagnostics.paramsVersion : job.naiDiagnostics.requestType ?? '알 수 없음' },
+        ...(job.naiDiagnostics.metadataVersion !== undefined ? [{ label: '메타데이터 버전', value: 'v' + job.naiDiagnostics.metadataVersion }] : []),
+        { label: '품질 / UC 힌트', value: (job.naiDiagnostics.qualityHint ?? '-') + ' / ' + (job.naiDiagnostics.ucHint ?? '-') },
+        { label: '투명 배경', value: job.naiDiagnostics.transparentBackground ? 'ON' : 'OFF' },
+        ...(job.naiDiagnostics.straightAlpha !== undefined ? [{ label: 'Straight alpha', value: job.naiDiagnostics.straightAlpha ? 'ON' : 'OFF' }] : []),
+      ] : []),
+      { label: '스텝', value: job.steps ?? '-' },
+      { label: '가이던스', value: job.promptGuidance ?? '-' },
+      { label: 'CFG 리스케일', value: job.cfgRescale ?? '-' },
+      { label: '샘플러', value: job.sampling ?? '-' },
+      { label: '노이즈 스케줄', value: job.noiseSchedule ?? job.naiDiagnostics?.noiseSchedule ?? '알 수 없음' },
+      { label: 'Variety+', value: job.varietyPlus ? 'ON' : 'OFF' },
+      { label: 'Euler A 버그', value: job.deliberateEulerAncestralBug ? 'ON' : 'OFF' },
+      { label: '캐릭터 좌표', value: job.useCoords ? 'ON' : 'OFF' },
+      { label: 'Legacy UC', value: job.legacyPromptConditioning ? 'ON' : 'OFF' },
+      { label: '시드', value: job.seed ?? '없음', applied: options.seed && !isGlobalTarget },
+      ...(hasResolution ? [{ label: '해상도', value: job.resolution!.width + ' × ' + job.resolution!.height, applied: options.resolution && !!scene && !isGlobalTarget }] : []),
+    ] : [];
     const choice = (key: keyof ImportOptions, label: string, disabled = false) => (
       <label className={'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-default ' + (disabled ? 'opacity-40' : 'cursor-pointer hover:bg-[var(--c-surface)]')}>
         <input type="checkbox" checked={!disabled && options[key]} disabled={disabled || importing}
@@ -462,7 +484,7 @@ export const ExternalImageView = observer(
       </label>
     );
 
-    const controls = job && <div className="w-full max-h-[45vh] overflow-auto" data-metadata-options="">
+    const controls = job && <div className="w-full" data-metadata-options="">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
         <label htmlFor="metadata-import-target" className="text-sm font-medium text-default">적용할 프리셋</label>
         <select id="metadata-import-target" className="gray-input text-sm py-1.5 px-2 flex-1 min-w-48" value={target} disabled={importing}
@@ -508,7 +530,6 @@ export const ExternalImageView = observer(
     return <>
       {createPortal(
       <ModalOverlay isOpen={!editingWork} onClose={() => { if (!importing && !usingImage) onClose(); }} title="메타데이터 적용" size="xl" expandedHeight bodyPadding="none"
-        toolbar={controls}
         footerStart={<div role="group" aria-label="이미지 사용" className="flex flex-wrap items-center gap-2">
             <button type="button" className="round-button back-gray px-3 py-2 text-sm"
               title={capabilities.supportsVibeTransfer ? '불러온 이미지 자체를 현재 설정의 바이브에 추가합니다' : '현재 모델은 바이브 트랜스퍼를 지원하지 않습니다'}
@@ -526,58 +547,17 @@ export const ExternalImageView = observer(
         footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || usingImage || !job}>
             {importing ? '적용 중...' : '적용'}
         </button>}>
-        <div className="h-full min-h-0 flex flex-col md:flex-row overflow-hidden" data-metadata-import="">
-          <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-5" data-metadata-preview="" data-selectable-text tabIndex={0}>
+        <div className="sds-metadata-import" data-metadata-import="">
+          <section className="sds-metadata-image" data-metadata-image="" data-image-only={!job || undefined} aria-label="불러온 이미지">
+            {image && <img alt="메타데이터를 불러올 이미지" src={base64ToDataUri(image)} draggable={false} />}
+          </section>
+          {controls && <section className="sds-metadata-import-options">{controls}</section>}
+          <div className={'sds-metadata-details' + (job ? ' sds-metadata-details--ready' : '')} data-metadata-preview="" data-selectable-text tabIndex={0}>
+          <div className="sds-metadata-prompts">
             {metadataState === 'loading' && <div role="status" className="text-muted text-sm py-8 text-center">메타데이터를 추출하는 중...</div>}
             {metadataState === 'empty' && <div role="status" className="text-muted text-sm py-8 text-center">이 이미지에는 불러올 생성 정보가 없습니다.</div>}
             {metadataState === 'error' && <div role="alert" className="text-muted text-sm py-8 text-center">이미지의 생성 정보를 읽지 못했습니다. 이미지를 다시 열어 주세요.</div>}
             {job && <>
-                  {job.naiDiagnostics && (
-                    <div className="mb-4 rounded-lg border line-color p-3 bg-[var(--c-surface)]">
-                      <div className="text-sm font-semibold text-default mb-2">
-                        NAI 생성 정보
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <div className="text-muted">모델</div>
-                        <div className="text-body">
-                          {job.naiDiagnostics.model}
-                          {job.naiDiagnostics.modelHash
-                            ? ` (${job.naiDiagnostics.modelHash})`
-                            : ''}
-                        </div>
-                        <div className="text-muted">요청 형식</div>
-                        <div className="text-body">
-                          {job.naiDiagnostics.paramsVersion !== undefined
-                            ? `params ${job.naiDiagnostics.paramsVersion}`
-                            : job.naiDiagnostics.requestType
-                              ? `${job.naiDiagnostics.requestType}${
-                                  job.naiDiagnostics.metadataVersion !== undefined
-                                    ? ` / metadata v${job.naiDiagnostics.metadataVersion}`
-                                    : ''
-                                }`
-                              : job.naiDiagnostics.metadataVersion !== undefined
-                                ? `metadata v${job.naiDiagnostics.metadataVersion}`
-                                : '알 수 없음'}
-                        </div>
-                        <div className="text-muted">Noise Schedule</div>
-                        <div className="text-body">
-                          {job.naiDiagnostics.noiseSchedule ?? '알 수 없음'}
-                        </div>
-                        <div className="text-muted">품질 / UC 힌트</div>
-                        <div className="text-body">
-                          {job.naiDiagnostics.qualityHint ?? '-'} / {' '}
-                          {job.naiDiagnostics.ucHint ?? '-'}
-                        </div>
-                        <div className="text-muted">투명 배경</div>
-                        <div className="text-body">
-                          {job.naiDiagnostics.transparentBackground ? 'ON' : 'OFF'}
-                          {job.naiDiagnostics.straightAlpha !== undefined
-                            ? ` / straight alpha ${job.naiDiagnostics.straightAlpha ? 'ON' : 'OFF'}`
-                            : ''}
-                        </div>
-                      </div>
-                    </div>
-                  )}
               <MetadataSection label="프롬프트">
                 {splitPrompt && exactSource ? (
                   <div className="flex flex-col gap-3">
@@ -629,34 +609,25 @@ export const ExternalImageView = observer(
                   </div>
                 ))}</div> : <div className="text-xs text-muted">원본 이미지는 없지만, 레퍼런스 설정으로 적용합니다.</div>}
               </MetadataSection>}
-              <MetadataSection label="파라미터" selected={options.settings}>
-                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-4 gap-y-2 text-sm min-w-0 break-words" data-metadata-parameters="">
-                  {[
-                    ['Steps', job.steps], ['CFG', job.promptGuidance], ['Rescale', job.cfgRescale], ['Sampler', job.sampling],
-                    ['Noise', job.noiseSchedule], ['Variety+', job.varietyPlus ? 'ON' : 'OFF'],
-                    ['Euler A Bug', job.deliberateEulerAncestralBug ? 'ON' : 'OFF'], ['Coords', job.useCoords ? 'ON' : 'OFF'],
-                    ['Legacy UC', job.legacyPromptConditioning ? 'ON' : 'OFF'],
-                  ].map(([label, value]) => <div key={String(label)}><span className="text-muted">{label}:</span> <span className="text-body">{value}</span></div>)}
-                  <div className="mt-3 min-[480px]:col-start-1">
-                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-default">시드{(!options.seed || isGlobalTarget) && <span className="text-xs font-normal text-muted">적용 안 함</span>}</div>
-                    <div className="text-body tabular-nums">{job.seed ?? '없음'}</div>
-                  </div>
-                  {hasResolution && <div className="mt-3" data-metadata-resolution="">
-                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-default">해상도{(!options.resolution || !scene || isGlobalTarget) && <span className="text-xs font-normal text-muted">적용 안 함</span>}</div>
-                    <div className="text-body tabular-nums">{job.resolution!.width} × {job.resolution!.height}</div>
-                  </div>}
-                </div>
-                {skipFixedSampling && <div className="text-xs text-muted mt-2" data-v5m-import-note="">V5M(Medium) 이미지라 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</div>}
-              </MetadataSection>
-              {(job.sdstudioMetadata?.generationSettings || importedModel) && <MetadataSection label="모델·품질 전역 설정" selected={options.modelSettings && target === 'current'}>
-                <div className="text-xs text-muted">{job.sdstudioMetadata?.generationSettings
-                  ? '현재 사전설정에 적용할 때 모델, 품질, UC 프리셋과 투명 배경 설정을 생성 당시 값으로 맞춥니다.'
-                  : '현재 사전설정에 적용할 때 모델을 V5M(Medium)으로 맞춥니다.'}</div>
-              </MetadataSection>}
             </>}
           </div>
-          <div className="hidden md:flex flex-none w-72 lg:w-80 border-l line-color items-center justify-center bg-[var(--c-surface)] p-3">
-            {image && <img alt="메타데이터를 불러올 이미지" src={base64ToDataUri(image)} draggable={false} className="max-w-full max-h-full object-contain rounded-lg" />}
+          {job && <aside className="sds-metadata-generation" aria-label="생성 정보" data-metadata-generation="">
+            <MetadataSection label="생성 정보">
+              {!options.settings && <p className="text-xs text-muted mb-3">파라미터 적용 안 함</p>}
+              <dl className="sds-metadata-generation-list" data-metadata-parameters="">
+                {generationRows.map(row => <div key={row.label} data-metadata-resolution={row.label === '해상도' ? '' : undefined}>
+                  <dt>{row.label}{row.applied === false && <span className="ml-2 text-xs font-normal">적용 안 함</span>}</dt>
+                  <dd>{row.value}</dd>
+                </div>)}
+              </dl>
+              {skipFixedSampling && <p className="text-xs text-muted mt-3 mb-0" data-v5m-import-note="">V5M 이미지의 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</p>}
+              {(job.sdstudioMetadata?.generationSettings || importedModel) && <p className="text-xs text-muted mt-3 mb-0">
+                {job.sdstudioMetadata?.generationSettings
+                  ? '현재 사전설정에 적용할 때 모델, 품질, UC 프리셋과 투명 배경 설정을 생성 당시 값으로 맞춥니다.'
+                  : '현재 사전설정에 적용할 때 모델을 V5M으로 맞춥니다.'}
+              </p>}
+            </MetadataSection>
+          </aside>}
           </div>
         </div>
       </ModalOverlay>,

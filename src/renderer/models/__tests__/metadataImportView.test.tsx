@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 const extract = jest.fn();
 const appendImage = jest.fn(async (..._args: any[]) => {});
 const createI2I = jest.fn(async (..._args: any[]): Promise<any> => undefined);
@@ -153,6 +153,34 @@ test('finishes loading when the image has no generation metadata', async () => {
   await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
   expect(screen.queryByText('메타데이터를 추출하는 중...')).toBeNull();
   expect((screen.getByRole('button', { name: '적용' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(document.querySelector('[data-metadata-image] img')).toBeTruthy();
+  expect(document.querySelector('[data-metadata-generation]')).toBeNull();
+});
+
+test('places a full-width image before import options and merges generation facts beside prompts', async () => {
+  extract.mockResolvedValue({
+    prompt: 'positive prompt', uc: 'negative prompt', characterPrompts: [], vibes: [], characterReferences: [],
+    seed: 321, steps: 20, promptGuidance: 5, cfgRescale: 0.6, sampling: 'k_euler_ancestral', noiseSchedule: 'karras',
+    naiDiagnostics: { model: 'V5 Full', modelHash: 'MODEL_HASH', requestType: 'PromptGenerateRequest', metadataVersion: 1, transparentBackground: true },
+    resolution: { width: 1024, height: 1024 },
+  });
+  await open();
+  const image = document.querySelector('[data-metadata-image]')!;
+  const options = document.querySelector('[data-metadata-options]')!;
+  const details = document.querySelector('[data-metadata-preview]')!;
+  expect(image.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(options.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const info = screen.getByRole('complementary', { name: '생성 정보' });
+  expect(details.contains(info)).toBe(true);
+  expect(within(info).getByText('V5 Full')).toBeTruthy();
+  expect(within(info).getByText('MODEL_HASH')).toBeTruthy();
+  expect(within(info).getByText('스텝')).toBeTruthy();
+  expect(within(info).getByText('20')).toBeTruthy();
+  expect(within(info).getByText('321')).toBeTruthy();
+  expect(within(info).getByText('1024 × 1024')).toBeTruthy();
+  expect(within(info).getAllByText('노이즈 스케줄')).toHaveLength(1);
+  expect(screen.queryByText('NAI 생성 정보')).toBeNull();
+  expect(document.querySelector('[data-metadata-prompts] [data-metadata-parameters]')).toBeNull();
 });
 
 test('ignores late metadata from the previous image', async () => {
