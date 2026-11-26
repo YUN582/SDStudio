@@ -2593,6 +2593,8 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       : -1;
     const activeGalleryRef = selectedTab === 0 ? gallaryRef : gallaryRef2;
 
+    const gridInteractive = activeView && !coveredByEditor;
+
     // image-grid 카테고리 활성화 조건 동기화
     // 탭 전환 단축키(Ctrl+1/2/3/4)는 모든 탭에서 동작해야 하므로 selectedTab을 조건에서 제외.
     // 그리드 조작(방향키/즐겨찾기/북마크/삭제/상세 보기)은 핸들러 내부에서 selectedTab 가드 적용.
@@ -2620,7 +2622,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     useEffect(() => {
       const onShortcut = (e: Event) => {
         const action = (e as CustomEvent).detail?.action as string | undefined;
-        if (!activeView || !action?.startsWith('image-')) return;
+        if (!gridInteractive || !action?.startsWith('image-')) return;
 
         // 탭 전환 — 모든 탭에서 작동 (count/selectedTab 가드 전에 처리)
         if (
@@ -2722,7 +2724,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           });
         }
       };
-      const canHandleGridDelete = () => activeView && !isMobile && selectedImageIndex == null &&
+      const canHandleGridDelete = () => gridInteractive && !isMobile && selectedImageIndex == null &&
         (selectedTab === 0 || selectedTab === 1) && !tournament && !showDownloadDialog && !variantSourcePath && !variantResult;
       const handleSelectionDelete = (event: KeyboardEvent) => {
         if (event.key !== 'Delete' || event.defaultPrevented || event.repeat || event.isComposing) return;
@@ -2732,7 +2734,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         event.preventDefault(); event.stopPropagation(); onDeleteButton();
       };
       window.addEventListener('shortcut-action', onShortcut);
-      if (!isMobile && activeView) window.addEventListener('keydown', handleSelectionDelete, true);
+      if (!isMobile && gridInteractive) window.addEventListener('keydown', handleSelectionDelete, true);
       return () => {
         window.removeEventListener('shortcut-action', onShortcut);
         window.removeEventListener('keydown', handleSelectionDelete, true);
@@ -2746,7 +2748,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       curSession,
       selectMode,
       sceneNav,
-      activeView,
+      gridInteractive,
       selectedImageIndex, tournament, showDownloadDialog, variantSourcePath, variantResult, onSelected, onClearSelection, onToggleFavoriteSelected,
     ]);
 
@@ -2757,7 +2759,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         if (e.key !== 's' && e.key !== 'S') return;
         if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
         if (isMobile) return;
-        if (!activeView || selectedImageIndex != null) return;
+        if (!gridInteractive || selectedImageIndex != null) return;
         if (selectedTab !== 0 && selectedTab !== 1) return;
         if (focusedImageIndex < 0 || appState.dialogs.length) return;
         const el = document.activeElement;
@@ -2776,7 +2778,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [activeView, focusedImageIndex, activePaths, selectedTab, selectedImageIndex, onSelected]);
+    }, [gridInteractive, focusedImageIndex, activePaths, selectedTab, selectedImageIndex, onSelected]);
 
     // H로 이미지 그리드 전용 단축키 도움말 토글.
     // 토너먼트/상세 보기 중에는 각자의 도움말이 우선하므로 무시한다.
@@ -2785,7 +2787,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
         if (e.key !== 'h' && e.key !== 'H') return;
         if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
         if (isMobile) return;
-        if (!activeView || tournament || selectedImageIndex != null) return;
+        if (!gridInteractive || tournament || selectedImageIndex != null) return;
         const el = document.activeElement;
         if (el) {
           const tag = el.tagName.toLowerCase();
@@ -2802,7 +2804,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       };
       window.addEventListener('keydown', handler, true);
       return () => window.removeEventListener('keydown', handler, true);
-    }, [activeView, tournament, selectedImageIndex]);
+    }, [gridInteractive, tournament, selectedImageIndex]);
 
     let emoji = '';
     if (scene.type === 'inpaint') {

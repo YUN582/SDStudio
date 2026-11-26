@@ -195,6 +195,16 @@ describe('변형 씬 마스크 저장 기다림', () => {
     expect(hasPendingMaskSave(scene)).toBe(false);
   });
 
+  test('새 마스크의 경로 대입까지 끝나야 다시 연 편집기가 읽는다', async () => {
+    const scene = { preset: { mask: '' } };
+    let finish!: (path: string) => void;
+    const storage = new Promise<string>((resolve) => { finish = resolve; });
+    trackPendingMaskSave(scene, storage.then((path) => { scene.preset.mask = path; }));
+    const reopen = waitPendingMaskSave(scene).then(() => scene.preset.mask);
+    finish('work/vibes/mask.png');
+    await expect(reopen).resolves.toBe('work/vibes/mask.png');
+  });
+
   test('저장 실패도 기다림을 풀고, 저장이 없으면 곧바로', async () => {
     const scene = {};
     trackPendingMaskSave(scene, Promise.reject(new Error('x'))).catch(() => {});
@@ -207,6 +217,11 @@ describe('변형 씬 마스크 저장 기다림', () => {
     expect(src.match(/trackPendingMaskSave\(\s*scene,/g)).toHaveLength(2);
     const load = src.slice(src.indexOf('async function loadMask()'), src.indexOf('const dispose = reaction('));
     expect(load.indexOf('await waitPendingMaskSave(editingScene);')).toBeLessThan(load.indexOf('fetchVibeImage'));
+    expect(src).toContain('setMask(undefined);');
+    const save = src.slice(src.indexOf('const saveMask = async'), src.indexOf('// 컴포넌트 언마운트 시'));
+    expect(save.indexOf('cachedMaskRef.current = null;')).toBeLessThan(save.indexOf('await trackPendingMaskSave'));
+    expect(save).toContain('editingScene.preset.mask = await imageService.storeWorkImage');
+    expect(src).toContain('const mask = cachedMaskRef.current;\n        cachedMaskRef.current = null;');
   });
 });
 
@@ -245,6 +260,11 @@ describe('배선 소스 계약', () => {
     expect(rv).not.toContain("tierItem('edit'");
     expect(rv).not.toContain("{!isMobile ? '씬 편집' : <ActionIcon id=\"edit\" />}");
     expect(rv).toContain("if (mode === 'edit') onEdit(scene);");
+    expect(rv).toContain('const gridInteractive = activeView && !coveredByEditor;');
+    expect(rv).toContain("if (!gridInteractive || !action?.startsWith('image-')) return;");
+    expect(rv).toContain('const canHandleGridDelete = () => gridInteractive');
+    expect(rv).toContain('if (!gridInteractive || selectedImageIndex != null) return;');
+    expect(rv).toContain('if (!gridInteractive || tournament || selectedImageIndex != null) return;');
     expect(rv).toMatch(/imageGridShortcutsActive\(\{[\s\S]*?coveredByEditor,\s*\}\)/);
   });
 });

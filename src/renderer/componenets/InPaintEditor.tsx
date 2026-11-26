@@ -564,6 +564,7 @@ const InPaintEditor = observer(
           }
         }
       }
+      setMask(undefined);
       async function loadMask() {
         await waitPendingMaskSave(editingScene);
         if (cancelled || !editingScene.preset.mask) return;
@@ -710,29 +711,28 @@ const InPaintEditor = observer(
 
     const saveMask = async () => {
       if (inputError || !paintHistory.ready) return;
-      await brushTool.current?.saveDrawing?.();
-      if (def?.hasMask && brushTool.current) {
-        const mask = brushTool.current.getMaskBase64();
+      const canvas = brushTool.current;
+      const mask = def?.hasMask && canvas ? canvas.getMaskBase64() : undefined;
+      cachedMaskRef.current = null;
+      // Track the whole transaction, including the path assignment, before any await.
+      await trackPendingMaskSave(editingScene, (async () => {
+        await canvas?.saveDrawing?.();
+        if (mask === undefined) return;
         if (!editingScene.preset.mask) {
-          editingScene.preset.mask = await trackPendingMaskSave(editingScene, imageService.storeWorkImage(
-            curSession!, editingScene, 'mask',
-            mask,
-          ));
+          editingScene.preset.mask = await imageService.storeWorkImage(
+            curSession!, editingScene, 'mask', mask,
+          );
         } else {
-          await trackPendingMaskSave(editingScene, imageService.writeVibeImage(
-            curSession!,
-            editingScene.preset.mask,
-            mask,
-          ));
+          await imageService.writeVibeImage(curSession!, editingScene.preset.mask, mask);
         }
-        cachedMaskRef.current = null; // 이미 저장됨
-      }
+      })());
     };
 
     // 컴포넌트 언마운트 시 캐싱된 마스크 자동 저장 (ESC로 닫을 때도 마스크 유지)
     useEffect(() => {
       return () => {
         const mask = cachedMaskRef.current;
+        cachedMaskRef.current = null;
         const scene = editingScene;
         const session = curSession;
         if (def?.hasMask && session && mask) {
