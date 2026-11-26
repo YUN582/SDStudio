@@ -15,17 +15,13 @@ import {
 import { CharacterPreset, ReferenceItem, VibeItem } from '../models/types';
 import { appState } from '../models/AppService';
 import PromptEditTextArea from './PromptEditTextArea';
-import { getRefDefaults } from './CharacterReferenceEditor';
+import { referenceDefaultsFor } from '../models/referenceDefaults';
+import { ReferenceTypeControl } from './ReferenceTypeControl';
 import { useGlobalModelVersion } from './useGlobalModelVersion';
-import { effectiveSameOutfit } from '../backends/genVendors/naiReference';
 import {
-  newReferenceType,
   REFERENCE_EDITOR_TEXT,
   referenceEditorSpec,
-  referenceTypeLabel,
-  referenceTypeOptions,
   showCostumeUnsupported,
-  showSameOutfitToggle,
 } from '../models/referenceEditorSpec';
 import { EditableSliderValue } from './VibeEditor';
 import { ReferenceStrengthSlider } from './ReferenceStrengthSlider';
@@ -113,7 +109,8 @@ export const CharacterPresetInnerEditor = observer(({
   active = true,
 }: CharacterPresetInnerEditorProps) => {
   // 레퍼런스 편집 규칙(상한·Fidelity·의상) — 전역 생성 모델 기준(세 편집기 공용 referenceEditorSpec).
-  const refSpec = referenceEditorSpec(useGlobalModelVersion());
+  const globalModelVersion = useGlobalModelVersion();
+  const refSpec = referenceEditorSpec(globalModelVersion);
   const [name, setName] = useState(preset.name);
   const [characterPrompt, setCharacterPrompt] = useState(preset.characterPrompt);
   const [characterUC, setCharacterUC] = useState(preset.characterUC);
@@ -168,13 +165,13 @@ export const CharacterPresetInnerEditor = observer(({
     if (!reference) return;
     // 사용자가 원본을 직접 넣는 경로 — 원본 크기를 항목에 적는다.
     const stored = await imageBackend.storeReference(reference);
-    const defaults = getRefDefaults();
+    const defaults = referenceDefaultsFor(globalModelVersion);
     const newRef = ReferenceItem.fromJSON({
       path: stored.path,
       info: 1.0,
       strength: defaults.strength,
       fidelity: defaults.fidelity,
-      referenceType: newReferenceType(refSpec, defaults.referenceType),
+      referenceType: defaults.referenceType,
       ...(stored.srcWidth && stored.srcHeight
         ? { srcWidth: stored.srcWidth, srcHeight: stored.srcHeight }
         : {}),
@@ -334,14 +331,18 @@ export const CharacterPresetInnerEditor = observer(({
         <button type="button" className={'round-button h-8 px-3 text-xs ' + (ref.enabled !== false ? 'back-sky' : 'back-gray')} aria-pressed={ref.enabled !== false} onClick={() => updateRefField(index, 'enabled', ref.enabled === false)}>
           {ref.enabled !== false ? <FaToggleOn /> : <FaToggleOff />}<span className="ml-1">{ref.enabled !== false ? '활성화됨' : '비활성화됨'}</span>
         </button>
-        {(['strength', 'fidelity'] as const).map(field => <div key={field}>
+        {(['strength', ...(refSpec.showFidelity ? ['fidelity'] : [])] as ('strength' | 'fidelity')[]).map(field => <div key={field}>
           <div className="text-xs text-muted mb-1">{field === 'strength' ? 'Strength' : 'Fidelity'}</div>
-          <div className="flex items-center gap-2"><input className="flex-1 min-w-0" type="range" min="0" max="2" step="0.01" value={ref[field]} aria-label={`레퍼런스 ${index + 1} ${field}`} onChange={e => updateRefField(index, field, Number(e.target.value))} /><EditableSliderValue value={ref[field]} min={0} max={2} onChange={value => updateRefField(index, field, value)} /></div>
+          <div className="flex items-center gap-2">
+            {field === 'strength' ? <ReferenceStrengthSlider value={ref.strength} max={refSpec.strengthMax} onChange={value => updateRefField(index, 'strength', value)} />
+              : <input className="flex-1 min-w-0" type="range" min="0" max="2" step="0.01" value={ref.fidelity} aria-label={`레퍼런스 ${index + 1} fidelity`} onChange={e => updateRefField(index, 'fidelity', Number(e.target.value))} />}
+            <EditableSliderValue value={ref[field]} min={0} max={field === 'strength' ? refSpec.strengthMax : 2} onChange={value => updateRefField(index, field, value)} />
+          </div>
         </div>)}
-        <div className="flex items-center gap-2 flex-wrap">{(['character', 'style', 'character&style'] as const).map(type => <label key={type} className="flex items-center gap-1 cursor-pointer text-xs text-default">
-          <input type="radio" name={`refType-edit-${index}`} checked={ref.referenceType === type} onChange={() => updateRefField(index, 'referenceType', type)} />
-          {type === 'character' ? '캐릭터' : type === 'style' ? '스타일' : '캐릭터+스타일'}
-        </label>)}</div>
+        <ReferenceTypeControl type={ref.referenceType} preferSameOutfit={ref.preferSameOutfit} spec={refSpec}
+          onTypeChange={type => updateRefField(index, 'referenceType', type)}
+          onSameOutfitChange={checked => updateRefField(index, 'preferSameOutfit', checked)} />
+        {showCostumeUnsupported(refSpec, ref.referenceType) && <div className="text-xs text-muted">{REFERENCE_EDITOR_TEXT.costumeUnsupported}</div>}
       </div>)}</div> : null}
     </PresetMediaPanel>
   );

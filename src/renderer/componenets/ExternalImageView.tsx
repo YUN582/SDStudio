@@ -44,7 +44,7 @@ import { undoService, UNDO_TEXT } from '../models/undoService';
 import { v4 } from 'uuid';
 import ModalOverlay from './ModalOverlay';
 import { appendImportedImage, createImportedI2I, ImportedImageUse } from '../models/importedImageActions';
-import { getRefDefaults } from './CharacterReferenceEditor';
+import { referenceDefaultsFor } from '../models/referenceDefaults';
 import { useGlobalModelVersion } from './useGlobalModelVersion';
 import { naiCapabilitiesOf } from '../backends/genVendors/naiModelCapabilities';
 import { FloatView } from './FloatView';
@@ -143,7 +143,7 @@ export const ExternalImageView = observer(
           const work = await createImportedI2I(session, image, job, { scene, path: sourcePath });
           if (work && appState.curSession === session) setEditingWork(work);
         } else {
-          await appendImportedImage(session, image, use, modelVersion, getRefDefaults());
+          await appendImportedImage(session, image, use, modelVersion, referenceDefaultsFor(modelVersion));
           setAddedUses(previous => [...previous, use]);
           appState.pushMessage(use === 'vibe' ? '바이브 트랜스퍼에 추가했습니다.' : '캐릭터 레퍼런스에 추가했습니다.');
         }

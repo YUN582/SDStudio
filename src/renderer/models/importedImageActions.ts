@@ -47,7 +47,7 @@ export async function appendImportedImage(
   if (!workFlowService.getDef(target.type)?.sharedVars.some(variable => variable.name === field)) throw new Error('현재 생성 설정에서는 이 이미지 사용 방식을 지원하지 않습니다.');
   let shared = session.presetShareds.get(target.type);
   const stored = use === 'vibe'
-    ? { path: await imageService.storeVibeImage(session, image) }
+    ? { path: await imageService.storeVibeImage(session, image, false, true) }
     : await imageService.storeReferenceImageWithSize(session, image);
   checkTarget(session, target);
   shared = session.presetShareds.get(target.type);

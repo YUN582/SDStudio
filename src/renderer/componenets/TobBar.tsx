@@ -19,8 +19,16 @@ import OpusUsageBadge from './OpusUsageBadge';
 import { normalizeTokenRotateWarning } from '../models/tokenAutoRotation';
 import ModelFamilySwitch from './ModelFamilySwitch';
 import Tooltip from './Tooltip';
+import { useGlobalModelVersion } from './useGlobalModelVersion';
+import { NAI_REFERENCE_ANLAS_PER_IMAGE, referenceAnlasPerImage } from '../backends/genVendors/naiReference';
 
 export const AppToolbarControls = observer(() => {
+  const modelVersion = useGlobalModelVersion();
+  const costSession = appState.curSession;
+  const costWorkflow = costSession?.selectedWorkflow?.workflowType;
+  const costReferences = costWorkflow ? costSession?.presetShareds.get(costWorkflow)?.characterReferences : undefined;
+  const referenceSpend = loginService.loggedIn ? referenceAnlasPerImage(costReferences, modelVersion) : 0;
+  const referenceSpendTitle = referenceSpend ? `캐릭터 레퍼런스 ${referenceSpend / NAI_REFERENCE_ANLAS_PER_IMAGE}장 사용 중 · 이미지 1장마다 ${referenceSpend} Anlas` : undefined;
   // Desktop uses the project command row; mobile keeps the title-row controls.
   const resolved = resolveLayout(appState.uiLayoutTemplate, isMobile);
   // 'sidebar' 템플릿이면 프로젝트 선택기는 좌측 사이드 바가 담당 → 상단바엔 미렌더.
@@ -118,7 +126,7 @@ export const AppToolbarControls = observer(() => {
   const mobileAccountBadge = !loggedIn ? (
     <span className="round-tag back-red text-sm !px-2 !py-1">로그인필요</span>
   ) : (
-    <OpusUsageBadge credits={credits} warningPercent={warningPercent} inline />
+    <OpusUsageBadge credits={credits} warningPercent={warningPercent} inline spend={referenceSpend} />
   );
 
   return (
@@ -135,9 +143,10 @@ export const AppToolbarControls = observer(() => {
         ) : (
           <>
             {/* tabular-nums: 잔량이 줄어도 자릿수 폭이 고정돼 출렁이지 않게 */}
-            <span className="account-status-control back-yellow tabular-nums text-sm gap-1.5" aria-label={`Anlas ${credits}`}>
+            <span className="account-status-control back-yellow tabular-nums text-sm gap-1.5" aria-label={`Anlas ${credits}` + (referenceSpendTitle ? `, ${referenceSpendTitle}` : '')} title={referenceSpendTitle}>
               <FaCoins size={15} aria-hidden="true" />
               <span>{credits}</span>
+              {referenceSpend > 0 && <span className="opacity-80" data-reference-spend="">-{referenceSpend}</span>}
             </span>
             <OpusUsageBadge warningPercent={warningPercent} />
           </>
@@ -168,7 +177,7 @@ export const AppToolbarControls = observer(() => {
           {!loggedIn ? (
             <span className="round-tag back-red text-sm !px-3 !py-1">로그인필요</span>
           ) : (
-            <OpusUsageBadge credits={credits} warningPercent={warningPercent} />
+            <OpusUsageBadge credits={credits} warningPercent={warningPercent} spend={referenceSpend} />
           )}
         </div>
       )}

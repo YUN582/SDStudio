@@ -42,7 +42,7 @@ beforeEach(() => {
 
 test('vibe and reference append the imported pixels and preserve existing entries', async () => {
   await appendImportedImage(session, 'PIXELS', 'vibe', ModelVersion.V4_5, defaults);
-  expect(storedVibe).toHaveBeenCalledWith(session, 'PIXELS');
+  expect(storedVibe).toHaveBeenCalledWith(session, 'PIXELS', false, true);
   expect(shared.vibes.map((v: any) => v.path)).toEqual(['old-vibe.png', 'new-vibe.png']);
   await appendImportedImage(session, 'PIXELS', 'reference', ModelVersion.V4_5, defaults);
   expect(shared.characterReferences.map((r: any) => r.path)).toEqual(['old-ref.png', 'new-ref.png']);

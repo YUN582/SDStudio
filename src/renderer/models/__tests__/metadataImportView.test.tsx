@@ -4,7 +4,7 @@ const extract = jest.fn();
 const appendImage = jest.fn(async (..._args: any[]) => {});
 const createI2I = jest.fn(async (..._args: any[]): Promise<any> => undefined);
 jest.mock('../importedImageActions', () => ({ appendImportedImage: (...args: any[]) => appendImage(...args), createImportedI2I: (...args: any[]) => createI2I(...args) }));
-jest.mock('../../componenets/CharacterReferenceEditor', () => ({ getRefDefaults: () => ({ strength: 0.6, fidelity: 1, referenceType: 'character' }) }));
+jest.mock('../referenceDefaults', () => ({ referenceDefaultsFor: () => ({ strength: 0.6, fidelity: 1, referenceType: 'character' }) }));
 jest.mock('../../componenets/useGlobalModelVersion', () => ({ useGlobalModelVersion: () => 'v4.5' }));
 jest.mock('../../componenets/FloatView', () => ({ FloatView: ({ children }: any) => <div>{children}</div> }));
 jest.mock('../../componenets/InPaintEditor', () => ({ __esModule: true, default: ({ onConfirm }: any) => <div><span>I2I editor fixture</span><button onClick={onConfirm}>편집 마치기</button></div> }));
