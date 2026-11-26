@@ -61,6 +61,7 @@ import { InpaintDrawingTools } from './InpaintDrawingTools';
 import { canvasPointerPoint } from '../models/canvasPointer';
 import { generationControlState } from '../models/generationControl';
 import { isTextEntryFocused } from '../models/keyTargetGuard';
+import { trackPendingMaskSave, waitPendingMaskSave } from '../models/inpaintMaskSave';
 import { DETACHED_INPUT_META } from '../models/inpaintInput';
 import { ensureSingleImagePrompt, isSingleImageEdit } from '../models/singleImageEdit';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
@@ -564,13 +565,14 @@ const InPaintEditor = observer(
         }
       }
       async function loadMask() {
-        if (!editingScene.preset.mask) return;
+        await waitPendingMaskSave(editingScene);
+        if (cancelled || !editingScene.preset.mask) return;
         try {
           const data = await imageService.fetchVibeImage(
             curSession!,
             editingScene.preset.mask,
           );
-          if (data) setMask(dataUriToBase64(data));
+          if (data && !cancelled) setMask(dataUriToBase64(data));
         } catch (e) {}
       }
       const dispose = reaction(
@@ -712,16 +714,16 @@ const InPaintEditor = observer(
       if (def?.hasMask && brushTool.current) {
         const mask = brushTool.current.getMaskBase64();
         if (!editingScene.preset.mask) {
-          editingScene.preset.mask = await imageService.storeWorkImage(
+          editingScene.preset.mask = await trackPendingMaskSave(editingScene, imageService.storeWorkImage(
             curSession!, editingScene, 'mask',
             mask,
-          );
+          ));
         } else {
-          await imageService.writeVibeImage(
+          await trackPendingMaskSave(editingScene, imageService.writeVibeImage(
             curSession!,
             editingScene.preset.mask,
             mask,
-          );
+          ));
         }
         cachedMaskRef.current = null; // 이미 저장됨
       }
@@ -735,11 +737,11 @@ const InPaintEditor = observer(
         const session = curSession;
         if (def?.hasMask && session && mask) {
           if (!scene.preset.mask) {
-            imageService.storeWorkImage(session, scene, 'mask', mask).then((path) => {
+            trackPendingMaskSave(scene, imageService.storeWorkImage(session, scene, 'mask', mask).then((path) => {
               scene.preset.mask = path;
-            });
+            }));
           } else {
-            imageService.writeVibeImage(session, scene.preset.mask, mask);
+            trackPendingMaskSave(scene, imageService.writeVibeImage(session, scene.preset.mask, mask));
           }
         }
       };

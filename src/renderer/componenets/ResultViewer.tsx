@@ -57,6 +57,8 @@ import { UndoBarSlot, UNDO_ANCHOR_ATTR } from './UndoBarSlot';
 import { PromptHighlighter } from './SceneEditor';
 import QueueControl from './SceneQueueControl';
 import { FloatView, FloatViewActiveContext, useFloatViewHeaderSlot } from './FloatView';
+import { SceneModeHeaderPortal } from './SceneModeHeader';
+import { imageGridShortcutsActive } from '../models/sceneModeSwitch';
 import { ImageDetailInfo } from './ImageDetailInfo';
 import { base64ByteLength, buildImageDetailInfo } from '../models/imageDetailInfo';
 import { detailWideColumns, IMAGE_DETAIL_INFO_TEXT } from '../models/imageDetailInfoOpen';
@@ -2156,6 +2158,7 @@ interface ResultViewerProps {
   // 씬 탭 이동(W1): 뷰어를 연 채 그리드 표시 순서대로 이전/다음 씬으로 전환
   sceneNav?: SceneNavigation;
   initialDetailOpen?: boolean;
+  coveredByEditor?: boolean;
 }
 
 const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
@@ -2172,6 +2175,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       focusFilename,
       sceneNav,
       initialDetailOpen = false,
+      coveredByEditor = false,
     }: ResultViewerProps,
     ref,
   ) => {
@@ -2593,12 +2597,17 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     // 탭 전환 단축키(Ctrl+1/2/3/4)는 모든 탭에서 동작해야 하므로 selectedTab을 조건에서 제외.
     // 그리드 조작(방향키/즐겨찾기/북마크/삭제/상세 보기)은 핸들러 내부에서 selectedTab 가드 적용.
     useEffect(() => {
-      const active = !isMobile && activeView && selectedImageIndex == null;
+      const active = activeView && imageGridShortcutsActive({
+        isMobile,
+        detailOpen: selectedImageIndex != null,
+        pickerOpen: tournament,
+        coveredByEditor,
+      });
       appState.imageGridFocusable = active;
       return () => {
         appState.imageGridFocusable = false;
       };
-    }, [activeView, selectedImageIndex]);
+    }, [activeView, selectedImageIndex, tournament, coveredByEditor]);
 
     // 포커스 이미지를 화면 안으로 스크롤
     useEffect(() => {
@@ -2796,10 +2805,8 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     }, [activeView, tournament, selectedImageIndex]);
 
     let emoji = '';
-    let title = '';
     if (scene.type === 'inpaint') {
       emoji = workFlowService.getDef(scene.workflowType)?.emoji ?? '';
-      title = workFlowService.getDef(scene.workflowType)?.title ?? '';
     }
 
     // 액션 동작(클래식 머리 버튼과 V2 하단 줄이 공유)
@@ -2987,7 +2994,6 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       ? [
           tierItem('queue-add', '예약 추가', 'back-green', <ActionIcon id="queue-add" />, () => void actQueueAdd()),
           tierItem('queue-remove', '예약 제거', 'back-gray', <ActionIcon id="queue-remove" />, actQueueRemove),
-          tierItem('edit', '씬 편집', 'back-orange', <ActionIcon id="edit" />, () => onEdit(scene)),
           tierItem('download', '다운로드', 'back-green', <ActionIcon id="download" />, actDownload),
           tierItem('copy', '복사', 'back-sky', <ActionIcon id="copy" />, actCopyImages),
           tierItem('paste', '붙여넣기', appState.imageClipboard.length > 0 ? 'back-sky' : 'back-gray', <FaPaste />, actPaste),
@@ -3028,56 +3034,10 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           </FloatView>
         )}
         <div className="flex-none p-2 md:p-4 border-b line-color">
-          <div className="mb-2 md:mb-4 flex items-center">
-            <span className="font-bold text-lg md:text-2xl text-default">
-              {selectMode ? (
-                <span className="inline-flex items-center gap-1">
-                  이미지 선택 모드 ON
-                </span>
-              ) : !isMobile ? (
-                scene.type === 'inpaint' ? (
-                  <span className="inline-flex items-center gap-1">
-                    {emoji} {title} 씬 {scene.name}의 생성된 이미지
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1">
-                    🖼️ 일반 씬 {scene.name}의 생성된 이미지
-                  </span>
-                )
-              ) : scene.type === 'inpaint' ? (
-                <span className="inline-flex items-center gap-1">
-                  {emoji} {title} 씬 {scene.name}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1">
-                  🖼️ 일반 씬 {scene.name}
-                </span>
-              )}
-            </span>
-            {sceneNav && (
-              <span className="ml-auto flex-none inline-flex items-center gap-1 md:gap-2 pl-2">
-                <Tooltip content="이전 씬 그리드 (Ctrl+←)">
-                  <button
-                    className={`round-button icon-only back-gray ${!sceneNav.hasPrev ? 'opacity-40' : ''}`}
-                    disabled={!sceneNav.hasPrev}
-                    onClick={() => sceneNav.go(-1)}
-                  >
-                    <FaChevronLeft />
-                  </button>
-                </Tooltip>
-                <Tooltip content="다음 씬 그리드 (Ctrl+→)">
-                  <button
-                    className={`round-button icon-only back-gray ${!sceneNav.hasNext ? 'opacity-40' : ''}`}
-                    disabled={!sceneNav.hasNext}
-                    onClick={() => sceneNav.go(1)}
-                  >
-                    <FaChevronRight />
-                  </button>
-                </Tooltip>
-              </span>
-            )}
-          </div>
-          <div className="md:flex justify-between items-center mt-2 md:mt-4">
+          <SceneModeHeaderPortal kindIcon={scene.type === 'inpaint' ? emoji : '🖼️'} name={scene.name}
+            mode="images" selectMode={selectMode} sceneNav={sceneNav}
+            onMode={mode => { if (mode === 'edit') onEdit(scene); }} />
+          <div className="md:flex justify-between items-center">
             {!v2 && (
             <div className="flex gap-2 md:gap-3 flex-wrap">
               <button
@@ -3101,16 +3061,6 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                   }}
                 >
                   {!isMobile ? '예약 제거' : <ActionIcon id="queue-remove" />}
-                </button>
-              </Tooltip>
-              <Tooltip content="씬 편집">
-                <button
-                  className={`round-button${isMobile ? ' icon-only' : ''} back-orange`}
-                  onClick={() => {
-                    onEdit(scene);
-                  }}
-                >
-                  {!isMobile ? '씬 편집' : <ActionIcon id="edit" />}
                 </button>
               </Tooltip>
               {!isMobile && (
