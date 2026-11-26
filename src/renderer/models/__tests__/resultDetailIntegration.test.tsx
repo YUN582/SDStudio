@@ -118,14 +118,16 @@ test('header owns compact favorite/copy/bookmark actions; toolbar groups file ac
   expect(plugin).toHaveBeenCalledWith(scene, paths[0], expect.any(Function));
 });
 
-test('detail toggle uses shared remembered state and shows the real pixel size', async () => {
+test('wide detail pane always shows generation settings and real pixel size without toggle or prompt parts', async () => {
   const view = mount(); await loaded();
-  const toggle = screen.getByRole('button', { name: '상세 정보' });
+  expect(screen.queryByRole('button', { name: '상세 정보' })).toBeNull();
   expect(view.container.querySelector('[data-detail-side-pane]')).toBeNull();
-  fireEvent.click(toggle);
-  expect(mockState.imageDetailInfoOpen).toBe(true);
-  expect(toggle.getAttribute('aria-pressed')).toBe('true');
-  await waitFor(() => expect(view.container.querySelector('[data-detail-info-pane]')?.textContent).toContain('832 × 1216'));
+  expect(view.container.querySelector('[data-detail-group="prompt-parts"]')).toBeNull();
+  expect(view.container.querySelector('[data-detail-chips]')).toBeNull();
+  const pane = view.container.querySelector('[data-detail-info-pane]') as HTMLElement;
+  await waitFor(() => expect(pane.textContent).toContain('832 × 1216'));
+  const groups = Array.from(pane.querySelectorAll('[data-detail-group]')).map((el) => el.getAttribute('data-detail-group'));
+  expect(groups.indexOf('settings')).toBeLessThan(groups.indexOf('prompt'));
   expect(view.container.querySelector('[data-image-detail-text]')?.hasAttribute('data-selectable-text')).toBe(true);
 });
 
@@ -170,7 +172,6 @@ test('new inpaint receives the selected file and its owner', async () => {
 test('an image too large for upscale still displays its actual dimensions', async () => {
   mockDimensions.mockResolvedValue({ width: 4096, height: 4096 });
   const view = mount(); await loaded();
-  fireEvent.click(screen.getByRole('button', { name: '상세 정보' }));
   await waitFor(() => expect(view.container.querySelector('[data-detail-info-pane]')?.textContent).toContain('4096 × 4096'));
   fireEvent.click(screen.getByRole('button', { name: '이미지 변형' }));
   expect((view.container.querySelector('[data-variant-upscale]') as HTMLButtonElement).disabled).toBe(true);
@@ -226,8 +227,7 @@ test('missing generation metadata still shows file facts instead of stale prompt
   mockParse.mockResolvedValue(undefined);
   const view = mount();
   await screen.findByText('이 이미지에는 생성 정보가 없습니다');
-  fireEvent.click(screen.getByRole('button', { name: '상세 정보' }));
-  expect(view.container.querySelector('[data-detail-side-pane]')?.textContent).toContain('a.png');
+  expect(view.container.querySelector('[data-detail-info-pane]')?.textContent).toContain('a.png');
   expect(screen.queryByText(`prompt:${paths[0]}`)).toBeNull();
 });
 

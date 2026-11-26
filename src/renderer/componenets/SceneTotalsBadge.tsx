@@ -108,18 +108,22 @@ const SceneTotalsBadge = observer(
           data-fits={fits ? 'true' : 'false'}
           aria-label={fits ? tooltip : undefined}
           aria-hidden={fits ? undefined : true}
-          className={`absolute right-full inset-y-0 mr-3 flex items-center gap-1 whitespace-nowrap text-sm tabular-nums select-none${
+          className={`absolute right-full inset-y-0 mr-3 flex items-center gap-2.5 whitespace-nowrap text-sm tabular-nums select-none${
             fits ? '' : ' invisible'
           }`}
         >
-          <span className="text-faint">씬</span>
-          <span className="text-default">{formatTotalCount(totals.scenes)}</span>
-          <span className="text-faint" aria-hidden="true">·</span>
-          <span className="text-faint">이미지</span>
-          <span className="text-default">{formatTotalCount(totals.images)}</span>
-          <span className="text-faint" aria-hidden="true">·</span>
-          <ActionIcon id="favorite" size={14} className="text-muted flex-none" aria-hidden="true" />
-          <span className="text-default">{formatTotalCount(totals.favorites)}</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="text-faint">씬</span>
+            <span className="text-default">{formatTotalCount(totals.scenes)}</span>
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="text-faint">이미지</span>
+            <span className="text-default">{formatTotalCount(totals.images)}</span>
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <ActionIcon id="favorite" size={14} className="text-muted flex-none" aria-hidden="true" />
+            <span className="text-default">{formatTotalCount(totals.favorites)}</span>
+          </span>
         </div>
       </Tooltip>
     );

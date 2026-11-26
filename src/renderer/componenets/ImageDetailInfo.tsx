@@ -5,8 +5,7 @@
 //   (좁은 폭 클래식·V2·PC 에서 본문이 좁아 합친 경우). 묶음 내용·순서·숨김은 models/imageDetailInfo 그대로.
 // · 스크롤은 바깥(정보 칸)이 맡는다 — 이 컴포넌트는 세로 스크롤을 만들지 않는다(프롬프트 상자의 상한 넘침만 상자 안 스크롤).
 // · 복사 = navigator.clipboard.writeText + 기존 토스트(작가 라이브러리의 「프롬프트 복사」와 같은 방식).
-import React, { useState } from 'react';
-import { FaChevronRight } from 'react-icons/fa';
+import React from 'react';
 import { PromptHighlighter } from './SceneEditor';
 import { ActionIcon } from './ActionIcon';
 import { appState } from '../models/AppService';
@@ -17,7 +16,6 @@ import {
   type DetailRow,
   type ImageDetailInfoModel,
 } from '../models/imageDetailInfo';
-import { detailPromptChips } from '../models/imageDetailInfoOpen';
 
 /** 프롬프트 상자 — 내용만큼 자라고 상한(max-h-60 = 240px)을 넘으면 상자 안 스크롤 */
 export const DETAIL_PROMPT_BOX = 'w-full max-h-60 overflow-auto p-2 rounded-md text-sm';
@@ -44,21 +42,25 @@ const CopyButton = ({ text, label, message }: { text: string; label: string; mes
 );
 
 const GroupHead = ({ title, right }: { title: React.ReactNode; right?: React.ReactNode }) => (
-  <div className="flex items-center justify-between gap-2 mb-1 min-h-6">
-    <span className="gray-label text-sm font-semibold">{title}</span>
+  <div className="sds-detail-section-head">
+    <h3 className="sds-detail-section-title m-0">{title}</h3>
+    {right}
+  </div>
+);
+
+const SubHead = ({ title, right }: { title: React.ReactNode; right?: React.ReactNode }) => (
+  <div className="flex items-center justify-between gap-2 mt-2 mb-1 min-h-5">
+    <span className="text-xs font-medium text-faint">{title}</span>
     {right}
   </div>
 );
 
 const RowTable = ({ rows, attr }: { rows: DetailRow[]; attr: string }) => (
-  <dl
-    {...{ [attr]: '' }}
-    className="grid grid-cols-[minmax(6.5rem,auto)_1fr] gap-x-3 gap-y-1 text-sm"
-  >
+  <dl {...{ [attr]: '' }} className="sds-detail-kv m-0">
     {rows.map((r) => (
       <React.Fragment key={r.key}>
-        <dt className="text-sub">{r.label}</dt>
-        <dd className="text-default min-w-0 break-all tabular-nums flex items-center gap-1">
+        <dt>{r.label}</dt>
+        <dd>
           {r.key === 'filename' ? <span className="break-all">{r.value}</span> : <span>{r.value}</span>}
           {r.copy && (
             <CopyButton text={r.copy} label={`${r.label} 복사`} message={`${r.label}을(를) 복사했습니다`} />
@@ -107,18 +109,51 @@ export interface ImageDetailInfoProps {
 export type ImageDetailInfoPart = 'all' | 'prompt' | 'detail';
 
 export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDetailInfoProps) => {
-  const [partsOpen, setPartsOpen] = useState(false);
   const showPromptSide = part !== 'detail';
   const showDetailSide = part !== 'prompt';
-  // 프롬프트 열만 그릴 때는 메타가 없어도 해상도 칩을 올린다(상세 열이 접혀 있어도 해상도가 보이게).
-  // 한 열 전부('all')는 종전대로 — 해상도는 파일 묶음에 있다.
-  const chips = part === 'prompt' ? detailPromptChips(info) : info.chips;
 
-  const left: React.ReactNode[] = [];
-  const right: React.ReactNode[] = [];
+  const topSections: React.ReactNode[] = [];
+  const promptSections: React.ReactNode[] = [];
+
+  if (info.settings.length) {
+    topSections.push(
+      <section key="settings" data-detail-group="settings" className="sds-detail-section">
+        <GroupHead title="생성 설정" />
+        <RowTable rows={info.settings} attr="data-detail-settings" />
+      </section>,
+    );
+  }
+  if (info.vibes.length || info.charRefs.length) {
+    topSections.push(
+      <section key="refs" data-detail-group="references" className="sds-detail-section flex flex-col gap-2">
+        <GroupHead title="참조 이미지" />
+        {info.vibes.length > 0 && (
+          <div>
+            <div className="text-faint text-xs mb-1">바이브 전송 {info.vibes.length}개</div>
+            <RefList items={info.vibes} images={job?.vibeImageData} />
+          </div>
+        )}
+        {info.charRefs.length > 0 && (
+          <div>
+            <div className="text-faint text-xs mb-1">캐릭터 레퍼런스 {info.charRefs.length}개</div>
+            <RefList items={info.charRefs} images={job?.referenceImageData} />
+          </div>
+        )}
+      </section>,
+    );
+  }
+  if (info.file.length) {
+    topSections.push(
+      <section key="file" data-detail-group="file" className="sds-detail-section">
+        <GroupHead title="파일" />
+        <RowTable rows={info.file} attr="data-detail-file" />
+      </section>,
+    );
+  }
+
   if (info.prompt) {
-    left.push(
-      <section key="prompt" data-detail-group="prompt" className="min-w-0">
+    promptSections.push(
+      <section key="prompt" data-detail-group="prompt" className="sds-detail-section">
         <GroupHead
           title="프롬프트"
           right={<CopyButton text={info.prompt} label="프롬프트 복사" message="프롬프트를 복사했습니다" />}
@@ -128,8 +163,8 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
     );
   }
   if (info.uc) {
-    left.push(
-      <section key="uc" data-detail-group="uc" className="min-w-0">
+    promptSections.push(
+      <section key="uc" data-detail-group="uc" className="sds-detail-section">
         <GroupHead
           title="네거티브 프롬프트"
           right={<CopyButton text={info.uc} label="네거티브 프롬프트 복사" message="네거티브 프롬프트를 복사했습니다" />}
@@ -140,18 +175,18 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
   }
   info.characters.forEach((c) => {
     const name = `캐릭터 ${c.index + 1}`;
-    left.push(
+    promptSections.push(
       <section
         key={`char-${c.index}`}
         data-detail-group="character"
-        className="min-w-0 border line-color rounded-md r-card p-2"
+        className="sds-detail-section"
       >
         <GroupHead
           title={
             <>
               {name}
               {c.position && (
-                <span className="ml-2 font-normal text-faint tabular-nums" data-detail-char-position="">
+                <span className="ml-1.5 text-xs font-normal text-faint tabular-nums" data-detail-char-position="">
                   위치 {c.position}
                 </span>
               )}
@@ -166,8 +201,8 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
         {c.prompt && <PromptHighlighter text={c.prompt} expandable className={DETAIL_PROMPT_BOX} />}
         {c.uc && (
           <>
-            <GroupHead
-              title={<span className="font-normal">네거티브</span>}
+            <SubHead
+              title="네거티브"
               right={
                 <CopyButton text={c.uc} label={`${name} 네거티브 복사`} message={`${name} 네거티브를 복사했습니다`} />
               }
@@ -178,123 +213,17 @@ export const ImageDetailInfo = ({ info, job, part = 'all', loadFailed }: ImageDe
       </section>,
     );
   });
-  if (info.settings.length) {
-    right.push(
-      <section key="settings" data-detail-group="settings" className="min-w-0">
-        <GroupHead title="생성 설정" />
-        <RowTable rows={info.settings} attr="data-detail-settings" />
-      </section>,
-    );
-  }
-  if (info.vibes.length || info.charRefs.length) {
-    right.push(
-      <section key="refs" data-detail-group="references" className="min-w-0 flex flex-col gap-2">
-        <GroupHead title="참조 이미지" />
-        {info.vibes.length > 0 && (
-          <div>
-            <div className="text-sub text-sm mb-1">바이브 전송 · {info.vibes.length}개</div>
-            <RefList items={info.vibes} images={job?.vibeImageData} />
-          </div>
-        )}
-        {info.charRefs.length > 0 && (
-          <div>
-            <div className="text-sub text-sm mb-1">캐릭터 레퍼런스 · {info.charRefs.length}개</div>
-            <RefList items={info.charRefs} images={job?.referenceImageData} />
-          </div>
-        )}
-      </section>,
-    );
-  }
-  if (info.file.length) {
-    right.push(
-      <section key="file" data-detail-group="file" className="min-w-0">
-        <GroupHead title="파일" />
-        <RowTable rows={info.file} attr="data-detail-file" />
-      </section>,
-    );
-  }
-  if (info.promptParts.length) {
-    right.push(
-      <section key="parts" data-detail-group="prompt-parts" className="min-w-0">
-        <button
-          type="button"
-          className="btn-ghost w-full flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left"
-          aria-expanded={partsOpen}
-          onClick={() => setPartsOpen((v) => !v)}
-        >
-          <FaChevronRight
-            size={10}
-            className="flex-none text-faint"
-            style={{ transform: partsOpen ? 'rotate(90deg)' : undefined }}
-          />
-          <span className="gray-label text-sm font-semibold">프롬프트 구획</span>
-          <span className="text-faint text-xs">SDStudio 생성 정보</span>
-        </button>
-        {partsOpen && (
-          <div className="mt-1 flex flex-col gap-2">
-            {info.promptParts.map((p) =>
-              p.key === 'workflow' ? (
-                <div key={p.key} className="text-sm">
-                  <span className="text-sub">{p.label}</span>
-                  <span className="ml-3 text-default">{p.text}</span>
-                </div>
-              ) : (
-                <div key={p.key} className="min-w-0">
-                  <GroupHead
-                    title={<span className="font-normal">{p.label}</span>}
-                    right={<CopyButton text={p.text} label={`${p.label} 복사`} message={`${p.label}을(를) 복사했습니다`} />}
-                  />
-                  <PromptHighlighter text={p.text} expandable className={DETAIL_PROMPT_BOX} />
-                </div>
-              ),
-            )}
-          </div>
-        )}
-      </section>,
-    );
-  }
 
   return (
-    <div className="w-full min-w-0 flex flex-col gap-3" data-detail-info={part}>
-      {showPromptSide && chips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" data-detail-chips="">
-          {chips.map((c) => {
-            const body = (
-              <>
-                <span className="text-faint">{c.label}</span>
-                <span className="text-default tabular-nums">{c.value}</span>
-                {c.copy && <ActionIcon id="copy" size={10} className="text-faint" />}
-              </>
-            );
-            const cls =
-              'inline-flex items-center gap-1.5 rounded-md border line-color bg-[var(--c-input-bg)] px-2 py-0.5 text-xs max-w-full';
-            return c.copy ? (
-              <button
-                key={c.key}
-                type="button"
-                className={cls + ' btn'}
-                title={`${c.label} 복사`}
-                aria-label={`${c.label} ${c.value} 복사`}
-                onClick={() => void copyDetailText(c.copy!, `${c.label}을(를) 복사했습니다`)}
-              >
-                {body}
-              </button>
-            ) : (
-              <span key={c.key} className={cls}>
-                {body}
-              </span>
-            );
-          })}
-        </div>
-      )}
+    <div className="w-full min-w-0 flex flex-col gap-3.5" data-detail-info={part}>
       {showPromptSide && !info.hasMeta && !loadFailed && (
-        <div className="text-sub text-sm" data-detail-no-meta="">
+        <div className="text-faint text-xs" data-detail-no-meta="">
           {DETAIL_INFO_TEXT.noMeta}
         </div>
       )}
-      <div className="flex flex-col gap-3 min-w-0">
-        {showPromptSide && left}
-        {showDetailSide && right}
+      <div className="flex flex-col gap-3.5 min-w-0">
+        {showDetailSide && topSections}
+        {showPromptSide && promptSections}
       </div>
     </div>
   );

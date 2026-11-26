@@ -3186,21 +3186,25 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
     };
     // 인라인 버튼(드래그 재배치 래퍼 포함) — 그룹 칸이든 종전 한 줄이든 같은 노드를 쓴다.
     // index 는 해석된 inline 배열상의 위치(그룹 렌더 순서와 다를 수 있음 — 삽입은 앵커 id 기준).
-    const inlineToolbarButton = (id: string) => (
-      <DraggableToolbarButton
-        key={id}
-        group="scene"
-        id={id}
-        name={sceneName(id)}
-        area="scene"
-        index={toolbarLayout.inline.indexOf(id)}
-        disabled={!!appState.uiToolbar.classic}
-      >
-        <ButtonNameSlot name={sceneToolbarLabelOf(id)} mode={buttonNameMode}>
-          {buttonNode(id)}
-        </ButtonNameSlot>
-      </DraggableToolbarButton>
-    );
+    const inlineToolbarButton = (id: string) => {
+      const node = buttonNode(id);
+      if (!node) return null;
+      return (
+        <DraggableToolbarButton
+          key={id}
+          group="scene"
+          id={id}
+          name={sceneName(id)}
+          area="scene"
+          index={toolbarLayout.inline.indexOf(id)}
+          disabled={!!appState.uiToolbar.classic}
+        >
+          <ButtonNameSlot name={sceneToolbarLabelOf(id)} mode={buttonNameMode}>
+            {node}
+          </ButtonNameSlot>
+        </DraggableToolbarButton>
+      );
+    };
     const toolbarSegments = groupedToolbar
       ? groupToolbarIds(toolbarLayout.inline)
       : [];

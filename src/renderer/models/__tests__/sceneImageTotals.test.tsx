@@ -61,7 +61,7 @@ describe('합계 순수 함수', () => {
     expect(formatTotalCount(1250)).toBe('1,250');
     expect(formatTotalCount(1234567)).toBe('1,234,567');
     expect(sceneTotalsTooltip({ scenes: 42, images: 250, favorites: 37 })).toBe(
-      '이 탭의 씬 42개 · 이미지 250장 · 즐겨찾기 37장 (휴지통 제외)',
+      '씬 42개, 이미지 250장, 즐겨찾기 37장',
     );
   });
 });
@@ -140,9 +140,9 @@ describe('렌더 SceneTotalsBadge', () => {
   test('탭별 범위: 생성 탭은 생성 씬만, 변형 탭은 변형 씬만', () => {
     const session = mkSession();
     const a = render(<SceneTotalsBadge session={session} type="scene" />);
-    expect(text(a.container)).toBe('씬2·이미지4·1');
+    expect(text(a.container)).toBe('씬2이미지41');
     const b = render(<SceneTotalsBadge session={session} type="inpaint" />);
-    expect(text(b.container)).toBe('씬1·이미지2·3');
+    expect(text(b.container)).toBe('씬1이미지23');
   });
 
   test('씬 0개면 그리지 않음', () => {
@@ -161,14 +161,14 @@ describe('렌더 SceneTotalsBadge', () => {
     act(() => {
       mockGame.dispatchEvent(new CustomEvent('updated'));
     });
-    expect(text(container)).toBe('씬2·이미지6·1');
+    expect(text(container)).toBe('씬2이미지61');
     act(() => {
       runInAction(() => {
         session.scenes[1].mains.push('7');
         session.scenes.push({ name: 's3', type: 'scene', mains: [] });
       });
     });
-    expect(text(container)).toBe('씬3·이미지6·2');
+    expect(text(container)).toBe('씬3이미지62');
   });
 
   test('자리 판정: 바깥 줄 안에서 빈자리가 모자라면 invisible, 넉넉하면 보임', () => {

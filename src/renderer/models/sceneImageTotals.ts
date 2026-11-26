@@ -37,9 +37,9 @@ export function formatTotalCount(n: number): string {
 }
 
 export function sceneTotalsTooltip(t: SceneImageTotals): string {
-  return `이 탭의 씬 ${formatTotalCount(t.scenes)}개 · 이미지 ${formatTotalCount(
+  return `씬 ${formatTotalCount(t.scenes)}개, 이미지 ${formatTotalCount(
     t.images,
-  )}장 · 즐겨찾기 ${formatTotalCount(t.favorites)}장 (휴지통 제외)`;
+  )}장, 즐겨찾기 ${formatTotalCount(t.favorites)}장`;
 }
 
 // ── 자리 판정(창이 작아지면 숨김) ──

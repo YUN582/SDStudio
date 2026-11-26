@@ -1638,7 +1638,7 @@ export const ResultDetailView = observer(
     });
 
     const wideLayout = !v2 && !isMobile && bodyWidth >= 680;
-    const wideCols = detailWideColumns(bodyWidth, showPrompt);
+    const wideCols = detailWideColumns(bodyWidth, false);
     const metaNotReady = imageLoadFailed || !currentDetailMeta;
 
     const renderInfo = (part: 'all' | 'prompt' | 'detail') => (
@@ -2057,35 +2057,11 @@ export const ResultDetailView = observer(
                 style={{ width: wideCols.prompt }}
                 data-detail-info-pane=""
               >
-                <div className="sds-detail-pane-head flex-none border-b line-color" data-detail-info-head="">
-                  <button
-                    type="button"
-                    data-detail-info-toggle=""
-                    className={`round-button ${showPrompt ? 'back-sky toggle-on' : 'back-gray'}`}
-                    aria-pressed={showPrompt}
-                    aria-label={IMAGE_DETAIL_INFO_TEXT.wideToggle}
-                    title={IMAGE_DETAIL_INFO_TEXT.wideToggle}
-                    onClick={() => setShowPrompt(!showPrompt)}
-                  >
-                    <FaInfoCircle size={13} />
-                    {IMAGE_DETAIL_INFO_TEXT.wideToggle}
-                    {showPrompt ? <FaChevronLeft size={10} /> : <FaChevronRight size={10} />}
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4 pt-3">
-                  {renderInfo(wideCols.merged ? 'all' : 'prompt')}
+                <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3.5">
+                  {renderInfo('all')}
                   <LinkedImageWorks session={session} scene={scene} path={viewedImagePath} />
                 </div>
               </div>
-              {wideCols.side > 0 && (
-                <div
-                  className="sds-detail-info flex-none min-w-0 overflow-y-auto px-3.5 pb-4 pt-3 border-r line-color"
-                  style={{ width: wideCols.side }}
-                  data-detail-side-pane=""
-                >
-                  {renderInfo('detail')}
-                </div>
-              )}
               {imageStage}
             </>
           ) : (

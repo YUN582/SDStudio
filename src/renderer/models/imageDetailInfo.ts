@@ -199,6 +199,7 @@ export function buildImageDetailInfo(
 
   const settings: DetailRow[] = [];
   if (model) settings.push({ key: 'model', label: '모델', value: model });
+  if (pixelText) settings.push({ key: 'pixel', label: '해상도', value: pixelText });
   if (sampler) settings.push({ key: 'sampler', label: '샘플러', value: sampler });
   if (steps) settings.push({ key: 'steps', label: '스텝', value: steps });
   if (guidance) settings.push({ key: 'guidance', label: '프롬프트 가이던스', value: guidance });
@@ -224,9 +225,9 @@ export function buildImageDetailInfo(
   const gen = job.sdstudioMetadata?.generationSettings;
   if (gen) {
     const quality = gen.qualityPreset ?? (gen.disableQuality ? 'none' : 'standard');
-    const qLabel = QUALITY_PRESET_LABELS[quality];
+    const qLabel = QUALITY_PRESET_LABELS[quality]?.replace(/\s*\(None\)$/, '');
     if (qLabel) settings.push({ key: 'quality', label: '품질 태그', value: qLabel });
-    const ucLabel = UC_LABELS[gen.ucPreset as UcPresetKey];
+    const ucLabel = UC_LABELS[gen.ucPreset as UcPresetKey]?.replace(/\s*\(None\)$/, '');
     if (ucLabel) settings.push({ key: 'uc-preset', label: 'UC 프리셋', value: ucLabel });
   }
   if (model && /인페인트/.test(model)) {
