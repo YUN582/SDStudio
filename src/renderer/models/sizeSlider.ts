@@ -26,10 +26,10 @@ function throughThreeSteps(percent: number, s: number, m: number, l: number): nu
 
 // ===== 씬 카드(PC) =====
 
-/** 종전 스몰·미디엄·라지 씬 목록 그리드 열 최소 폭(px) */
-export const SCENE_CARD_MIN_WIDTH_STEPS = [180, 240, 320] as const;
-/** 종전 「높이 고정」 카드 모양의 이미지 칸 높이(px) — h-48·h-64·h-96 */
-export const SCENE_CARD_FIXED_HEIGHT_STEPS = [192, 256, 384] as const;
+/** 씬 목록 그리드 열 폭 단계(px) — 기본 50% = 256px(글로벌 프리셋 md:w-64 기준 통일) */
+export const SCENE_CARD_MIN_WIDTH_STEPS = [192, 256, 336] as const;
+/** 「높이 고정」 카드 모양의 이미지 칸 높이(px) — 기본 50% = 384px(글로벌 프리셋 md:h-96 기준 통일) */
+export const SCENE_CARD_FIXED_HEIGHT_STEPS = [256, 384, 512] as const;
 /** 열 최소 폭 하한 — 모바일 최소 트랙(9rem = 144px)과 비슷한 크기, 카드 버튼 줄이 들어가는 폭 */
 export const SCENE_CARD_MIN_WIDTH_FLOOR = 150;
 /** 「높이 고정」 높이 하한(0% 연장값 128 과 같음 — 안전망) */

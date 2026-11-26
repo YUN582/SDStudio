@@ -594,6 +594,57 @@ html.font-pretendard body {
 .scene-toolbar-row .round-button {
   height: 2rem;
 }
+/* 분할 버튼(예약 추가 + ▾ 옵션): 주 버튼과 화살표 버튼을 하나의 통합 컨트롤로 잇는다. */
+.sds-split-btn {
+  display: inline-flex;
+  align-items: stretch;
+}
+.sds-split-btn > .round-button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.sds-split-btn > .sds-split-btn-toggle {
+  position: relative;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: var(--r-btn);
+  border-bottom-right-radius: var(--r-btn);
+  min-width: 24px;
+  padding-left: 5px;
+  padding-right: 6px;
+  height: 2rem;
+}
+.sds-split-btn:has(> .icon-only) > .sds-split-btn-toggle {
+  border-top-right-radius: var(--r-btn-icon);
+  border-bottom-right-radius: var(--r-btn-icon);
+}
+.sds-split-btn > .sds-split-btn-toggle::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.28;
+  pointer-events: none;
+}
+.sds-split-btn > .round-button:hover,
+.sds-split-btn > .round-button:focus-visible {
+  z-index: 1;
+}
+.sds-split-btn > .round-button:focus-visible {
+  outline-offset: -2px;
+}
+@media (max-width: 767px) {
+  .sds-split-btn > .sds-split-btn-toggle {
+    min-width: 30px;
+    height: auto;
+    min-height: 36px;
+    padding-left: 6px;
+    padding-right: 7px;
+  }
+}
 /* PC 씬 툴바 그룹(2026-10-04 T5, 2-D 그룹 캡션) — SPEC_GUIDE §6 「툴바 그룹」. 모바일·클래식 툴바는 미사용.
    칸 = [캡션 12px][버튼 줄 32px], 칸 안 간격 8px(§2), 칸 사이 12px = 구분선 칸(margin 6 + 선 1 + padding 6).
    구분선은 다음 칸의 ::before 라 줄바꿈해도 줄 끝에 선만 남지 않는다(칸과 함께 넘어간다).

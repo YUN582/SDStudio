@@ -1551,7 +1551,7 @@ export function useCharacterPresetPanel({
     gridTemplateColumns: isMobile
       ? 'repeat(2, minmax(0, 1fr))'
       : 'repeat(auto-fill, 256px)',
-    gap: '0.75rem',
+    gap: '1rem',
     alignContent: 'start',
   };
 

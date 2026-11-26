@@ -542,13 +542,13 @@ const ArtistCard = observer(({
   };
   return (
     <div data-artist-id={artist.id} data-library-selected={selected ? 'true' : 'false'} onContextMenu={onContextMenu} className={
-      'group relative flex-none w-[calc(50%-8px)] md:w-60 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
+      'group relative flex-none w-[calc(50%-8px)] md:w-64 md:min-h-96 rounded-lg overflow-hidden flex flex-col border-2 bg-[var(--c-surface-2)] ' +
       (selected
         ? LIBRARY_CARD_SELECTED
         : 'line-color hover:border-sky-400')
     }>
       {/* 대표 이미지 */}
-      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-72 bg-[var(--c-surface)] cursor-pointer" data-library-card-activate="" title={artist.name + ' · 상세·수정 열기'} onClick={handleClick}>
+      <div className="relative w-full aspect-[3/4] md:aspect-auto md:h-80 bg-[var(--c-surface)] cursor-pointer" data-library-card-activate="" title={artist.name + ' · 상세·수정 열기'} onClick={handleClick}>
         {thumb ? (
           <ArtistImage path={thumb.path} className="w-full h-full" />
         ) : (
@@ -603,7 +603,7 @@ const ArtistCard = observer(({
 // ─── 그리드 끝 "새 작가 추가" 카드 ───
 const AddArtistCard = ({ onClick }: { onClick: () => void }) => (
   <button
-    className="flex-none w-[calc(50%-8px)] md:w-60 self-stretch min-h-[16rem] rounded-lg border-2 border-dashed line-color flex flex-col items-center justify-center text-faint"
+    className="flex-none w-[calc(50%-8px)] md:w-64 aspect-[3/4] md:aspect-auto md:min-h-96 self-stretch rounded-lg border-2 border-dashed line-color flex flex-col items-center justify-center text-faint"
     onClick={onClick}
   >
     <FaPlus size={30} />

@@ -28,16 +28,16 @@ const read = (rel: string) =>
   fs.readFileSync(path.join(__dirname, '../../componenets', rel), 'utf-8').replace(/\r\n/g, '\n');
 
 describe('% → 크기 규칙', () => {
-  test('25·50·75% = 종전 세 단계와 정확히 같다', () => {
-    expect([25, 50, 75].map(sceneCardMinWidthPx)).toEqual([180, 240, 320]);
-    expect([25, 50, 75].map(sceneCardFixedHeightPx)).toEqual([192, 256, 384]); // h-48·h-64·h-96
+  test('25·50·75% = 글로벌 프리셋 기준(50% = 256×384) 세 단계와 같다', () => {
+    expect([25, 50, 75].map(sceneCardMinWidthPx)).toEqual([192, 256, 336]);
+    expect([25, 50, 75].map(sceneCardFixedHeightPx)).toEqual([256, 384, 512]);
     expect([25, 50, 75].map(imageGridCellPx)).toEqual([200, 400, 500]); // S·M·L
   });
   test('양 끝 — 같은 기울기로 연장, 하한에서 멈춤', () => {
-    expect(sceneCardMinWidthPx(0)).toBe(150); // 연장 120 → 하한 150
-    expect(sceneCardMinWidthPx(100)).toBe(400);
+    expect(sceneCardMinWidthPx(0)).toBe(150); // 연장 128 → 하한 150
+    expect(sceneCardMinWidthPx(100)).toBe(416);
     expect(sceneCardFixedHeightPx(0)).toBe(128);
-    expect(sceneCardFixedHeightPx(100)).toBe(512);
+    expect(sceneCardFixedHeightPx(100)).toBe(640);
     expect(imageGridCellPx(0)).toBe(120); // 연장 0 → 하한 120
     expect(imageGridCellPx(100)).toBe(600);
   });
@@ -47,7 +47,7 @@ describe('% → 크기 규칙', () => {
       expect(sceneCardFixedHeightPx(p)).toBeGreaterThan(sceneCardFixedHeightPx(p - 1));
       expect(imageGridCellPx(p)).toBeGreaterThanOrEqual(imageGridCellPx(p - 1));
     }
-    expect(sceneCardMinWidthPx(60)).toBe(272);
+    expect(sceneCardMinWidthPx(60)).toBe(288);
     expect(imageGridCellPx(40)).toBe(320);
   });
   test('범위 밖·이상한 값 정리', () => {
@@ -215,9 +215,10 @@ describe('씬 카드 크기 연결(SceneQueueControl)', () => {
     expect(src).toContain('effectiveSceneCardPercent(appState.sceneCardSizePercent, hasPanel)');
     expect(src).toContain('<SceneCardGrid ref={gridContainerRef} hasPanel={!!showPannel}>');
   });
-  test('열 최소 폭 = 규칙 함수, 모바일 최소 트랙은 종전 그대로', () => {
+  test('열 폭 = PC 는 고정 열 폭(글로벌 프리셋 기준), 모바일 최소 트랙은 종전 그대로', () => {
     expect(src).toContain("const gridMinTrack = isMobile ? 'min(9rem, 50%)' : `${sceneCardMinWidthPx(percent)}px`;");
-    expect(src).toContain('gridTemplateColumns: `repeat(auto-fill, minmax(${gridMinTrack}, 1fr))`');
+    expect(src).toContain('repeat(auto-fill, minmax(${gridMinTrack}, 1fr))');
+    expect(src).toContain('repeat(auto-fill, ${gridMinTrack})');
   });
   test('「높이 고정」 = 그리드가 넘기는 CSS 변수(Tailwind 클래스 글자와 상수가 같은 이름), 모바일 카드는 정사각형 그대로', () => {
     expect(src).toContain(`'w-full h-[var(${SCENE_CARD_FIXED_HEIGHT_VAR})]'`);

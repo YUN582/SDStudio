@@ -259,3 +259,20 @@ test('refreshing the gallery list without changing the selected file does not re
   expect(mockImageEvents.fetchImage).toHaveBeenCalledTimes(initialCalls);
   expect(screen.getByText(`prompt:${paths[0]}`)).toBeDefined();
 });
+
+test('switching images keeps previous detail info and apply button stable until next image finishes loading, and action bar has no separator', async () => {
+  let finishNext!: (value: string) => void;
+  mockImageEvents.fetchImage.mockImplementation((path: string) => path === paths[1]
+    ? new Promise<string>((resolve) => { finishNext = resolve; }) : Promise.resolve(dataFor(path)));
+  const view = mount(); await loaded(paths[0]);
+  const toolbar = screen.getByRole('navigation', { name: '이미지 작업' });
+  expect(toolbar.querySelector('.sds-detail-sep')).toBeNull();
+  fireEvent.keyDown(window, { key: 'ArrowRight' });
+  await waitFor(() => expect(finishNext).toBeDefined());
+  // 전환 로딩 중에도 이전 생성 설정이 유지되어 파일 항목이 상단으로 튀지 않고, 생성 설정 적용 버튼도 비활성화되지 않는다.
+  const pane = view.container.querySelector('[data-detail-info-pane]') as HTMLElement;
+  expect(pane.querySelector('[data-detail-group="settings"]')).not.toBeNull();
+  expect((within(toolbar).getByRole('button', { name: '생성 설정 적용' }) as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => finishNext(dataFor(paths[1])));
+  await loaded(paths[1]);
+});

@@ -1289,20 +1289,18 @@ export const ResultDetailView = observer(
     useLayoutEffect(() => {
       onViewedImageChange?.(viewedImagePath);
     }, [onViewedImageChange, viewedImagePath]);
-    const [filename, setFilename] = useState<string>(
-      viewedImagePath?.split('/').pop() ?? '',
-    );
-    const [image, setImage] = useState<string | undefined>(undefined);
-    const [imageLoadFailed, setImageLoadFailed] = useState(false);
-    const [upscalePreparing, setUpscalePreparing] = useState(false);
-    const [upscaleInfo, setUpscaleInfo] = useState<{ path: string; cost?: number; error?: string }>();
-    const [imageSize, setImageSize] = useState<{ path: string; width: number; height: number }>();
-    const [detailMeta, setDetailMeta] = useState<{
+    const [loaded, setLoaded] = useState<{
       path: string;
+      image: string;
+      filename: string;
+      pixel?: { width: number; height: number };
+      upscale?: { cost?: number; error?: string };
       job?: ImportableMetadata;
       format?: string;
       bytes?: number;
     }>();
+    const [imageLoadFailed, setImageLoadFailed] = useState(false);
+    const [upscalePreparing, setUpscalePreparing] = useState(false);
     const [imageRetryRevision, setImageRetryRevision] = useState(0);
     const watchedImages = useRef(new Set<string>());
     // 모바일 좌우 스와이프로 이미지 전환. 시작 좌표를 저장해 끝점과 비교한다.
@@ -1332,46 +1330,50 @@ export const ResultDetailView = observer(
       let request = 0;
       const fetchImage = async () => {
         const currentRequest = ++request;
-        setImage(undefined);
-        setImageLoadFailed(false);
-        setUpscaleInfo(undefined);
-        setImageSize(undefined);
-        setDetailMeta(undefined);
         try {
           const fullImage = await imageService.fetchImage(viewedImagePath);
           if (currentRequest !== request) return;
           if (!fullImage) {
             throw new Error('이미지 파일을 찾을 수 없습니다.');
           }
-          setImage(fullImage);
           const base64Image = dataUriToBase64(fullImage);
           const format = imageExtFromBase64(base64Image);
           const bytes = base64ByteLength(base64Image);
-          void getImageDimensions(base64Image).then(({ width, height }) => {
-            if (currentRequest !== request) return;
-            setImageSize({ path: viewedImagePath, width, height });
-            const cost = estimateNaiUpscaleCost(width, height);
-            setUpscaleInfo({ path: viewedImagePath, cost });
-          }).catch((e) => {
-            if (currentRequest === request) setUpscaleInfo({ path: viewedImagePath, error: e?.message ?? '이미지 확인 실패' });
-          });
-          try {
-            const job = await extractPromptDataFromBase64(base64Image);
-            if (currentRequest !== request) return;
-            setDetailMeta({ path: viewedImagePath, job: job ?? undefined, format, bytes });
-          } catch (e: any) {
-            if (currentRequest !== request) return;
-            setDetailMeta({ path: viewedImagePath, job: undefined, format, bytes });
+          const [dimRes, jobRes] = await Promise.allSettled([
+            getImageDimensions(base64Image),
+            extractPromptDataFromBase64(base64Image),
+          ]);
+          if (currentRequest !== request) return;
+          const pixel = dimRes.status === 'fulfilled'
+            ? { width: dimRes.value.width, height: dimRes.value.height }
+            : undefined;
+          let upscale: { cost?: number; error?: string };
+          if (dimRes.status === 'fulfilled') {
+            try {
+              upscale = { cost: estimateNaiUpscaleCost(dimRes.value.width, dimRes.value.height) };
+            } catch (err: any) {
+              upscale = { error: err?.message ?? '이미지 확인 실패' };
+            }
+          } else {
+            upscale = { error: (dimRes.reason as any)?.message ?? '이미지 확인 실패' };
           }
-          setFilename(viewedImagePath.split('/').pop()!);
+          const job = jobRes.status === 'fulfilled' ? (jobRes.value ?? undefined) : undefined;
+          setImageLoadFailed(false);
+          setLoaded({
+            path: viewedImagePath,
+            image: fullImage,
+            filename: viewedImagePath.split('/').pop() ?? '',
+            pixel,
+            upscale,
+            job,
+            format,
+            bytes,
+          });
         } catch (e: any) {
           if (currentRequest !== request) return;
           console.log(e);
-          setImage(undefined);
+          setLoaded(undefined);
           setImageLoadFailed(true);
-          setImageSize(undefined);
-          setDetailMeta(undefined);
-          setFilename('');
         }
       };
       const onImageInvalidated = (event: Event) => {
@@ -1524,21 +1526,21 @@ export const ResultDetailView = observer(
         currentFilename,
       )
     );
-    const currentDetailMeta = detailMeta?.path === viewedImagePath ? detailMeta : undefined;
-    const currentPixel = imageSize?.path === viewedImagePath ? imageSize : undefined;
+    const displayed = loaded;
+    const displayedScene = displayed ? (imageOwners?.get(displayed.path) ?? sourceScene) : scene;
     const detailInfo = useMemo(
       () =>
-        buildImageDetailInfo(currentDetailMeta?.job, {
-          filename: currentFilename ?? filename,
-          pixel: currentPixel ? { width: currentPixel.width, height: currentPixel.height } : undefined,
-          format: currentDetailMeta?.format,
-          bytes: currentDetailMeta?.bytes,
-          account: currentFilename ? scene.imageAccounts?.[currentFilename] : undefined,
+        buildImageDetailInfo(displayed?.job, {
+          filename: displayed?.filename ?? currentFilename ?? '',
+          pixel: displayed?.pixel,
+          format: displayed?.format,
+          bytes: displayed?.bytes,
+          account: displayed?.filename ? displayedScene.imageAccounts?.[displayed.filename] : undefined,
           accountLabel: BOOST_TEXT.accountLabel,
-          sourceScene: scene.type === 'inpaint' ? scene.sceneRef : undefined,
+          sourceScene: displayedScene.type === 'inpaint' ? displayedScene.sceneRef : undefined,
           workflowTitle: (t) => workFlowService.getDef(t)?.title,
         }),
-      [currentDetailMeta, currentPixel, currentFilename, filename, scene],
+      [displayed, displayedScene, currentFilename],
     );
 
     if (!paths[selectedIndex]) return null;
@@ -1598,14 +1600,23 @@ export const ResultDetailView = observer(
       appState.copyImagesToClipboard([paths[selectedIndex]]);
     };
     const actLoadSettings = () => {
-      if (!image) return;
-      appState.openExternalImage(
-        dataUriToBase64(image),
-        session === appState.curSession ? scene : undefined,
-        session === appState.curSession ? viewedImagePath : undefined,
-      );
+      if (!viewedImagePath || imageLoadFailed) return;
+      const openWith = (dataUri: string) => {
+        appState.openExternalImage(
+          dataUriToBase64(dataUri),
+          session === appState.curSession ? scene : undefined,
+          session === appState.curSession ? viewedImagePath : undefined,
+        );
+      };
+      if (loaded?.path === viewedImagePath) {
+        openWith(loaded.image);
+        return;
+      }
+      void imageService.fetchImage(viewedImagePath).then((data) => {
+        if (data) openWith(data);
+      });
     };
-    const currentUpscaleInfo = upscaleInfo?.path === viewedImagePath ? upscaleInfo : undefined;
+    const currentUpscaleInfo = loaded?.path === viewedImagePath ? loaded.upscale : undefined;
     const upscaleTitle = currentUpscaleInfo?.error ?? '가로·세로 2배 · 원본 유지 · Anlas 사용';
     const upscaleDisabled = upscalePreparing || !currentUpscaleInfo?.cost;
     const upscaleLabel = upscalePreparing
@@ -1639,18 +1650,21 @@ export const ResultDetailView = observer(
 
     const wideLayout = !v2 && !isMobile && bodyWidth >= 680;
     const wideCols = detailWideColumns(bodyWidth, false);
-    const metaNotReady = imageLoadFailed || !currentDetailMeta;
+    const metaNotReady = imageLoadFailed || !loaded;
 
-    const renderInfo = (part: 'all' | 'prompt' | 'detail') => (
-      <div data-image-detail-text="" data-selectable-text tabIndex={0}>
-        <ImageDetailInfo
-          info={detailInfo}
-          job={currentDetailMeta?.job}
-          part={part}
-          loadFailed={metaNotReady}
-        />
-      </div>
-    );
+    const renderInfo = (part: 'all' | 'prompt' | 'detail') => {
+      if (!loaded && !imageLoadFailed) return null;
+      return (
+        <div data-image-detail-text="" data-selectable-text tabIndex={0}>
+          <ImageDetailInfo
+            info={detailInfo}
+            job={loaded?.job}
+            part={part}
+            loadFailed={metaNotReady}
+          />
+        </div>
+      );
+    };
 
     const stepImage = (delta: number) => {
       if (paths.length < 2) return;
@@ -1746,7 +1760,7 @@ export const ResultDetailView = observer(
       ? [
           { key: 'download', name: '다운로드', icon: <ActionIcon id="download" />, onTap: () => void actDownloadSingle() },
           { key: 'delete', name: '삭제', icon: <ActionIcon id="delete" />, tone: 'danger', onTap: actDeleteFile },
-          { key: 'settings', name: '설정 추출', icon: <ActionIcon id="gen-settings" />, onTap: actLoadSettings, disabled: !image },
+          { key: 'settings', name: '설정 추출', icon: <ActionIcon id="gen-settings" />, onTap: actLoadSettings, disabled: imageLoadFailed || !viewedImagePath },
           {
             key: 'fav',
             name: '즐겨찾기',
@@ -1847,9 +1861,9 @@ export const ResultDetailView = observer(
           stepImage(dx < 0 ? 1 : -1);
         }}
       >
-        {image ? (
+        {loaded?.image ? (
           <img
-            src={image}
+            src={loaded.image}
             draggable={false}
             onContextMenu={(e) => {
               show({
@@ -1982,7 +1996,7 @@ export const ResultDetailView = observer(
               <button
                 type="button"
                 className="round-button back-sky"
-                disabled={!image}
+                disabled={imageLoadFailed || !viewedImagePath}
                 onClick={actLoadSettings}
               >
                 <ActionIcon id="gen-settings" size={13} />
@@ -1999,7 +2013,6 @@ export const ResultDetailView = observer(
                 </button>
               ))}
             </div>
-            <span className="sds-detail-sep" aria-hidden="true" />
             <div className="sds-detail-action-group" data-detail-button-group="file">
               <button
                 type="button"

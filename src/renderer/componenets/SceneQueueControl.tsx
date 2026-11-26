@@ -565,7 +565,7 @@ export const SceneCell = observer(
     const tabType = scene.type === 'inpaint' ? 'inpaint' : 'scene';
     const cardStyle = curSession.sceneCardStyle?.[tabType] ?? 'portrait';
     const aspectMap: Record<string, string> = {
-      portrait: 'aspect-[3/4]',
+      portrait: 'aspect-[2/3]',
       square: 'aspect-square',
       landscape: 'aspect-[4/3]',
     };
@@ -1176,7 +1176,7 @@ export const SceneCell = observer(
         id={`scene-cell-${scene.type}-${scene.name}`}
         data-history-drop-scene={scene.name}
         data-history-drop-type={scene.type}
-        className={`${disableHover ? '' : 'group '}relative z-0 ${isMobile ? 'm-[5px]' : 'm-[8.5px]'} p-1 rounded-lg bg-[var(--c-surface-2)] border-2 ${
+        className={`${disableHover ? '' : 'group '}relative z-0 ${isMobile ? 'm-[5px] p-1' : ''} rounded-lg overflow-hidden bg-[var(--c-surface-2)] border-2 ${
           currentFavoriteCount > 0
             ? 'border-yellow-400 '
             : isSelected
@@ -1185,7 +1185,7 @@ export const SceneCell = observer(
         }${(isDragging || isReordering) ? 'opacity-30 no-touch ' : ''}${
           (isOver || isDropTarget) ? ' ring-2 ring-sky-500' : ''
         }${isSelected ? ' ring-2 ring-sky-400' : ''}${focusRing}`}
-        style={style}
+        style={ownFixedHeightStyle ? { ...ownFixedHeightStyle, ...style } : style}
         ref={cardRef}
         onContextMenu={onContext}
         onMouseEnter={() => {
@@ -1213,7 +1213,7 @@ export const SceneCell = observer(
             {seedGroupBadge}
             {combinationQuickToggle}
             <div
-              className={`relative image-cell overflow-hidden rounded-md ${imageCellClass}`}
+              className={`relative image-cell overflow-hidden ${isMobile ? 'rounded-md ' : ''}${imageCellClass}`}
             >
               {(previewImage || image) && (
                 <div className="relative w-full h-full">
@@ -1297,9 +1297,11 @@ const SceneCardSizeControl = observer(() => (
 const SceneCardGrid = observer(
   forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { hasPanel: boolean; children: ReactNode }>(({ hasPanel, children, ...gridProps }, ref) => {
     const percent = effectiveSceneCardPercent(appState.sceneCardSizePercent, hasPanel);
-    // 모바일도 CSS grid(2026-09-20): 최소 트랙이 min(9rem, 50%) 라 아무리 좁아도 2열이
-    // 확보되고, 넓으면 열이 늘며, 1fr 로 폭을 채워 좌우 대칭이 된다.
+    // 모바일은 반응형 그리드(min(9rem, 50%)~1fr), PC는 글로벌 프리셋 기준과 같은 고정 열 폭(기본 50% = 256px) + gap 1rem.
     const gridMinTrack = isMobile ? 'min(9rem, 50%)' : `${sceneCardMinWidthPx(percent)}px`;
+    const gridCols = isMobile
+      ? `repeat(auto-fill, minmax(${gridMinTrack}, 1fr))`
+      : `repeat(auto-fill, ${gridMinTrack})`;
     return (
       <div
         {...gridProps}
@@ -1307,7 +1309,10 @@ const SceneCardGrid = observer(
         className="overflow-auto w-full content-start relative outline-none"
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(auto-fill, minmax(${gridMinTrack}, 1fr))`,
+          gridTemplateColumns: gridCols,
+          ...(isMobile
+            ? {}
+            : { gap: '1rem', paddingTop: '0.25rem', paddingLeft: '0.25rem', paddingRight: '0.25rem' }),
           alignItems: 'start',
           alignContent: 'start',
           ...(isMobile
@@ -3470,7 +3475,7 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
                     sessionService.markDirty(curSession.name);
                   }}
                 >
-                  <option value="portrait">세로 3:4</option>
+                  <option value="portrait">세로 2:3</option>
                   <option value="square">정사각형</option>
                   <option value="landscape">가로 4:3</option>
                   <option value="fixedHeight">높이 고정</option>
@@ -3548,21 +3553,36 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
                     검색 중·선택 모드·파생 목록(filterFunc)에서는 숨긴다. 씬 카드가 아니므로 scene-cell- id 를 쓰지 않는다. */}
                 {!sceneSearchQuery.trim() &&
                   !appState.sceneSelectionMode && appState.selectedSceneCount(type)===0 &&
-                  !filterFunc && (
-                    <button
-                      type="button"
-                      data-add-scene-card=""
-                      className={`add-slot ${isMobile ? 'm-[5px]' : appState.classicSceneCard ? 'm-[10.5px]' : 'm-[8.5px]'} ${
-                        appState.classicSceneCard ? 'rounded-none ' : ''
-                      }flex flex-col items-center justify-center gap-1.5 cursor-pointer select-none`}
-                      // 폭·높이 모두 칸에 맞춘다(같은 줄 씬 카드와 같은 높이). 혼자 줄에 놓이면 aspectRatio 가 높이를 정한다.
-                      style={{ alignSelf: 'stretch', justifySelf: 'stretch', aspectRatio: '1 / 1.15' }}
-                      onClick={addScene}
-                    >
-                      <ActionIcon id="add-scene" size={22} />
-                      <span className="text-sm">새 씬</span>
-                    </button>
-                  )}
+                  !filterFunc && (() => {
+                    const addCardStyle = curSession.sceneCardStyle?.[type] ?? 'portrait';
+                    const addCardShape: React.CSSProperties = isMobile
+                      ? { aspectRatio: '1 / 1.15' }
+                      : addCardStyle === 'fixedHeight'
+                        ? { minHeight: `var(${SCENE_CARD_FIXED_HEIGHT_VAR})` }
+                        : {
+                            aspectRatio:
+                              addCardStyle === 'square'
+                                ? '1 / 1'
+                                : addCardStyle === 'landscape'
+                                  ? '4 / 3'
+                                  : '2 / 3',
+                          };
+                    return (
+                      <button
+                        type="button"
+                        data-add-scene-card=""
+                        className={`add-slot ${isMobile ? 'm-[5px]' : appState.classicSceneCard ? 'm-[10.5px]' : ''} ${
+                          appState.classicSceneCard ? 'rounded-none ' : 'border-2 '
+                        }flex flex-col items-center justify-center gap-1.5 cursor-pointer select-none`}
+                        // 폭·높이 모두 칸에 맞춘다(같은 줄 씬 카드와 같은 높이). 혼자 줄에 놓이면 현재 카드 비율(기본 2:3 = 글로벌 프리셋 기준)을 따른다.
+                        style={{ alignSelf: 'stretch', justifySelf: 'stretch', ...addCardShape }}
+                        onClick={addScene}
+                      >
+                        <ActionIcon id="add-scene" size={22} />
+                        <span className="text-sm">새 씬</span>
+                      </button>
+                    );
+                  })()}
                 {/* 빈 목록 안내 — 「새 씬」 카드 뒤에 두어 카드가 첫 칸(실제 씬이 생길 자리)에 놓이게 한다(2026-11-03, 사용자 지적:
                     안내가 첫 줄을 차지해 카드가 둘째 줄로 밀렸음). 카드가 숨는 경우(검색·파생 목록)는 안내만 남는다. */}
                 {renderedScenes.length === 0 && (

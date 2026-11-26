@@ -70,12 +70,11 @@ export default function SceneQueueMenu({ children, session, type, selectedOnly, 
     setOpen(false);
     if (session) void addScenesToQueue(session, type, selectedOnly, filter);
   };
-  return <span ref={anchor} className="inline-flex items-center">
+  return <span ref={anchor} className="sds-split-btn inline-flex items-center">
     {children}
-    {/* 분할 화살표 ▾(2026-10-04): PC 는 폭 최소 28px(min-w-7·좌우 6px)·높이 32 — 18px 이던 폭이 너무 좁아 누르기 어려웠다.
-        모바일은 .round-button 의 36×36 최소 크기 그대로. 씬 툴바·하단 예약 도크가 이 한 곳을 같이 쓴다. SPEC_GUIDE §2. */}
+    {/* 분할 화살표 ▾: 앞의 예약 버튼과 하나의 분할 버튼으로 이어진다. 씬 툴바·하단 예약 도크가 이 한 곳을 같이 쓴다. */}
     <Tooltip content="부분 일괄 예약 옵션">
-    <button ref={toggle} type="button" className="round-button back-sky px-1 md:px-1.5 md:min-w-7 h-8"
+    <button ref={toggle} type="button" className="round-button sds-split-btn-toggle back-sky"
       aria-label={customItems?'현재 작업 예약 옵션':'부분 일괄 예약 옵션'} aria-expanded={open} disabled={!session||disabled}
       onClick={() => { focusRequested.current = !open; setOpen(!open); }}
       onKeyDown={(e) => {
