@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 
 const mockContexts: Record<string, any> = {};
-const mockBackend = { openImageEditor: jest.fn(), watchImage: jest.fn() };
+const mockBackend = { openImageEditor: jest.fn(), watchImage: jest.fn(), copyImageToClipboard: jest.fn() };
 const mockImages = { fetchImage: jest.fn() };
 const mockHistory = { resolve: jest.fn() };
 const mockState = {
@@ -75,7 +75,7 @@ beforeEach(() => {
   mockState.curSession = {};
   mockContexts.gallary_image = { path: ['source.png'], scene };
   mockContexts.image = { path: 'source.png', scene };
-  mockContexts.history_image = { entry };
+  mockContexts.history_image = { entry, onOpenImage: jest.fn() };
   mockBackend.openImageEditor.mockResolvedValue(undefined);
   mockBackend.watchImage.mockResolvedValue(undefined);
   mockImages.fetchImage.mockResolvedValue('data:image/png;base64,metadata-base64');
@@ -133,4 +133,20 @@ test.each(imageMenus)('%s adds a global preset once', async (name) => {
   fireEvent.click(mountMenu(name).getByRole('menuitem', { name: '글로벌 프리셋 추가' }));
   await waitFor(() => expect(mockState.saveImageAsGlobalPreset).toHaveBeenCalledTimes(1));
   expect(mockState.saveImageAsGlobalPreset).toHaveBeenCalledWith('source.png');
+});
+
+test('history image navigation reuses the card preview action', () => {
+  fireEvent.click(mountMenu('history_image').getByRole('menuitem', { name: '이미지로 이동' }));
+  expect(mockContexts.history_image.onOpenImage).toHaveBeenCalledTimes(1);
+});
+
+test('an already open history image does not offer a dead navigation action', () => {
+  delete mockContexts.history_image.onOpenImage;
+  expect(mountMenu('history_image').queryByRole('menuitem', { name: '이미지로 이동' })).toBeNull();
+});
+
+test.each(imageMenus)('%s copies image pixels to the OS clipboard', async (name) => {
+  fireEvent.click(mountMenu(name).getByRole('menuitem', { name: '이미지 복사' }));
+  await waitFor(() => expect(mockBackend.copyImageToClipboard).toHaveBeenCalledWith('source.png'));
+  expect(mockBackend.copyImageToClipboard).toHaveBeenCalledTimes(1);
 });

@@ -163,7 +163,7 @@ const HistoryImageCell = observer(
         onContextMenu={(e) => {
           show({
             event: e,
-            props: { ctx: { type: 'history_image', entry } },
+            props: { ctx: { type: 'history_image', entry, onOpenImage: onClick } },
           });
         }}
       >

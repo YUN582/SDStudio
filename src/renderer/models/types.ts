@@ -942,6 +942,7 @@ export interface StyleContextAlt {
 export interface HistoryImageContextAlt {
   type: 'history_image';
   entry: import('./ImageHistoryService').GenerationHistoryEntry;
+  onOpenImage?: () => void;
 }
 
 export type ContextAlt = ImageContextAlt | SceneContextAlt | StyleContextAlt;

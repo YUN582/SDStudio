@@ -992,6 +992,10 @@ export const AppContextMenu = observer(() => {
       void historyImageSettings(ctx);
     } else if (id === 'save-global') {
       void appState.saveImageAsGlobalPreset(ctx.entry.path);
+    } else if (id === 'open-image') {
+      ctx.onOpenImage?.();
+    } else if (id === 'clipboard') {
+      void backend.copyImageToClipboard(ctx.entry.path);
     } else if (id === 'goto-scene') {
       imageHistoryService.navigateTo(ctx.entry, { openGrid: false });
     } else if (id === 'open-grid') {
@@ -1187,7 +1191,7 @@ export const AppContextMenu = observer(() => {
         </Item>
         {!isMobile && (
           <Item id="clipboard" onClick={handleImageItemClick2}>
-            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>클립보드로 이미지 복사</MenuItemLabel>
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>이미지 복사</MenuItemLabel>
           </Item>
         )}
         {!isMobile && (
@@ -1230,7 +1234,7 @@ export const AppContextMenu = observer(() => {
         </Item>
         {!isMobile && (
           <Item id="clipboard" onClick={handleImageItemClick}>
-            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>클립보드로 이미지 복사</MenuItemLabel>
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>이미지 복사</MenuItemLabel>
           </Item>
         )}
         {!isMobile && (
@@ -1268,6 +1272,9 @@ export const AppContextMenu = observer(() => {
           </Item>
         )}
         <Separator />
+        <Item id="open-image" onClick={handleHistoryItemClick} hidden={({ props }) => !props?.ctx?.onOpenImage}>
+          <MenuItemLabel icon={<FaExpand size={I} />}>이미지로 이동</MenuItemLabel>
+        </Item>
         <Item id="goto-scene" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="scene-find" size={I} />}>해당 씬으로 이동</MenuItemLabel>
         </Item>
@@ -1283,6 +1290,11 @@ export const AppContextMenu = observer(() => {
         <Item id="download" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="download" size={I} />}>이미지 다운로드</MenuItemLabel>
         </Item>
+        {!isMobile && (
+          <Item id="clipboard" onClick={handleHistoryItemClick}>
+            <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>이미지 복사</MenuItemLabel>
+          </Item>
+        )}
         <Item id="save-global" onClick={handleHistoryItemClick}>
           <MenuItemLabel icon={<ActionIcon id="add-scene" size={I} />}>글로벌 프리셋 추가</MenuItemLabel>
         </Item>
