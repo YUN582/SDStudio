@@ -83,7 +83,11 @@ export async function createImportedI2I(
   const owner = source?.scene && session.getScene(source.scene.type, source.scene.name) === source.scene ? source.scene : undefined;
   if (owner && source?.path && metadata) {
     let created: InpaintScene | undefined;
-    await openSourceVariant(session, owner, 'SDI2I', source.path, work => { created = work; });
+    await openSourceVariant(session, owner, 'SDInpaint', source.path, work => {
+      work.preset.strength = 0.6;
+      work.preset.mask = '';
+      created = work;
+    });
     return created;
   }
   const selected = session.presets.get(target.type)?.find(preset => preset.name === target.name);
@@ -108,10 +112,10 @@ export async function createImportedI2I(
   const parent = owner?.type === 'scene' ? owner.name : owner?.sceneRef;
   const linked = !!(owner && source?.path);
   const work = InpaintScene.fromJSON({
-    type: 'inpaint', name, workflowType: 'SDI2I',
-    preset: workFlowService.createPreset('SDI2I', settings as any),
+    type: 'inpaint', name, workflowType: 'SDInpaint',
+    preset: workFlowService.createPreset('SDInpaint', settings as any),
     meta: { [SINGLE_IMAGE_EDIT]: true },
-    ...inpaintSceneResolutionFields('SDI2I', owner ?? { resolution: 'portrait' } as GenericScene, resolution),
+    ...inpaintSceneResolutionFields('SDInpaint', owner ?? { resolution: 'portrait' } as GenericScene, resolution),
     sceneRef: linked ? parent : undefined,
     sourceImage: linked ? source!.path!.split('/').pop() : undefined,
     sourceInpaint: linked && owner?.type === 'inpaint' ? owner.name : undefined,
@@ -119,6 +123,9 @@ export async function createImportedI2I(
     imageMap: [], mains: [], slots: [],
   });
   if (!work) throw new Error('I2I 작업을 만들지 못했습니다.');
+  // The unified editor sends I2I without a mask, and inpaints once a mask is drawn.
+  work.preset.strength = 0.6;
+  work.preset.mask = '';
   work.preset.image = await imageService.storeWorkImage(session, work, 'input', image);
   checkTarget(session, target);
   if (session.inpaints.has(name)) throw new Error('같은 이름의 작업이 추가되었습니다. 다시 시도해 주세요.');

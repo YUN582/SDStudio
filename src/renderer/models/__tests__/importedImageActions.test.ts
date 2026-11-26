@@ -8,7 +8,7 @@ const services = {
   imageService: { storeVibeImage: storedVibe, storeReferenceImageWithSize: storedReference, storeWorkImage: storedWork },
   workFlowService: {
     getDef: () => ({ sharedVars: [{ name: 'vibes' }, { name: 'characterReferences' }] }),
-    createPreset: jest.fn((_type: string, values: any) => ({ ...values, type: 'SDI2I' })),
+    createPreset: jest.fn((type: string, values: any) => ({ ...values, type })),
     presetFromJSON: (value: any) => ({ ...value, toJSON() { return value; } }),
     buildShared: () => ({ vibes: [], characterReferences: [] }),
   },
@@ -63,6 +63,8 @@ test('changing project during a write cannot modify either project settings', as
 
 test('I2I without metadata copies current settings into exactly one work and stores an owned input', async () => {
   const work = (await createImportedI2I(session, 'PIXELS'))!;
+  expect(work.workflowType).toBe('SDInpaint');
+  expect(work.preset).toMatchObject({ type: 'SDInpaint', mask: '', strength: 0.6 });
   expect(work.preset).toMatchObject({ prompt: 'current front, current extra, current back', uc: 'current negative', image: 'owned-input.png' });
   expect(work.preset.characterPrompts.map((p: any) => p.prompt)).toEqual(['enabled character']);
   expect(work.slots).toHaveLength(0);
@@ -81,10 +83,11 @@ test('metadata is used for a new external work without overwriting current gener
 
 test('known generated image reuses the original one-combination flow', async () => {
   const source = new Scene(); source.name = 'alpha'; session.addScene(source);
-  const expected = { name: 'existing-flow-work' };
+  const expected = { name: 'existing-flow-work', preset: {} };
   openSource.mockImplementationOnce(async (_s, _o, _t, _p, open) => open(expected));
   expect(await createImportedI2I(session, 'PIXELS', { prompt: 'image prompt' } as any, { scene: source, path: 'outs/alpha/image.png' })).toBe(expected);
-  expect(openSource).toHaveBeenCalledWith(session, source, 'SDI2I', 'outs/alpha/image.png', expect.any(Function));
+  expect(openSource).toHaveBeenCalledWith(session, source, 'SDInpaint', 'outs/alpha/image.png', expect.any(Function));
+  expect(expected.preset).toEqual({ strength: 0.6, mask: '' });
   expect(storedWork).not.toHaveBeenCalled();
 });
 
