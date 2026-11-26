@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import MobileKeyboardChip from '../../componenets/MobileKeyboardChip';
+import MobileKeyboardChip, { chipKeyboardUp, resetChipKeyboardTrack, caretChipAllowed } from '../../componenets/MobileKeyboardChip';
 import { disposeFocusedPromptEditor, setFocusedPromptEditor, type FocusedPromptEditor } from '../promptEditorFocus';
 
 jest.mock('../index', () => ({ isMobile: false }));
@@ -8,7 +8,8 @@ jest.mock('../util', () => ({ buildDanbooruSearchUrl: (text: string) => text ? '
 let editor: FocusedPromptEditor;
 let field: HTMLTextAreaElement;
 beforeEach(() => {
-  field = document.createElement('textarea'); field.value = 'cat, dog'; document.body.appendChild(field);
+  resetChipKeyboardTrack();
+  field = document.createElement('textarea'); field.className = 'prompt-full'; field.value = 'cat, dog'; document.body.appendChild(field);
   editor = { element: field, getCaretWeight: () => ({ inner: 'cat', weight: 1 }) as any,
     adjustWeight: jest.fn(), toggleComment: jest.fn(), isCaretInComment: () => false };
 });
@@ -44,4 +45,29 @@ test('an empty caret segment does not create a find-only chip', async () => {
   editor.getCaretWeight = () => undefined;
   render(<MobileKeyboardChip onSearch={() => {}} />); await focus(4);
   expect(document.querySelector('[data-kbd-chip]')).toBeNull();
+});
+
+test.each([[false, false, false], [false, true, true], [true, false, true], [true, true, true]])('caret chip keyboard=%s expanded=%s visibility=%s', (keyboard, expanded, expected) => {
+  expect(caretChipAllowed(keyboard, expanded)).toBe(expected);
+});
+
+test('closing the keyboard hides a caret chip outside the expanded editor', async () => {
+  field.classList.remove('prompt-full');
+  render(<MobileKeyboardChip onSearch={() => {}} />); await focus(1);
+  expect(document.querySelector('[data-kbd-chip=adjust]')).toBeNull();
+});
+
+test('keyboard shrinking and rotation update the visibility reference', () => {
+  const height = window.innerHeight, width = window.innerWidth;
+  try {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+    resetChipKeyboardTrack();expect(chipKeyboardUp()).toBe(false);
+    window.innerHeight = 600;expect(chipKeyboardUp()).toBe(true);
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width + 100 });
+    expect(chipKeyboardUp()).toBe(false);
+  } finally {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+    resetChipKeyboardTrack();
+  }
 });
