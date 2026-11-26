@@ -260,7 +260,7 @@ describe('배선 소스 계약', () => {
     expect(rv).not.toContain("tierItem('edit'");
     expect(rv).not.toContain("{!isMobile ? '씬 편집' : <ActionIcon id=\"edit\" />}");
     expect(rv).toContain("if (mode === 'edit') onEdit(scene);");
-    expect(rv).toContain('const gridInteractive = activeView && !coveredByEditor;');
+    expect(rv).toContain('const gridInteractive = activeView && !coveredByEditor && !captureLists;');
     expect(rv).toContain("if (!gridInteractive || !action?.startsWith('image-')) return;");
     expect(rv).toContain('const canHandleGridDelete = () => gridInteractive');
     expect(rv).toContain('if (!gridInteractive || selectedImageIndex != null) return;');
