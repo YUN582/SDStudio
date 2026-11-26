@@ -90,6 +90,8 @@ export interface ShortcutGateState {
   imageGridFocusable: boolean;
   resultViewerOpen: boolean;
   dialogCount: number;
+  /** ModalOverlay dialogs own their keyboard input; omitted means none. */
+  modalOverlayCount?: number;
   floatViewCount: number;
   /** 열린 FloatView 중 allowUndo(전역 되돌리기 허용) 창 수 */
   undoFloatViewCount: number;
@@ -110,6 +112,7 @@ export function isShortcutActionActive(
   action: ShortcutAction,
   st: ShortcutGateState,
 ): boolean {
+  if ((st.modalOverlayCount ?? 0) > 0) return false;
   if (st.historyPreviewOpen) {
     // 미리 보기에서 누른 즐겨찾기 전환을 Ctrl+Z 로 되돌릴 수 있게 되돌리기·다시 실행만 남긴다(나머지 조건은 아래에서 그대로 본다)
     if (action.category !== 'viewer' && !(action.category === 'global' && action.allowInFloatView === true)) return false;
@@ -315,6 +318,7 @@ export class KeyboardShortcutService {
       imageGridFocusable: appState.imageGridFocusable,
       resultViewerOpen: appState.resultViewerOpen,
       dialogCount: appState.dialogs.length,
+      modalOverlayCount: appState.modalOverlayCount,
       floatViewCount: appState.floatViewCount,
       undoFloatViewCount: appState.undoFloatViewCount,
       configScreenOpen: appState.configScreenOpen,

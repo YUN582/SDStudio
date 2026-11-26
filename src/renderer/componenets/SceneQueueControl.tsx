@@ -634,6 +634,7 @@ export const SceneCell = observer(
     useEffect(() => {
       if (!isActive || !isHovered) return;
       const handler = (e: KeyboardEvent) => {
+        if (appState.modalOverlayCount > 0) return;
         if (appState.sceneMergeRequest) return;
         if (isInputFocusedLocal()) return;
         if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1583,6 +1584,7 @@ const QueueControl = observer(
     useEffect(() => {
       const handler = (e: Event) => {
         const action = (e as CustomEvent).detail?.action;
+        if (captureOpen || appState.modalOverlayCount > 0) return;
         if (action === 'queue-all-scenes') {
           if (selectedCount > 0) {
             addSelectedToQueue();
@@ -1593,7 +1595,7 @@ const QueueControl = observer(
       };
       window.addEventListener('shortcut-action', handler);
       return () => window.removeEventListener('shortcut-action', handler);
-    }, [curSession, type]);
+    }, [curSession, type, selectedCount, captureOpen]);
 
     const addSelectedToQueue = () => addScenesToQueue(curSession, type, true);
 
@@ -1918,6 +1920,7 @@ const QueueControl = observer(
     useEffect(() => {
       if (isMobile) return;
       const sceneNavHandler = (e: Event) => {
+        if (captureOpen || appState.modalOverlayCount > 0) return;
         const action = (e as CustomEvent).detail?.action;
         if (!action || typeof action !== 'string') return;
         if (
@@ -1994,7 +1997,7 @@ const QueueControl = observer(
       getGridColumnCount,
       setDisplayScene,
       setEditingScene,
-      isActive, curSession, type, selectedCount,
+      isActive, curSession, type, selectedCount, captureOpen,
     ]);
 
     const isInputFocused = useCallback(() => {
@@ -2008,6 +2011,7 @@ const QueueControl = observer(
 
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
+        if (captureOpen || appState.modalOverlayCount > 0) return;
         if (appState.sceneMergeRequest) return;
         if (isInputFocused()) return;
 
@@ -2078,7 +2082,7 @@ const QueueControl = observer(
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
-    }, [focusedScene, getFilteredScenes, isInputFocused]);
+    }, [focusedScene, getFilteredScenes, isInputFocused, captureOpen]);
 
     // 포커스된 씬 자동 스크롤
     useEffect(() => {
@@ -2431,7 +2435,7 @@ const QueueControl = observer(
         return (
           <>
             {inpaintEditScene && (
-              <FloatView
+              <FloatView ownsGenControl
                 priority={3}
                 onEscape={() => setInpaintEditScene(undefined)}
               >
@@ -2479,7 +2483,7 @@ const QueueControl = observer(
       return (
         <>
           {inpaintEditScene && (
-            <FloatView
+            <FloatView ownsGenControl
               priority={3}
               onEscape={() => setInpaintEditScene(undefined)}
             >
@@ -2494,7 +2498,7 @@ const QueueControl = observer(
           )}
           {(editingScene || adding) && (
             // 변형 씬 편집 창도 같은 머리(모드 행동 동등성) — 새 변형 씬 추가(adding)는 그리드가 없는 경로라 머리 내용 없음
-            <FloatView
+            <FloatView ownsGenControl
               priority={2}
               headerSlot
               onEscape={() => {
