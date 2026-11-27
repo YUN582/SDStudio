@@ -1310,6 +1310,7 @@ const SceneCardGrid = observer(
         style={{
           display: 'grid',
           gridTemplateColumns: gridCols,
+          gridAutoRows: 'max-content',
           ...(isMobile
             ? {}
             : { gap: '1rem', paddingTop: '0.25rem', paddingLeft: '0.25rem', paddingRight: '0.25rem' }),
