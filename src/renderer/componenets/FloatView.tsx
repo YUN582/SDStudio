@@ -78,7 +78,7 @@ const FloatViewPane = ({
   const [headerSlotEl, setHeaderSlotEl] = useState<HTMLElement | null>(null);
   return (
     <div
-      className="zone-canvas bg-[var(--c-surface)] h-full w-full"
+      className="bg-[var(--c-canvas)] h-full w-full"
       style={{ position: 'absolute', zIndex: view.id }}
     >
       <div className="zone-card flex flex-col h-full w-full">

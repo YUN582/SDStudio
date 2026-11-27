@@ -284,7 +284,7 @@ const HistoryList = observer(({ onOpenImage }: { onOpenImage?: (entry: Generatio
 export const ImageHistoryPanel = observer(({ onOpenImage }: { onOpenImage: (entry: GenerationHistoryEntry) => void }) => {
   const collapsed = appState.historyPanelCollapsed;
   // 히스토리가 좌/우 어느 쪽에 도킹됐는지(레이아웃 슬롯). 우측(기본)은 기존 렌더 그대로,
-  // 좌측이면 접기 스트립·구분선·화살표를 전부 좌우 반전해 자연스럽게 보이도록 미러링한다.
+  // 좌측이면 접기 스트립·화살표를 좌우 반전한다.
   const side = resolveLayout(
     appState.uiLayoutTemplate,
     isMobile,
@@ -296,8 +296,6 @@ export const ImageHistoryPanel = observer(({ onOpenImage }: { onOpenImage: (entr
   // 스트립(접기 손잡이)이 항상 "중앙 쪽" 모서리에 오도록 배치 방향을 뒤집는다.
   //  우측 도킹: [스트립 | 패널]  좌측 도킹: [패널 | 스트립]
   const rowDir = mirror ? 'flex-row-reverse' : 'flex-row';
-  // 구분선은 중앙을 향하는 쪽에 그린다(우측=왼쪽 테두리, 좌측=오른쪽 테두리).
-  const borderSide = mirror ? 'border-r' : 'border-l';
 
   // 스트립 드래그로 패널 폭 조절 — 프리셋 스플리터(ResizableSplitter)와 동일한 방식.
   // 우측 도킹은 왼쪽으로 끌수록 넓어지므로 델타를 반전한다(좌측 도킹은 그대로).
@@ -327,11 +325,10 @@ export const ImageHistoryPanel = observer(({ onOpenImage }: { onOpenImage: (entr
   };
   return (
     <div className={'flex-none hidden md:flex h-full ' + rowDir}>
-      {/* zone-gutter/zone-card: 구역 카드화 마감(App.css) — 클래식이면 기존 보더 구분 그대로 */}
+      {/* Match the adjacent workspace frame; spacing and the resize handle separate the panes. */}
       <div
         className={
-          'zone-gutter group flex-none w-5 flex flex-col items-center line-color ' +
-          borderSide + ' ' +
+          'zone-gutter group flex-none w-5 flex flex-col items-center ' +
           (collapsed ? 'cursor-pointer' : 'cursor-col-resize')
         }
         onClick={collapsed ? () => appState.toggleHistoryPanel() : undefined}
@@ -363,11 +360,11 @@ export const ImageHistoryPanel = observer(({ onOpenImage }: { onOpenImage: (entr
         <div
           className={
             // panel-vw-clamp(App.css): 폭 상한(<1024 = 36vw, 그 이상 = 30vw, W1 2026-11-15) — 프리셋 패널 주석 참고
-            'panel-vw-clamp panel-vw-clamp-history zone-card flex flex-col h-full line-color bg-[var(--c-surface-2)] ' + borderSide
+            'panel-vw-clamp panel-vw-clamp-history zone-card flex flex-col h-full bg-[var(--c-surface-2)]'
           }
           style={{ width: appState.historyPanelWidth }}
         >
-          <div className="flex-none px-3 py-2 border-b line-color flex items-center justify-between">
+          <div className="flex-none px-3 py-2 flex items-center justify-between">
             <span className="text-sm font-semibold gray-label">히스토리</span>
             <HistoryColumnsToggle />
           </div>
@@ -537,7 +534,7 @@ export const ImageHistoryDrawer = observer(({ onOpenImage }: { onOpenImage?: (en
         }}
       />
       <div
-        className="absolute right-0 top-0 h-full w-[80vw] max-w-[360px] bg-[var(--c-zone)] shadow-2xl border-l line-color flex flex-col"
+        className="absolute right-0 top-0 h-full w-[80vw] max-w-[360px] bg-[var(--c-zone)] shadow-2xl flex flex-col"
         style={{
           transform: shown ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 0.26s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -548,7 +545,7 @@ export const ImageHistoryDrawer = observer(({ onOpenImage }: { onOpenImage?: (en
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b line-color flex-none">
+        <div className="flex items-center justify-between px-4 py-3 flex-none">
           <h2 className="text-lg font-semibold text-default">히스토리</h2>
           <div className="flex items-center gap-3">
             <HistoryColumnsToggle />

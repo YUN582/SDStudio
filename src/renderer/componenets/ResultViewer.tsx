@@ -604,11 +604,8 @@ const Cell = memo(
 
     const isMain = !!(isMainImage && path && isMainImage(path));
     const isBookmarked = !!(path && bookmarkedImagePath === path);
-    let cellSize = isMobile ? imageSize / 2.5 : imageSize;
-    if (isMobile && imageSize === 500) {
-      cellSize = style.width;
-    }
-    cellSize = Math.max(1, Math.min(cellSize, Number(style.width) || cellSize, Number(style.height) || cellSize) - 8);
+    const preferredSize = isMobile ? imageSize / 2.5 : imageSize;
+    const cellSize = Math.max(1, Math.min(Number(style.width) || preferredSize, Number(style.height) || preferredSize) - 8);
 
     const { show, hideAll } = useContextMenu({
       id: ContextMenuType.GallaryImage,
@@ -954,13 +951,12 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
       return () => imageService.removeEventListener('image-cache-invalidated', onInvalidated);
     }, []);
 
-    let columnWidth = isMobile ? imageSize / 2.5 : imageSize;
-    let rowHeight = isMobile ? imageSize / 2.5 : imageSize;
-    if (isMobile && imageSize === 500) {
-      columnWidth = containerWidth - 10;
-      rowHeight = containerWidth - 10;
-    }
-    const columnCount = Math.max(1, Math.floor(containerWidth / columnWidth));
+    // Keep cells near the chosen size and distribute the entire available width.
+    const preferredSize = isMobile ? imageSize / 2.5 : imageSize;
+    const columnCount = isMobile && imageSize === 500
+      ? 1 : Math.max(1, Math.round(containerWidth / preferredSize));
+    const columnWidth = Math.max(1, containerWidth) / columnCount;
+    const rowHeight = columnWidth;
     // preload 4 pages
     const overcountCounts = isMobile ? [4, 2, 1] : [32, 16, 8];
 
@@ -1121,7 +1117,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
         data-history-drop-type={scene.type}
         style={{ width: '100%', height: '100%' }}
         className={
-          'flex justify-center relative select-none outline-none ' +
+          'relative select-none outline-none ' +
           (isHidden ? 'hidden' : '')
         }
         onMouseDownCapture={event => { focusGridSurface(event); reorder.start(event); handleGridMouseDown(event); }}
@@ -1136,7 +1132,7 @@ const ImageGallery = forwardRef<ImageGalleryRef, ImageGalleryProps>(
           className={'bg-[var(--c-zone)] ' + (isHidden ? 'hidden' : '')}
           rowCount={Math.ceil(filePaths.length / columnCount)}
           rowHeight={rowHeight}
-          width={columnCount * columnWidth}
+          width={containerWidth}
           itemData={createItemData(
             scene,
             filePaths,
@@ -3479,7 +3475,9 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
           </div>
         )}
         <div
-          className="absolute gap-1 m-2 bottom-0 bg-[var(--c-surface-2)] p-1 right-0 opacity-30 hover:opacity-100 transition-all flex"
+          className="absolute gap-1 m-2 bottom-0 bg-[var(--c-surface-2)] p-1 right-0 rounded-xl opacity-30 hover:opacity-100 transition-opacity flex"
+          role="group"
+          aria-label="이미지 크기"
           // V2: 하단 줄(52px) 위로 올린다(가려지지 않게)
           style={v2 ? { bottom: V2_GALLERY_BAR_PX } : undefined}
         >
@@ -3488,8 +3486,10 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
             imagesSizes.map((size, index) => (
               <button
                 key={index}
-                className={`text-white w-8 h-8 hover:brightness-95 active:brightness-90 cursor-pointer
-          ${imageSize === index ? 'bg-gray-600' : 'bg-gray-400'}`}
+                type="button"
+                className={`round-button icon-only w-8 h-8 ${imageSize === index ? 'back-sky toggle-on' : 'back-gray'}`}
+                aria-label={`이미지 크기 ${size.name}`}
+                aria-pressed={imageSize === index}
                 onClick={() => {
                   setImageSize(index);
                 }}
