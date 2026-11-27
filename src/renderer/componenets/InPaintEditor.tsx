@@ -87,6 +87,7 @@ import { SlotEditor } from './SceneEditor';
 import { variantCharacterContext } from '../models/sceneCharacterPrompts';
 import { v4 as uuidv4 } from 'uuid';
 import FocusAreaOverlay from './FocusAreaOverlay';
+import InpaintResultPreview from './InpaintResultPreview';
 import {
   FOCUS_CONTEXT_MAX,
   FOCUS_CONTEXT_MIN,
@@ -164,6 +165,9 @@ const InPaintEditor = observer(
     const activeEditor = useContext(FloatViewActiveContext);
     const activeEditorRef = useRef(activeEditor);
     activeEditorRef.current = activeEditor;
+    const [viewingResult, setViewingResult] = useState(false);
+    const viewingResultRef = useRef(false);
+    viewingResultRef.current = viewingResult;
     const [spaceHeld, setSpaceHeld] = useState(false);
     const [rotation, setRotation] = useState(0);
     const spaceRef = useRef(false), pointerInside = useRef(false);
@@ -180,14 +184,14 @@ const InPaintEditor = observer(
       observer.observe(viewport);
       const release=()=>{spaceRef.current=false;setSpaceHeld(false);};
       const down=(event:KeyboardEvent)=>{
-        if(event.code!=='Space'||event.repeat||!activeEditorRef.current||!pointerInside.current||isTextEntryFocused()||appState.dialogs.length)return;
+        if(event.code!=='Space'||event.repeat||!activeEditorRef.current||viewingResultRef.current||!pointerInside.current||isTextEntryFocused()||appState.dialogs.length)return;
         event.preventDefault();spaceRef.current=true;brushTool.current?.stopBrushing();setSpaceHeld(true);
       };
       const up=(event:KeyboardEvent)=>{if(event.code==='Space')release();};
       const enter=()=>{pointerInside.current=true;};
       const leave=()=>{pointerInside.current=false;};
       const wheel=(event:WheelEvent)=>{
-        if(!activeEditorRef.current)return;
+        if(!activeEditorRef.current||viewingResultRef.current)return;
         if(spaceRef.current){event.preventDefault();event.stopPropagation();setRotation(value=>(value+(event.deltaY<0?15:-15)+540)%360-180);return;}
         if(event.ctrlKey||event.metaKey)return;
         event.preventDefault();event.stopPropagation();
@@ -294,7 +298,7 @@ const InPaintEditor = observer(
     useEffect(()=>{
       const toggle=(event:KeyboardEvent)=>{
         if(event.key!=='Tab'||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
-        if(!activeEditor||!pointerInside.current||pointerTarget!=='brush'||spaceRef.current||isTextEntryFocused()||appState.dialogs.length)return;
+        if(!activeEditor||viewingResultRef.current||!pointerInside.current||pointerTarget!=='brush'||spaceRef.current||isTextEntryFocused()||appState.dialogs.length)return;
         if(editingScene.workflowType!=='SDInpaint')return;
         event.preventDefault();event.stopImmediatePropagation();
         if(!event.repeat){setPaintTool(value=>value==='mask'?'paint':'mask');setEraserMode(false);}
@@ -1072,6 +1076,7 @@ const InPaintEditor = observer(
           )}
           {/* PC 조합 에디터 탭: 이미지만 숨기고 아래 생성 바는 남긴다(언마운트 금지 — 마스크·Focused 보존) */}
           <div ref={viewportRef} data-space-pan={spaceHeld} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} className={`sds-inpaint-viewport flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
+            <InpaintResultPreview session={curSession!} scene={editingScene} inputImage={image ? base64ToDataUri(image) : ''} active={activeEditor && !pcComboWide} onModeChange={setViewingResult}>
             <TransformWrapper
               ref={zoomRef} disabled={false} limitToBounds={false}
               panning={{disabled: !spaceHeld && pointerTarget !== 'pan'}}
@@ -1085,7 +1090,7 @@ const InPaintEditor = observer(
                 <WorkflowCanvas
                   session={curSession!} inputRevision={inputRevision}
                   pointerToImage={(element,event,width,height)=>canvasPointerPoint(element,event,width,height,rotation)}
-                  brushPreviewEnabled={activeEditor&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
+                  brushPreviewEnabled={activeEditor&&!viewingResult&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
                   tool={spaceHeld||pointerTarget!=='brush'?'pan':paintTool==='paint'&&eraserMode?'erase':paintTool}
                   color={paintColor} opacity={paintOpacity} onHistoryChange={setPaintHistory} onPickColor={setPaintColor}
                   brushSize={brushSize}
@@ -1116,6 +1121,7 @@ const InPaintEditor = observer(
                 </div>
               </TransformComponent>
             </TransformWrapper>
+            </InpaintResultPreview>
           </div>
           {editingScene.workflowType==='SDInpaint'&&<div className="sds-inpaint-generation">
             <div className="sds-generation-caption">
