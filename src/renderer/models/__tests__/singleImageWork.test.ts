@@ -131,12 +131,24 @@ test.each(['shared', 'snapshot'])('%s image layout queues only the actual image 
   expect(handler.mock.calls[0][6]).toBe(10);
   expect(lowerPromptNode(handler.mock.calls[0][2])).toBe('front, combo4, back');
   expect(lowerPromptNode(handler.mock.calls[0][3][0])).toBe('character, fourth-expression');
+  expect(handler.mock.calls[0][4].uc).toBe('global-negative');
   handler.mockClear();
-  session.getCommonSetup(session.selectedWorkflow!)[1].frontPrompt = 'changed-front';
+  Object.assign(session.getCommonSetup(session.selectedWorkflow!)[1], {
+    frontPrompt: 'changed-front', backPrompt: 'changed-back', uc: 'changed-negative',
+  });
+  session.extraPrompt = 'changed-extra';
   await queueI2IWorkflow(session, 'SDInpaint', work.preset, work, 10);
   expect(lowerPromptNode(handler.mock.calls[0][2])).toBe(
-    mode === 'shared' ? 'changed-front, combo4, back' : 'front, combo4, back',
+    mode === 'shared' ? 'changed-front, changed-extra, combo4, changed-back' : 'front, combo4, back',
   );
+  expect(handler.mock.calls[0][4].uc).toBe(mode === 'shared' ? 'changed-negative' : 'global-negative');
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(handler.mock.calls[0][6]).toBe(10);
+  handler.mockClear();
+  work.preset.useGlobalUc = false;
+  work.preset.uc = 'work-negative';
+  await queueI2IWorkflow(session, 'SDInpaint', work.preset, work, 10);
+  expect(handler.mock.calls[0][4].uc).toBe('work-negative');
 });
 test('one image from a six-combination scene creates one work and queues exactly ten samples once', async () => {
   const { session, scene } = setup();

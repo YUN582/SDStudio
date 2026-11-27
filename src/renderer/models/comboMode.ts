@@ -67,8 +67,8 @@ export const COMBO_EDITOR_TEXT = {
   useGlobalUc: '사용',
   useGlobalUcField: '전역 네거티브 사용',
   globalUcExcluded: '생성에서 제외',
-  modeShared: '조합 모드 · 사전 세팅과 실시간 공유',
-  modeSnapshot: '조합 모드 · 복사 시점 설정 고정',
+  modeShared: '조합 실시간 공유',
+  modeSnapshot: '조합 복사 시점 고정',
   turnOff: '조합 모드 끄기',
   /** 단일 I2I·인페인트 편집 창 프롬프트 칸 머리(끄기의 짝, 2026-11-03 — comboSource.turnOnComboMode). */
   turnOn: '조합 모드 켜기',

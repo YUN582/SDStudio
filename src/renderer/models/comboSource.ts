@@ -62,7 +62,7 @@ const SNAPSHOT_KEYS = ['frontPrompt', 'backPrompt', 'globalUc'] as const;
 export const COMBO_SOURCE_TEXT = {
   /** 생성 직전 3택(SPEC §5 select — 취소는 창의 내장 취소 = 생성 중단) */
   layoutQuestion: '프롬프트 구성을 선택해 주세요',
-  layoutSingle: '단일 프롬프트 (현재 방식)',
+  layoutSingle: '단일 프롬프트',
   // 조합 2택은 편집 창 모드 표시와 같은 문구(COMBO_EDITOR_TEXT.modeShared·modeSnapshot)
   layoutShared: COMBO_EDITOR_TEXT.modeShared,
   layoutSnapshot: COMBO_EDITOR_TEXT.modeSnapshot,

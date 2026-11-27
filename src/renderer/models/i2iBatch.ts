@@ -6,6 +6,7 @@ import type { CharacterPrompt, PromptNode, SDAbstractJob } from './types';
 import { applyImportedJob } from './workflows/importedJob';
 import { getAppState } from './appStateRef';
 import type { ComboMode } from './comboMode';
+import { COMBO_EDITOR_TEXT } from './comboMode';
 
 /** 이미지 투 이미지 워크플로우(노이즈가 있는 유일한 변형 워크플로우). */
 export const I2I_WORKFLOW_TYPE = 'SDI2I';
@@ -35,8 +36,8 @@ export const I2I_BATCH_TEXT = {
   copySelect: '🖼️ I2I로 복사할 이미지생성 씬 선택',
   inpaintCopySelect: '🖌️ 인페인트로 복사할 이미지생성 씬 선택',
   comboModeQuestion: '상위·하위 프롬프트와 전역 네거티브를 어떻게 할까요?',
-  comboShared: '현재 사전 세팅과 실시간 공유',
-  comboSnapshot: '복사 시점 설정을 1회 복제',
+  comboShared: COMBO_EDITOR_TEXT.modeShared,
+  comboSnapshot: COMBO_EDITOR_TEXT.modeSnapshot,
   attachSelect: '📎 이미지를 첨부할 변형 씬 선택(I2I·인페인트 씬에만 적용)',
   sourceSelect: '🖼️ 기본 이미지로 쓸 씬 하나 선택(씬의 대표 이미지)',
   imageQuestion: '기본 이미지를 함께 첨부할까요?',
