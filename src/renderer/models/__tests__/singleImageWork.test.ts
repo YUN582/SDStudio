@@ -52,7 +52,7 @@ jest.mock('../sceneStructureUndo', () => ({
 }));
 jest.mock('../inpaintResolution', () => ({
   workflowUsesImageResolution: () => false,
-  inpaintSceneResolutionFields: (_type: string, _source: any, resolution: any) => ({ resolution: resolution?.resolution ?? 'portrait' }),
+  inpaintSceneResolutionFields: () => ({ resolution: 'portrait' }),
   paidResolutionNotice: () => undefined,
 }));
 jest.mock('../ImageService', () => ({
@@ -73,7 +73,6 @@ import { SOURCE_IMAGE_COMBINATION } from '../sourceImageCombination';
 import { lowerPromptNode } from '../PromptService';
 import { InpaintScene, PromptPiece, Scene, Session } from '../types';
 import { queueI2IWorkflow } from '../TaskQueueService';
-import { Resolution } from '../../backends/imageGen';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -114,16 +113,6 @@ const sourceMetadata = () => ({
     schemaVersion: 1, workflowType: 'SDImageGen', frontPrompt: 'front',
     extraPrompt: '', middlePrompt: 'combo4', backPrompt: 'back',
   } },
-});
-
-test('requested resolution is present when the source work is added to undo history', async () => {
-  const { session, scene } = setup();
-  const recorded: string[] = [];
-  jest.requireMock('../sceneStructureUndo').recordScenesCreated.mockImplementationOnce((_session: any, works: InpaintScene[]) => recorded.push(works[0].resolution));
-  const open = jest.fn();
-  await createSourceVariant(session, scene, 'SDInpaint', 'outputs/original.png', open, { resolution: Resolution.Square });
-  expect(recorded).toEqual(['square']);
-  expect(open.mock.calls[0][0].resolution).toBe('square');
 });
 
 test.each(['shared', 'snapshot'])('%s image layout queues only the actual image combination, with ten samples', async (mode) => {

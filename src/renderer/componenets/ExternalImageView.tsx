@@ -133,16 +133,14 @@ export const ExternalImageView = observer(
     const useRequest = useRef(false);
     const [addedUses, setAddedUses] = useState<ImportedImageUse[]>([]);
     const [editingWork, setEditingWork] = useState<InpaintScene | undefined>();
-    const [i2iResolution, setI2IResolution] = useState<'original' | Resolution.Square | Resolution.Portrait | Resolution.Landscape>('original');
-    useEffect(() => { setAddedUses([]); setEditingWork(undefined); setI2IResolution('original'); }, [image, appState.curSession, appState.curSession?.selectedWorkflow?.workflowType, appState.curSession?.selectedWorkflow?.presetName]);
+    useEffect(() => { setAddedUses([]); setEditingWork(undefined); }, [image, appState.curSession, appState.curSession?.selectedWorkflow?.workflowType, appState.curSession?.selectedWorkflow?.presetName]);
     const useImage = async (use: ImportedImageUse | 'i2i') => {
       const session = appState.curSession;
       if (useRequest.current || !session || !image) return;
       useRequest.current = true; setUsingImage(true);
       try {
         if (use === 'i2i') {
-          const resolution = i2iResolution === 'original' ? undefined : { resolution: i2iResolution };
-          const work = await createImportedI2I(session, image, job, { scene, path: sourcePath }, resolution);
+          const work = await createImportedI2I(session, image, job, { scene, path: sourcePath });
           if (work && appState.curSession === session) setEditingWork(work);
         } else {
           await appendImportedImage(session, image, use, modelVersion, referenceDefaultsFor(modelVersion));
@@ -543,20 +541,8 @@ export const ExternalImageView = observer(
               disabled={imageUseDisabled || !capabilities.supportsCharacterReference || addedUses.includes('reference')} onClick={() => void useImage('reference')}>
               {addedUses.includes('reference') ? '레퍼런스 추가됨' : '레퍼런스로 추가'}
             </button>
-            <div role="group" aria-label="I2I 편집 설정" className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 text-sm text-muted">
-                I2I 해상도
-                <select className="gray-input h-8 px-2 text-sm" value={i2iResolution} disabled={imageUseDisabled}
-                  onChange={event => setI2IResolution(event.target.value as typeof i2iResolution)}>
-                  <option value="original">원본 크기</option>
-                  <option value={Resolution.Square}>1024 × 1024</option>
-                  <option value={Resolution.Portrait}>832 × 1216</option>
-                  <option value={Resolution.Landscape}>1216 × 832</option>
-                </select>
-              </label>
-              <button type="button" className="round-button back-green px-3 py-2 text-sm"
-                title="선택한 해상도로 새 I2I 편집 작업을 엽니다" disabled={imageUseDisabled || metadataState === 'loading'} onClick={() => void useImage('i2i')}>I2I 편집</button>
-            </div>
+            <button type="button" className="round-button back-green px-3 py-2 text-sm"
+              title="이 이미지로 새 I2I 편집 작업을 엽니다" disabled={imageUseDisabled || metadataState === 'loading'} onClick={() => void useImage('i2i')}>I2I 편집</button>
         </div>}
         footer={<button className="round-button back-sky px-5 py-2 text-sm font-medium" onClick={applyImport} disabled={importing || usingImage || !job}>
             {importing ? '적용 중...' : '적용'}
