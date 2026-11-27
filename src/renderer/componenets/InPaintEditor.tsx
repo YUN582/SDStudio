@@ -856,10 +856,10 @@ const InPaintEditor = observer(
     },[activeEditor,curSession,editingScene,generationDisabled]);
     return (
       <div
-        className={`sds-inpaint-editor flex flex-col ${pcComboWide ? '' : 'md:flex-row'} py-3 h-full w-full overflow-hidden`}
+        className={`sds-inpaint-editor zone-canvas flex flex-col ${pcComboWide ? '' : 'md:flex-row'} gap-1.5 h-full w-full overflow-hidden`}
       >
         <div
-          className={`px-3 flex flex-col flex-none ${
+          className={`sds-inpaint-settings zone-card px-3 py-3 flex flex-col flex-none ${
             pcComboWide ? 'md:flex-1 md:min-h-0 md:w-full' : 'md:h-auto md:w-1/2 xl:w-1/3'
           } gap-2 overflow-hidden`}
         >
@@ -1058,7 +1058,7 @@ const InPaintEditor = observer(
           )}
         </div>
         <div
-          className={`flex flex-col flex-1 ${pcComboWide ? 'md:flex-none' : ''} overflow-hidden`}
+          className={`sds-inpaint-stage zone-card flex flex-col flex-1 min-w-0 ${pcComboWide ? 'md:flex-none' : ''} overflow-hidden`}
         >
           {inputError && (
             <div role="alert" className="flex-none m-3 p-3 rounded-lg bg-[var(--c-surface-2)] text-default">

@@ -1232,6 +1232,8 @@ html:not(.finish-classic) .tab-seg > .tab-seg-off:hover {
     background-color: var(--c-surface); /* 히스토리 surface-2·사이드바도 카드 색으로 통일 */
     overflow: hidden; /* 코너 클리핑 — 내부 콘텐츠·오버레이가 라운딩을 따르게 */
     border-color: transparent; /* 카드 자체 경계선(히스토리 border-l 등)은 캔버스 간격이 대신 */
+    outline: 1px solid var(--c-line);
+    outline-offset: -1px;
   }
   html:not(.finish-classic) .zone-gutter {
     border-color: transparent; /* 카드 사이 손잡이 스트립의 구분선도 간격이 대신 */
