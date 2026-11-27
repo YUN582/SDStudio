@@ -6,6 +6,7 @@ import { extractPromptDataFromBase64 } from './util';
 import { prepareMirrorCanvas } from './workflows/SDWorkFlow';
 import {
   workflowUsesImageResolution,
+  ImageResolution,
   resolutionFromImage,
   inpaintSceneResolutionFields,
   paidResolutionNotice,
@@ -24,6 +25,7 @@ export async function openSourceVariant(
   type: string,
   path: string,
   open: (work: InpaintScene) => void,
+  outputResolution?: ImageResolution,
 ) {
   let pending = pendingRequests.get(session);
   if (!pending) pendingRequests.set(session, (pending = new Set()));
@@ -31,7 +33,7 @@ export async function openSourceVariant(
   if (pending.has(key)) return;
   pending.add(key);
   try {
-    await createSourceVariant(session, scene, type, path, open);
+    await createSourceVariant(session, scene, type, path, open, outputResolution);
   } finally {
     pending.delete(key);
   }
@@ -44,6 +46,7 @@ export async function createSourceVariant(
   workflowType: string,
   path: string,
   open: (work: InpaintScene) => void,
+  outputResolution?: ImageResolution,
 ) {
   // Ask before storing image files, so cancellation leaves no work or orphan snapshot.
   const choice = await chooseNewVariantCombo(session, scene, workflowType, true);
@@ -105,11 +108,12 @@ export async function createSourceVariant(
       open(newScene);
     }
   } else {
-    // 해상도 = 첨부 이미지 크기(R-res, SPEC §7-3). 이미 받은 이미지로 생성 전에 정해 씬 등록 1회로 끝낸다.
+    // 외부 I2I에서 고른 해상도가 우선이며, 선택이 없으면 첨부 이미지 크기(R-res, SPEC §7-3)를 쓴다.
+    // 생성 전에 정해 씬 등록과 되돌리기 기록에 같은 값이 남게 한다.
     // 크기를 모르거나 대상 아닌 워크플로우면 원본 씬 해상도(커스텀 너비·높이 포함 — 예전엔 enum 만 복사).
-    const fromImage = workflowUsesImageResolution(workflowType)
+    const fromImage = outputResolution ?? (workflowUsesImageResolution(workflowType)
       ? await resolutionFromImage(image)
-      : undefined;
+      : undefined);
     const newScene = InpaintScene.fromJSON({
       type: 'inpaint',
       name,

@@ -19,13 +19,13 @@ jest.mock('../AppService', () => ({ appState: state }));
 jest.mock('../presetUndo', () => ({ editWorkflowFields: (_s: any, _h: any, _t: any, _l: any, mutate: () => void) => mutate() }));
 jest.mock('../sceneStructureUndo', () => ({ recordScenesCreated: (...args: any[]) => createdRecord(...args) }));
 jest.mock('../undoService', () => ({ UNDO_TEXT: { vibeAdd: 'add vibe', referenceAdd: 'add ref', variantSceneCreate: (name: string) => name } }));
-jest.mock('../inpaintResolution', () => ({ resolutionFromImage: async () => ({ width: 832, height: 1216 }), inpaintSceneResolutionFields: () => ({ resolution: 'custom', resolutionWidth: 832, resolutionHeight: 1216 }) }));
+jest.mock('../inpaintResolution', () => ({ resolutionFromImage: async () => ({ width: 832, height: 1216 }), inpaintSceneResolutionFields: (_type: string, _source: any, resolution: any) => resolution?.resolution ? { resolution: resolution.resolution } : { resolution: 'custom', resolutionWidth: 832, resolutionHeight: 1216 } }));
 jest.mock('../singleImageEdit', () => ({ SINGLE_IMAGE_EDIT: 'codex.singleImageEdit.v1', EXPLICIT_COMBINATIONS: 'sdstudio.explicitImageEditCombinations.v1' }));
 jest.mock('../sourceVariant', () => ({ openSourceVariant: (...args: any[]) => openSource(...args) }));
 jest.mock('../comboSource', () => ({ chooseNewVariantCombo: (...args: any[]) => chooseCombo(...args), COMBO_SOURCE_TEXT: { currentNotice: 'current prompt becomes middle' } }));
 import { appendImportedImage, createImportedI2I } from '../importedImageActions';
 import { Scene, Session, VibeItem, ReferenceItem, PromptPiece } from '../types';
-import { ModelVersion } from '../../backends/imageGen';
+import { ModelVersion, Resolution } from '../../backends/imageGen';
 
 const defaults = { strength: 0.7, fidelity: 1.2, referenceType: 'character' };
 let session: Session, shared: any;
@@ -82,6 +82,13 @@ test('metadata is used for a new external work without overwriting current gener
   const work = (await createImportedI2I(session, 'PIXELS', { prompt: 'image prompt', uc: 'image negative', characterPrompts: [] } as any))!;
   expect(work.preset.prompt).toBe('image prompt');
   expect(session.presets.get('SDImageGen')![0].frontPrompt).toBe('current front');
+});
+
+test.each([Resolution.Square, Resolution.Portrait, Resolution.Landscape])('external output size %s is stored on the new work while its owned input stays intact', async resolution => {
+  const work = (await createImportedI2I(session, 'ORIGINAL_PIXELS', undefined, undefined, { resolution }))!;
+  expect(work.resolution).toBe(resolution);
+  expect(work.preset.image).toBe('owned-input.png');
+  expect(storedWork).toHaveBeenCalledWith(session, work, 'input', 'ORIGINAL_PIXELS');
 });
 
 test('cancelling the external prompt choice creates no work or input file', async () => {
@@ -143,10 +150,16 @@ test('known generated image reuses the original one-combination flow', async () 
   const expected = { name: 'existing-flow-work', preset: {} };
   openSource.mockImplementationOnce(async (_s, _o, _t, _p, open) => open(expected));
   expect(await createImportedI2I(session, 'PIXELS', { prompt: 'image prompt' } as any, { scene: source, path: 'outs/alpha/image.png' })).toBe(expected);
-  expect(openSource).toHaveBeenCalledWith(session, source, 'SDInpaint', 'outs/alpha/image.png', expect.any(Function));
+  expect(openSource).toHaveBeenCalledWith(session, source, 'SDInpaint', 'outs/alpha/image.png', expect.any(Function), undefined);
   expect(expected.preset).toEqual({ strength: 0.6, mask: '' });
   expect(storedWork).not.toHaveBeenCalled();
   expect(chooseCombo).not.toHaveBeenCalled();
+});
+
+test('known image creation receives the chosen output resolution before recording creation', async () => {
+  const source = new Scene(); source.name = 'alpha'; session.addScene(source);
+  await createImportedI2I(session, 'PIXELS', { prompt: 'image prompt' } as any, { scene: source, path: 'outs/alpha/image.png' }, { resolution: Resolution.Square });
+  expect(openSource).toHaveBeenCalledWith(session, source, 'SDInpaint', 'outs/alpha/image.png', expect.any(Function), { resolution: Resolution.Square });
 });
 
 test('known image without metadata still retains its scene and source image link', async () => {

@@ -7,7 +7,7 @@ import { referenceEditorSpec, newReferenceType } from './referenceEditorSpec';
 import { editWorkflowFields } from './presetUndo';
 import { recordScenesCreated } from './sceneStructureUndo';
 import { UNDO_TEXT } from './undoService';
-import { inpaintSceneResolutionFields, resolutionFromImage } from './inpaintResolution';
+import { ImageResolution, inpaintSceneResolutionFields, resolutionFromImage } from './inpaintResolution';
 import { EXPLICIT_COMBINATIONS, SINGLE_IMAGE_EDIT } from './singleImageEdit';
 import { openSourceVariant } from './sourceVariant';
 import { chooseNewVariantCombo, COMBO_SOURCE_TEXT } from './comboSource';
@@ -78,6 +78,7 @@ export async function createImportedI2I(
   image: string,
   metadata?: ImportableMetadata,
   source?: { scene?: GenericScene; path?: string },
+  outputResolution?: ImageResolution,
 ): Promise<InpaintScene | undefined> {
   if (!image) throw new Error('편집할 이미지가 없습니다.');
   const target = currentTarget(session);
@@ -88,7 +89,7 @@ export async function createImportedI2I(
       work.preset.strength = 0.6;
       work.preset.mask = '';
       created = work;
-    });
+    }, outputResolution);
     return created;
   }
   const choice = await chooseNewVariantCombo(session, undefined, 'SDInpaint');
@@ -107,7 +108,7 @@ export async function createImportedI2I(
     vibes: shared?.vibes ?? [],
     characterReferences: shared?.characterReferences ?? [],
   };
-  const resolution = await resolutionFromImage(image);
+  const resolution = outputResolution ?? await resolutionFromImage(image);
   checkTarget(session, target);
   let suffix = 1;
   const stem = owner ? owner.name + ' I2I' : '가져온 이미지';

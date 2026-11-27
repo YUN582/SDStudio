@@ -89,7 +89,7 @@ test('allows copying the metadata body and groups seed and resolution with param
   expect(preview.getAttribute('tabindex')).toBe('0');
   const parameters = document.querySelector('[data-metadata-parameters]')!;
   expect(parameters.contains(screen.getByText('123'))).toBe(true);
-  expect(parameters.contains(screen.getByText('832 × 1216'))).toBe(true);
+  expect(within(parameters as HTMLElement).getByText('832 × 1216')).toBeTruthy();
   expect(document.querySelectorAll('[data-metadata-resolution]')).toHaveLength(1);
 });
 
@@ -223,8 +223,21 @@ test('adds a reference and opens I2I while metadata is absent', async () => {
   await waitFor(() => expect((screen.getByRole('button', { name: 'I2I 편집' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
   await screen.findByText('I2I editor fixture');
-  expect(createI2I).toHaveBeenCalledWith(session, 'plain-image', undefined, { scene: undefined, path: undefined });
+  expect(createI2I).toHaveBeenCalledWith(session, 'plain-image', undefined, { scene: undefined, path: undefined }, undefined);
   fireEvent.click(screen.getByRole('button', { name: '편집 마치기' }));
   await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
   expect(close).not.toHaveBeenCalled();
+});
+
+test.each(['square', 'portrait', 'landscape'])('external I2I forwards the chosen %s size without applying image metadata', async resolution => {
+  extract.mockResolvedValue(undefined);
+  render(<ExternalImageView image="large-plain-image" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  const select = screen.getByLabelText('I2I 해상도');
+  expect((select as HTMLSelectElement).value).toBe('original');
+  expect(within(select).getAllByRole('option')).toHaveLength(4);
+  fireEvent.change(select, { target: { value: resolution } });
+  fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
+  await waitFor(() => expect(createI2I).toHaveBeenCalledWith(session, 'large-plain-image', undefined, { scene: undefined, path: undefined }, { resolution }));
+  expect(session.addPreset).not.toHaveBeenCalled();
 });
