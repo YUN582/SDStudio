@@ -99,7 +99,7 @@ export function ImageVariantChoices({
         {upscale && (
           <div className="sds-variant-section">
             <h4>업스케일</h4>
-            <p className="text-sub">가로·세로 2배 · 원본 유지 · Anlas 사용</p>
+            <p className="text-sub">가로·세로 2배 · 원본 유지</p>
             <button
               type="button"
               data-variant-upscale=""

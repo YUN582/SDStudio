@@ -1616,11 +1616,13 @@ export const ResultDetailView = observer(
       });
     };
     const currentUpscaleInfo = loaded?.path === viewedImagePath ? loaded.upscale : undefined;
-    const upscaleTitle = currentUpscaleInfo?.error ?? '가로·세로 2배 · 원본 유지 · Anlas 사용';
+    const upscaleTitle = currentUpscaleInfo?.error ?? (currentUpscaleInfo?.cost
+      ? `업스케일 비용: 1장당 ${currentUpscaleInfo.cost} Anlas · 원본 유지`
+      : '업스케일 비용 확인 중');
     const upscaleDisabled = upscalePreparing || !currentUpscaleInfo?.cost;
     const upscaleLabel = upscalePreparing
       ? '예약 중…'
-      : `업스케일 ×2 · ${currentUpscaleInfo?.cost ? `${currentUpscaleInfo.cost} Anlas` : currentUpscaleInfo?.error ? '미지원' : '…'}`;
+      : '업스케일 ×2';
     const actUpscale = async (): Promise<boolean> => {
       const path = paths[selectedIndex];
       if (!path || !session || upscalePreparing) return false;

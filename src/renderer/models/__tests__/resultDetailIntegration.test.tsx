@@ -148,7 +148,7 @@ test('variant modal retains every workflow and live upscale cost, and blocks bac
   fireEvent.click(screen.getByRole('button', { name: '이미지 변형' }));
   const modal = screen.getByLabelText('이미지 변형 방법');
   expect(modal.querySelectorAll('[data-variant-workflow]')).toHaveLength(4);
-  await waitFor(() => expect(modal.querySelector('[data-variant-upscale]')?.textContent).toContain('1 Anlas'));
+  await waitFor(() => expect(modal.querySelector('[data-variant-upscale]')?.textContent).toContain('업스케일 비용: 1장당 1 Anlas'));
   expect(mockState.modalOverlayCount).toBe(1);
   fireEvent.keyDown(window, { key: 'ArrowRight' });
   fireEvent.keyDown(window, { key: 'Delete' });
@@ -175,6 +175,18 @@ test('an image too large for upscale still displays its actual dimensions', asyn
   await waitFor(() => expect(view.container.querySelector('[data-detail-info-pane]')?.textContent).toContain('4096 × 4096'));
   fireEvent.click(screen.getByRole('button', { name: '이미지 변형' }));
   expect((view.container.querySelector('[data-variant-upscale]') as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('a 2 Anlas estimate belongs only to the selected upscale action, not I2I generation', async () => {
+  mockDimensions.mockResolvedValue({ width: 1536, height: 1024 });
+  mount(); await loaded();
+  fireEvent.click(screen.getByRole('button', { name: '이미지 변형' }));
+  const modal = screen.getByLabelText('이미지 변형 방법');
+  const upscale = modal.querySelector('[data-variant-upscale]') as HTMLButtonElement;
+  await waitFor(() => expect(upscale.textContent).toContain('업스케일 비용: 1장당 2 Anlas'));
+  expect(upscale.querySelector('.sds-variant-work-title')?.textContent).toBe('업스케일 ×2');
+  expect(upscale.title).toContain('업스케일 비용: 1장당 2 Anlas');
+  expect(within(modal).getByRole('button', { name: /인페인트 · I2I/ }).textContent).not.toContain('Anlas');
 });
 
 test('a late old image request cannot replace the newly selected image or metadata', async () => {
