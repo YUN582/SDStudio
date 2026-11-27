@@ -267,7 +267,7 @@ export function buildNaiMetadataDiagnostics(
   }
   return {
     model: detectedModel,
-    ...(hashedVersion ? { modelVersion: hashedVersion } : {}),
+    ...(hashedVersion && !looksLikeV5CuratedFallback ? { modelVersion: hashedVersion } : {}),
     modelHash: modelHash || undefined,
     source: sourceText || undefined,
     paramsVersion,

@@ -26,7 +26,9 @@ jest.mock('../imageStateUndo', () => ({ beginMetaApplyRecord: () => record }));
 jest.mock('../undoService', () => ({ undoService: { canRecord: () => false }, UNDO_TEXT: {} }));
 import { ExternalImageView } from '../../componenets/ExternalImageView';
 import { planSelectedPromptImport } from '../sdstudioPromptImport';
-import { globalPresetService, workFlowService } from '..';
+import { backend, globalPresetService, sessionService, workFlowService } from '..';
+import { ModelVersion } from '../../backends/imageGen';
+import { activatePresetSamplingFamily } from '../modelSamplingProfiles';
 
 const source: any = { schemaVersion: 1, workflowType: 'SDImageGen', frontPrompt: 'new front', extraPrompt: 'new extra', middlePrompt: 'new middle', backPrompt: 'new back' };
 let preset: any, session: any, scene: any, theme: HTMLElement;
@@ -138,6 +140,55 @@ test('imports a global preset without a blocking confirmation or success dialog'
   expect(state.pushDialog).not.toHaveBeenCalled();expect(confirmAsync).not.toHaveBeenCalled();
   expect(session.addPreset).not.toHaveBeenCalled();expect(session.extraPrompt).toBe('old extra');
   expect(scene.slots[0][0].prompt).toBe('old middle');expect(preset.frontPrompt).toBe('old front');
+});
+
+describe('metadata model and sampling import', () => {
+  beforeEach(() => {
+    backend.getConfig = jest.fn(async () => ({ modelVersion: ModelVersion.V5 })) as any;
+    backend.setConfig = jest.fn(async () => {}) as any;
+    sessionService.configChanged = jest.fn();
+    workFlowService.buildShared = jest.fn(() => ({})) as any;
+    workFlowService.buildPreset = jest.fn((type: string) => ({
+      type, frontPrompt: '', backPrompt: '', uc: '', steps: 28, promptGuidance: 5,
+    })) as any;
+    extract.mockResolvedValue({ prompt: 'style', uc: '', characterPrompts: [],
+      vibes: [], characterReferences: [], steps: 17, promptGuidance: 4.5, cfgRescale: 0.35,
+      sampling: 'k_euler_ancestral', naiDiagnostics: { model: 'V4.5 Full', modelVersion: ModelVersion.V4_5 },
+    });
+  });
+
+  test.each(['new-normal', 'current'])('%s applies the V4.5 model with imported parameters', async target => {
+    Object.assign(preset, { steps: 31, promptGuidance: 6, samplingProfileFamily: 'v5',
+      samplingProfiles: { v5: { steps: 31 }, v4_5: { steps: 24 } } });
+    await open();
+    fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: target } });
+    expect((screen.getByLabelText('모델·품질 전역 설정') as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '적용' }));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+    expect(backend.setConfig).toHaveBeenCalledWith(expect.objectContaining({ modelVersion: ModelVersion.V4_5 }));
+    const applied = target === 'current' ? preset : (session.addPreset as jest.Mock).mock.calls[0][0];
+    activatePresetSamplingFamily(applied, 'v4_5');
+    expect(applied).toMatchObject({ steps: 17, promptGuidance: 4.5, cfgRescale: 0.35, samplingProfileFamily: 'v4_5' });
+    expect(preset.samplingProfiles.v5.steps).toBe(31);
+  });
+
+  test('unchecked model import leaves global model unchanged', async () => {
+    await open();
+    fireEvent.click(screen.getByLabelText('모델·품질 전역 설정'));
+    fireEvent.click(screen.getByRole('button', { name: '적용' }));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+    expect(backend.setConfig).not.toHaveBeenCalled();
+    expect(preset.steps).toBe(17);
+  });
+
+  test('saving to the global library does not change the active model', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: 'new-global' } });
+    expect((screen.getByLabelText('모델·품질 전역 설정') as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '적용' }));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+    expect(backend.setConfig).not.toHaveBeenCalled();
+  });
 });
 
 test('section masks preserve source text and handle folded destinations and selected empty fields', () => {

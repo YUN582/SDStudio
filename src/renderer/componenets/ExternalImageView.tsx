@@ -18,6 +18,7 @@ import {
   skipsFixedSamplingImport,
 } from '../models/sdstudioPromptImport';
 import {
+  activatePresetSamplingFamily,
   samplingFamilyForModel,
   switchSessionSamplingFamily,
 } from '../models/modelSamplingProfiles';
@@ -177,7 +178,7 @@ export const ExternalImageView = observer(
     const hasCharRefs = (job?.characterReferences?.length ?? 0) > 0;
     const hasResolution = !!job?.resolution;
     const exactSource = job?.sdstudioMetadata?.promptSource;
-    // 맞출 모델(SDStudio 메타 또는 공식 PNG 의 V5 Medium 해시) — 고정값 모델이면 스텝·샘플러·리스케일은 적용하지 않는다.
+    // Use the recorded model; fixed-sampling models ignore imported steps/sampler/rescale.
     const importedModel = importedModelVersionOf(job);
     const skipFixedSampling = skipsFixedSamplingImport(importedModel);
     const currentWorkflowType = appState.curSession?.selectedWorkflow?.workflowType;
@@ -254,9 +255,14 @@ export const ExternalImageView = observer(
           // 모델도 맞출 때는 값을 넣기 전에 대상 계열 프로필로 먼저 전환한다 — 넣은 뒤 config 변경으로 편집기가 계열을
           // 바꾸면 방금 넣은 값이 이전 계열 프로필로 들어가 사라진다(2026-11-06). 되돌리기는 전환 뒤 값부터 기록.
           const applyModel =
-            target === 'current' && options.modelSettings ? importedModel : undefined;
+            !isGlobal && options.modelSettings ? importedModel : undefined;
           const applyFamily = applyModel ? samplingFamilyForModel(applyModel) : undefined;
-          if (applyFamily) switchSessionSamplingFamily(session, applyFamily);
+          if (applyFamily) {
+            switchSessionSamplingFamily(session, applyFamily);
+            // A new preset is not in the session yet. Initialize its target profile
+            // before importing values so the editor does not overwrite them on mount.
+            if (isNew) activatePresetSamplingFamily(preset, applyFamily);
+          }
           if (target === 'current') undoRec.preset(preset);
           undoRec.scene(normalScene, ['slots']);
           if (options.resolution && job.resolution) undoRec.scene(scene, ['resolution', 'resolutionWidth', 'resolutionHeight']);
@@ -331,7 +337,7 @@ export const ExternalImageView = observer(
             applyModel &&
             !job.sdstudioMetadata?.generationSettings
           ) {
-            // 공식 웹 V5 Medium 이미지 — 모델만 맞춘다(품질·UC 프리셋 등은 SDStudio 메타가 있을 때만).
+            // Official metadata identifies the model; quality options require an SDStudio snapshot.
             const config = await backend.getConfig();
             await backend.setConfig({ ...config, modelVersion: applyModel });
             sessionService.configChanged();
@@ -523,7 +529,7 @@ export const ExternalImageView = observer(
           {choice('resolution', '해상도', !hasResolution || !scene || isGlobalTarget)}
           {choice('vibes', '바이브 트랜스퍼', !hasVibes || isGlobalTarget)}
           {choice('references', '캐릭터 레퍼런스', !hasCharRefs || isGlobalTarget)}
-          {choice('modelSettings', '모델·품질 전역 설정', target !== 'current' || !(importedModel || job.sdstudioMetadata?.generationSettings))}
+          {choice('modelSettings', '모델·품질 전역 설정', isGlobalTarget || !(importedModel || job.sdstudioMetadata?.generationSettings))}
         </div>
         {target === 'current' && ((hasCharacters && options.characters) || (hasVibes && options.vibes)) && (
           <div className="flex flex-wrap gap-x-3 mt-1">
@@ -642,8 +648,8 @@ export const ExternalImageView = observer(
               {skipFixedSampling && <p className="text-xs text-muted mt-3 mb-0" data-v5m-import-note="">V5M 이미지의 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</p>}
               {(job.sdstudioMetadata?.generationSettings || importedModel) && <p className="text-xs text-muted mt-3 mb-0">
                 {job.sdstudioMetadata?.generationSettings
-                  ? '현재 사전설정에 적용할 때 모델, 품질, UC 프리셋과 투명 배경 설정을 생성 당시 값으로 맞춥니다.'
-                  : '현재 사전설정에 적용할 때 모델을 V5M으로 맞춥니다.'}
+                  ? '모델·품질 전역 설정을 선택하면 생성 당시 모델, 품질, UC 프리셋과 투명 배경 설정도 적용합니다.'
+                  : '모델·품질 전역 설정을 선택하면 이미지의 모델도 적용합니다.'}
               </p>}
             </MetadataSection>
           </aside>}

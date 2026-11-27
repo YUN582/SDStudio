@@ -149,10 +149,10 @@ describe('메타 — Source 해시 판정·생성 설정 적용', () => {
     expect(job.uc).toBe('');
     expect(importedModelVersionOf(job)).toBe(ModelVersion.V5Medium);
     expect(skipsFixedSamplingImport(importedModelVersionOf(job))).toBe(true);
-    // 같은 내용의 V5 Full 이미지는 종전대로(Heavy 문구 유지, 모델 미적용)
+    // Full also imports the identified model; only Medium strips its fixed UC.
     const full = parseCommentToJob(comment, 'NovelAI Diffusion V5 657484A5')!;
     expect(full.uc).toBe(V5_HEAVY);
-    expect(importedModelVersionOf(full)).toBeUndefined();
+    expect(importedModelVersionOf(full)).toBe(ModelVersion.V5);
     expect(skipsFixedSamplingImport(importedModelVersionOf(full))).toBe(false);
   });
 

@@ -253,13 +253,24 @@ export const NAI_SOURCE_MODEL_HASHES: Readonly<Record<string, ModelVersion>> = O
   DB276663: ModelVersion.V5Curated,
 });
 
-/** `Source` 문자열(또는 model_name·model_hash 를 합친 문자열)에서 알려진 모델 해시를 찾는다. 없으면 undefined. */
+/** Resolve a known hash or explicit NAI model name; leave unidentified models unchanged. */
 export function modelVersionFromNaiSource(source: string | undefined | null): ModelVersion | undefined {
   const text = (source ?? '').toUpperCase();
   if (!text) return undefined;
   for (const [hash, version] of Object.entries(NAI_SOURCE_MODEL_HASHES)) {
     if (new RegExp(`(^|[^0-9A-F])${hash}($|[^0-9A-F])`).test(text)) return version;
   }
+  const named = text.match(/\b(?:NOVELAI DIFFUSION V|NAI-DIFFUSION-)(4\.5|4-5|4|5)(?=$|[\s-])/);
+  if (!named) return undefined;
+  const curated = /\bCURATED\b/.test(text);
+  if (named[1] === '4.5' || named[1] === '4-5') {
+    return curated ? ModelVersion.V4_5Curated : ModelVersion.V4_5;
+  }
+  if (named[1] === '4') return curated ? ModelVersion.V4Curated : ModelVersion.V4;
+  // Bare V5 without a known hash may be Full or Medium.
+  if (curated) return ModelVersion.V5Curated;
+  if (/\bMEDIUM\b/.test(text)) return ModelVersion.V5Medium;
+  if (/\bFULL\b/.test(text)) return ModelVersion.V5;
   return undefined;
 }
 

@@ -152,15 +152,15 @@ export function sceneSlotsMatchMiddle(
 
 /**
  * 「생성 설정 적용」이 맞출 모델(2026-11-06). SDStudio 전용 메타의 modelVersion(알려진 값만)이 우선,
- * 없으면 공식 웹 PNG 의 `Source` 모델 해시로 판정한 V5 Medium(util.buildNaiMetadataDiagnostics — 해시 표 단일 출처
- * `NAI_SOURCE_MODEL_HASHES`). 그 밖의 공식 이미지는 종전처럼 모델을 건드리지 않는다(undefined).
+ * 없으면 공식 이미지의 알려진 모델 해시·명칭을 사용한다. 판별할 수 없는 모델은 변경하지 않는다.
  */
 export function importedModelVersionOf(
   job: Pick<ImportableMetadata, 'sdstudioMetadata' | 'naiDiagnostics'> | undefined,
 ): ModelVersion | undefined {
   const saved = job?.sdstudioMetadata?.generationSettings?.modelVersion;
   if (isKnownModelVersion(saved)) return saved;
-  if (job?.naiDiagnostics?.modelVersion === ModelVersion.V5Medium) return ModelVersion.V5Medium;
+  const detected = job?.naiDiagnostics?.modelVersion;
+  if (isKnownModelVersion(detected)) return detected;
   return undefined;
 }
 

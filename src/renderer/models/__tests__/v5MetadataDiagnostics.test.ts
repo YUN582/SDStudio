@@ -1,4 +1,6 @@
 import { buildNaiMetadataDiagnostics } from '../util';
+import { ModelVersion } from '../../backends/imageGen';
+import { importedModelVersionOf } from '../sdstudioPromptImport';
 
 describe('V5 메타데이터 진단', () => {
   test('실제 V5 출력의 model_name과 model_hash를 판정한다', () => {
@@ -32,6 +34,7 @@ describe('V5 메타데이터 진단', () => {
       }),
     ).toMatchObject({
       model: 'V4.5 Full',
+      modelVersion: ModelVersion.V4_5,
       modelHash: 'V45HASH',
       metadataVersion: 1,
       requestType: 'PromptGenerateRequest',
@@ -67,6 +70,9 @@ describe('V5 메타데이터 진단', () => {
         'NovelAI Diffusion V4.5 Curated Inpainting',
       ).model,
     ).toBe('V5 Curated 인페인트 (V4.5 Curated 폴백)');
+    expect(importedModelVersionOf({ naiDiagnostics: buildNaiMetadataDiagnostics(
+      { params_version: 4, tag_hint_qt: 1 }, 'NovelAI Diffusion V4.5 Curated Inpainting',
+    ) })).toBeUndefined();
   });
 
   test('구 메타데이터 누락 필드는 오류 없이 기본값으로 읽는다', () => {
