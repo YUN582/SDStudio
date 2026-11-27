@@ -238,7 +238,7 @@ test('optional 1MP resize changes the actual I2I input while retaining original 
   const metadata = { prompt: 'original prompt', uc: 'original negative', characterPrompts: [] };
   extract.mockResolvedValue(metadata);
   render(<ExternalImageView image="original-large-pixels" onClose={close} />);
-  const checkbox = await screen.findByRole('checkbox', { name: /1MP 이하로 축소/ });
+  const checkbox = await screen.findByRole('checkbox', { name: /사이즈 축소/ });
   expect((checkbox as HTMLInputElement).checked).toBe(false);
   expect(checkbox.closest('label')?.textContent).toContain('3840 × 2160 → 1344 × 768');
   fireEvent.click(checkbox);
@@ -251,7 +251,7 @@ test('leaving 1MP resize unchecked keeps the imported input untouched', async ()
   imageDimensions.mockResolvedValue({ width: 3840, height: 2160 });
   extract.mockResolvedValue(undefined);
   render(<ExternalImageView image="original-large-pixels" onClose={close} />);
-  await screen.findByRole('checkbox', { name: /1MP 이하로 축소/ });
+  await screen.findByRole('checkbox', { name: /사이즈 축소/ });
   fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
   await waitFor(() => expect(createI2I).toHaveBeenCalledWith(session, 'original-large-pixels', undefined, { scene: undefined, path: undefined }));
   expect(resizeImage).not.toHaveBeenCalled();
@@ -261,5 +261,5 @@ test('normal sized images do not offer a redundant shrink operation', async () =
   extract.mockResolvedValue(undefined);
   render(<ExternalImageView image="normal-pixels" onClose={close} />);
   await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
-  expect(screen.queryByRole('checkbox', { name: /1MP 이하로 축소/ })).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: /사이즈 축소/ })).toBeNull();
 });
