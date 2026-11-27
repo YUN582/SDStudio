@@ -267,6 +267,23 @@ describe('TaskQueueService 예약 생성 설정 스냅샷', () => {
     ).toBe(true);
   });
 
+  test('예약한 그림체 모델은 앱 공통 모델과 독립적으로 고정되고 다른 공통 값은 유지된다', async () => {
+    getConfig.mockResolvedValue({ modelVersion: ModelVersion.V5, furryMode: true, ucPreset: 'light' });
+    const service = new TaskQueueService([makeHandler()]);
+    const snapshot = await service.captureGenerationSnapshot();
+    await service.addTask({ ...makeParam(), generationSnapshot: snapshot, presetModelVersion: ModelVersion.V4_5Curated }, 10);
+    expect(service.queue.peek().params.generationSnapshot).toEqual({ ...snapshot, modelVersion: ModelVersion.V4_5Curated });
+    expect(snapshot.modelVersion).toBe(ModelVersion.V5);
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
+  test('자동 캡처한 I2I 예약도 지정한 메인 그림체 모델을 보관한다', async () => {
+    getConfig.mockResolvedValue({ modelVersion: ModelVersion.V4_5, transparentBackground: true });
+    const service = new TaskQueueService([makeHandler()]);
+    await service.addTask({ ...makeParam(), job: { type: 'sd_i2i' }, presetModelVersion: ModelVersion.V5Medium }, 1);
+    expect(service.queue.peek().params.generationSnapshot).toMatchObject({ modelVersion: ModelVersion.V5Medium, transparentBackground: true });
+  });
+
   test('단일 씬 예약도 호출 단위로 설정을 한 번만 캡처해 전달한다', async () => {
     const snapshot = {
       schemaVersion: 1 as const,

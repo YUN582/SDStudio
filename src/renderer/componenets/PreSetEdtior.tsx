@@ -47,6 +47,7 @@ import {
 } from '../models/types';
 import {
   sessionService,
+  presetModelService,
   imageService,
   backend,
   promptService,
@@ -149,7 +150,6 @@ import { SettingField, SettingGroup, SettingSwitch, SettingSwitchRow } from './S
 import {
   activatePresetSamplingFamily,
   samplingFamilyForModel,
-  switchSessionSamplingFamily,
   V5_MEDIUM_TEXT,
 } from '../models/modelSamplingProfiles';
 import { uploadVariantImageRecorded, variantSceneOfPreset } from '../models/variantSceneUndo';
@@ -1626,17 +1626,10 @@ const GlobalModelSettings = observer(() => {
   const changeModelVersion = async (next: ModelVersion) => {
     if (switchingModel || next === modelVersion) return;
     const previous = modelVersion;
-    const previousFamily = samplingFamilyForModel(previous);
-    const family = samplingFamilyForModel(next);
     setSwitchingModel(true);
     try {
-      if (family) switchSessionSamplingFamily(appState.curSession, family);
-      setModelVersion(next);
-      await saveConfig({ modelVersion: next });
+      await presetModelService.changeModel(next);
     } catch (e) {
-      if (previousFamily) {
-        switchSessionSamplingFamily(appState.curSession, previousFamily);
-      }
       setModelVersion(previous);
       appState.pushMessage('모델 전환에 실패했습니다. 다시 시도해주세요.');
     } finally {
@@ -1653,7 +1646,8 @@ const GlobalModelSettings = observer(() => {
   return (
     // 묶음 상자(2026-11-20 UI 정돈 그룹 1-c) — 같은 항목·순서, 켬/끔 2개는 즉시 저장이라 스위치 줄.
     // 그리는 곳 = 그룹 편집 창(ModalOverlay size m) 한 곳뿐 — 사전 세팅 패널 자체가 아니라 폭 여유가 있다.
-    <SettingGroup title="모델 설정 (전역)" className="mt-4">
+    <>
+    <SettingGroup title="모델 설정" className="mt-4">
         <SettingField>
           <label className="text-sm gray-label mb-1 block">NAI 모델 버전</label>
           <DropdownSelect
@@ -1673,6 +1667,7 @@ const GlobalModelSettings = observer(() => {
             }}
             disabled={switchingModel}
           />
+          <div className="text-xs text-sub mt-1">현재 사전설정에 저장됩니다.</div>
           {isV5ModelVersion(modelVersion) && (
             <div className="text-xs text-faint mt-1">
               V5에서는 Karras가 고정되며 Vibe·Variety+·DDIM은
@@ -1691,6 +1686,8 @@ const GlobalModelSettings = observer(() => {
             </div>
           )}
         </SettingField>
+    </SettingGroup>
+    <SettingGroup title="공통 생성 설정" className="mt-4">
         <SettingSwitchRow
           id="globalFurryMode"
           checked={furryMode}
@@ -1776,6 +1773,7 @@ const GlobalModelSettings = observer(() => {
           )}
         </SettingField>
     </SettingGroup>
+    </>
   );
 });
 

@@ -1,5 +1,6 @@
 import { action, observable, makeAutoObservable } from 'mobx';
-import type { GenerationSettingsSnapshot, ImageSize } from '../../backends/imageGen';
+import type { GenerationSettingsSnapshot, ImageSize, ModelVersion } from '../../backends/imageGen';
+import { isKnownModelVersion } from '../../backends/genVendors/naiModelCapabilities';
 import {
   isModelSamplingFamily,
   normalizeSamplingProfiles,
@@ -316,6 +317,7 @@ function createMobxObject(vars: WFVar[], samplingProfiles = false) {
     obj[varObj.name] = createDefaultValue(varObj);
   });
   if (samplingProfiles) {
+    obj.modelVersion = undefined as ModelVersion | undefined;
     obj.samplingProfiles = undefined as ModelSamplingProfiles | undefined;
     obj.samplingProfileFamily = undefined as ModelSamplingFamily | undefined;
   }
@@ -352,6 +354,7 @@ function materializeWFObj(type: string, vars: WFVar[], samplingProfiles = false)
       }
     });
     if (samplingProfiles) {
+      obj.modelVersion = isKnownModelVersion(json.modelVersion) ? json.modelVersion : undefined;
       obj.samplingProfiles = normalizeSamplingProfiles(json.samplingProfiles);
       obj.samplingProfileFamily = isModelSamplingFamily(json.samplingProfileFamily)
         ? json.samplingProfileFamily
@@ -377,6 +380,7 @@ function materializeWFObj(type: string, vars: WFVar[], samplingProfiles = false)
         json.samplingProfileFamily = obj.samplingProfileFamily;
       }
     }
+    if (samplingProfiles && isKnownModelVersion(obj.modelVersion)) json.modelVersion = obj.modelVersion;
     return json;
   };
 

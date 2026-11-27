@@ -65,6 +65,10 @@ import { configureGlobalLibraryDeleteUndo, globalCharacterMetaOf } from './globa
 import { runProjectTrashDelete } from './projectDeleteFlow';
 import { physicalDirOf } from './storageLayout';
 import { getAppState } from './appStateRef';
+import { PresetModelService } from './PresetModelService';
+import { extractPromptDataFromBase64 } from './util';
+import { importedModelVersionOf } from './sdstudioPromptImport';
+import { dataUriToBase64 } from './ImageService';
 import { flushGlobalStores } from './globalStoreFlush';
 
 export const backend =
@@ -103,6 +107,21 @@ export const sessionService = new SessionService();
 undoService.configure({ isMirror: (s) => sessionService.isMirror(s.name) });
 
 export const imageService = new ImageService();
+
+export const presetModelService = new PresetModelService({
+  getSession: () => getAppState().curSession,
+  getConfig: () => backend.getConfig(),
+  setConfig: config => backend.setConfig(config),
+  recoverModel: async (session, preset) => {
+    if (!preset.profile) return undefined;
+    const data = await imageService.fetchVibeImage(session, preset.profile);
+    return data ? importedModelVersionOf(await extractPromptDataFromBase64(dataUriToBase64(data))) : undefined;
+  },
+  canWrite: session => !sessionService.isMirror(session.name),
+  markDirty: session => sessionService.markDirty(session.name),
+  changed: () => sessionService.configChanged(),
+  onError: () => getAppState().pushMessage('사전설정의 모델을 불러오지 못했습니다. 모델 설정에서 다시 선택해 주세요.', 'error'),
+});
 
 export const trashService = new TrashService();
 

@@ -20,7 +20,6 @@ import {
 import {
   activatePresetSamplingFamily,
   samplingFamilyForModel,
-  switchSessionSamplingFamily,
 } from '../models/modelSamplingProfiles';
 import { base64ToDataUri, getImageDimensions } from './BrushTool';
 import { importedI2IResizeSize, ImportedImageSize, resizeImportedI2IImage } from '../models/importedImageResize';
@@ -258,10 +257,8 @@ export const ExternalImageView = observer(
             !isGlobal && options.modelSettings ? importedModel : undefined;
           const applyFamily = applyModel ? samplingFamilyForModel(applyModel) : undefined;
           if (applyFamily) {
-            switchSessionSamplingFamily(session, applyFamily);
-            // A new preset is not in the session yet. Initialize its target profile
-            // before importing values so the editor does not overwrite them on mount.
-            if (isNew) activatePresetSamplingFamily(preset, applyFamily);
+            // Other presets retain their own model and active sampling profile.
+            activatePresetSamplingFamily(preset, applyFamily);
           }
           if (target === 'current') undoRec.preset(preset);
           undoRec.scene(normalScene, ['slots']);
@@ -363,6 +360,10 @@ export const ExternalImageView = observer(
           }
 
           // 글로벌 프리셋 대상: shared state(시드/바이브/캐릭터 레퍼런스)는 저장 안 함
+          // Bind after config writes, so selection synchronization cannot race the quality import.
+          if (importedModel && (isGlobal || options.modelSettings)) {
+            runInAction(() => { preset.modelVersion = importedModel; });
+          }
           // (글로벌 프리셋은 그림체 설정만 저장. 시드/바이브/레퍼런스는 세션 단위 데이터)
           if (isGlobal) {
             try {
@@ -529,7 +530,7 @@ export const ExternalImageView = observer(
           {choice('resolution', '해상도', !hasResolution || !scene || isGlobalTarget)}
           {choice('vibes', '바이브 트랜스퍼', !hasVibes || isGlobalTarget)}
           {choice('references', '캐릭터 레퍼런스', !hasCharRefs || isGlobalTarget)}
-          {choice('modelSettings', '모델·품질 전역 설정', isGlobalTarget || !(importedModel || job.sdstudioMetadata?.generationSettings))}
+          {choice('modelSettings', '모델·공통 설정', isGlobalTarget || !(importedModel || job.sdstudioMetadata?.generationSettings))}
         </div>
         {target === 'current' && ((hasCharacters && options.characters) || (hasVibes && options.vibes)) && (
           <div className="flex flex-wrap gap-x-3 mt-1">
@@ -648,8 +649,8 @@ export const ExternalImageView = observer(
               {skipFixedSampling && <p className="text-xs text-muted mt-3 mb-0" data-v5m-import-note="">V5M 이미지의 스텝·샘플러·CFG 리스케일은 고정값이어서 적용하지 않습니다.</p>}
               {(job.sdstudioMetadata?.generationSettings || importedModel) && <p className="text-xs text-muted mt-3 mb-0">
                 {job.sdstudioMetadata?.generationSettings
-                  ? '모델·품질 전역 설정을 선택하면 생성 당시 모델, 품질, UC 프리셋과 투명 배경 설정도 적용합니다.'
-                  : '모델·품질 전역 설정을 선택하면 이미지의 모델도 적용합니다.'}
+                  ? '모델·공통 설정을 선택하면 사전설정의 모델과 공통 품질, UC 프리셋, 투명 배경 설정도 적용합니다.'
+                  : '모델·공통 설정을 선택하면 이미지의 모델을 사전설정에 저장합니다.'}
               </p>}
             </MetadataSection>
           </aside>}

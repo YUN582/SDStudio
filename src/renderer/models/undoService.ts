@@ -222,7 +222,7 @@ export const UNDO_TEXT = {
   rankingReroll: (name: string) => `대진 리롤: ${name}`,
   metaApply: '생성 설정 적용',
   metaApplyConfigNotUndone:
-    '생성 설정 적용의 모델 설정(환경설정) 부분은 되돌리기에 포함되지 않습니다. 프로젝트 쪽 변경만 되돌릴 수 있습니다.',
+    '품질, UC 프리셋, 투명 배경 등 공통 설정은 되돌리기에 포함되지 않습니다. 사전설정에 저장된 모델과 프로젝트 변경은 되돌릴 수 있습니다.',
   // U3b 사전 세팅(그림체)·공용 설정·바이브·레퍼런스·캐릭터 프리셋 — presetUndo.ts
   presetAdd: (name: string) => `그림체 추가: ${name}`,
   presetDuplicate: (name: string) => `그림체 복제: ${name}`,

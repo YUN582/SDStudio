@@ -113,5 +113,10 @@ describe('모델별 프리셋 샘플링 설정', () => {
     expect(restored.samplingProfiles.v4_5.steps).toBe(30);
     expect(restored.samplingProfiles.v5.steps).toBe(35);
     expect(restored.samplingProfileFamily).toBe('v5');
+    p.modelVersion = ModelVersion.V5Curated;
+    const saved = p.toJSON();
+    expect(saved.modelVersion).toBe(ModelVersion.V5Curated);
+    expect(workflow.presetFromJSON(saved).modelVersion).toBe(ModelVersion.V5Curated);
+    expect(workflow.presetFromJSON({ ...saved, modelVersion: 'unknown-future-model' }).modelVersion).toBeUndefined();
   });
 });

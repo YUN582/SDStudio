@@ -39,7 +39,8 @@ import {
   lowerPromptNode,
   toPARR,
 } from '../PromptService';
-import { imageService, promptService, taskQueueService, workFlowService } from '..';
+import { imageService, presetModelService, promptService, taskQueueService, workFlowService } from '..';
+import { assignPresetModel, savedPresetModel, selectedModelPreset } from '../PresetModelService';
 import { TaskParam } from '../TaskQueueService';
 import { dataUriToBase64 } from '../ImageService';
 import { resolveSceneSeed, resolveVariantSceneSeed } from '../sceneSeedGroups';
@@ -279,6 +280,9 @@ const SDImageGenHandler = async (
   generationSnapshot?: GenerationSettingsSnapshot,
   imageOptions?: { resolution: ImageSize; imageIndex: number },
 ) => {
+  await presetModelService?.ready();
+  const model = savedPresetModel(preset);
+  if (model) assignPresetModel(preset, model);
   const job = buildSDImageGenJob(scene, prompt, characterPrompts, preset, shared);
   if (imageOptions) {
     job.overrideResolution = { ...imageOptions.resolution };
@@ -292,6 +296,7 @@ const SDImageGenHandler = async (
     outputPath: imageService.getOutputDir(session, scene),
     onComplete: onComplete,
     generationSnapshot,
+    ...(model ? { presetModelVersion: model } : {}),
   };
   await taskQueueService.addTask(param, samples);
 };
@@ -458,6 +463,9 @@ const createSDI2IHandler = (type: string) => {
     // 생성 시점의 메인 사전 세팅 값(2026-10-11 사용자 결정, SPEC §7-5 — variantSampling 단일 출처). 변형 생성 경로는
     // 전부 이 핸들러를 지나므로(미러·조합 전개·이미지 변형 메뉴·대량 작업) 여기 한 곳에서만 적용한다.
     // 씬 프리셋 객체는 바꾸지 않는다(사본) — 메인을 못 읽으면 씬 값 그대로 + 경고.
+    await presetModelService?.ready();
+    const main = selectedModelPreset(session), model = savedPresetModel(main);
+    if (model) assignPresetModel(main, model);
     preset = resolveVariantSampling(session, preset);
     // 빈 인페인트 시드는 랜덤. 다른 변형은 프리셋 → 시드 그룹 → 메인 → 랜덤.
     // applyMainSampling 은 seed 를 덮지 않는다(샘플링 필드 목록에 없음) — 씬 프리셋 seed 가 1순위.
@@ -538,6 +546,7 @@ const createSDI2IHandler = (type: string) => {
       outputPath: imageService.getOutputDir(session, scene),
       onComplete: onComplete,
       generationSnapshot,
+      ...(model ? { presetModelVersion: model } : {}),
     };
     await taskQueueService.addTask(param, samples);
   };

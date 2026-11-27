@@ -12,7 +12,8 @@ import {
 } from './SessionService';
 import { extractPromptDataFromBase64 } from './util';
 import { decoratePresetExportImage } from './presetExportDecoration';
-import { planPromptImport } from './sdstudioPromptImport';
+import { importedModelVersionOf, planPromptImport } from './sdstudioPromptImport';
+import { assignPresetModel, savedPresetModel } from './PresetModelService';
 import { numberedName } from './nameInput';
 import type { ImportableMetadata } from './types';
 import { StoreFile, GLOBAL_STORE_SYNC_KEYS } from './storeFile';
@@ -635,6 +636,8 @@ export class GlobalPresetService extends EventTarget {
 
     const preset: any = workFlowService.buildPreset('SDImageGen');
     preset.name = 'external image';
+    const model = importedModelVersionOf(job);
+    if (model) assignPresetModel(preset, model);
     Object.assign(preset, globalPresetPromptsFromJob(job, 'fold'));
     preset.uc = job.uc ?? '';
     if ((job.characterPrompts?.length ?? 0) > 0) {
@@ -666,6 +669,8 @@ export class GlobalPresetService extends EventTarget {
     const job = await extractPromptDataFromBase64(base64);
     const preset: any = workFlowService.buildPreset('SDImageGen');
     preset.name = name;
+    const model = importedModelVersionOf(job);
+    if (model) assignPresetModel(preset, model);
     Object.assign(preset, globalPresetPromptsFromJob(job, 'omit'));
     preset.uc = job?.uc ?? '';
     if ((job?.characterPrompts?.length ?? 0) > 0) {
@@ -1030,6 +1035,12 @@ export class GlobalPresetService extends EventTarget {
         const dataUri = await this.fetchProfileImage(entry.profile);
         if (dataUri) {
           const base64 = dataUriToBase64(dataUri);
+          if (!savedPresetModel(clone)) {
+            try {
+              const model = importedModelVersionOf(await extractPromptDataFromBase64(base64));
+              if (model) clone.modelVersion = model;
+            } catch { /* Optional legacy metadata must not prevent copying its image. */ }
+          }
           const sessionProfile = await imageService.storeVibeImage(
             session,
             base64,

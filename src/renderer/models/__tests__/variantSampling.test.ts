@@ -52,6 +52,7 @@ jest.mock('../ImageService', () => ({
 jest.mock('../../componenets/BrushTool', () => ({ getImageDimensions: jest.fn() }));
 
 import { MODEL_SAMPLING_FIELDS } from '../modelSamplingProfiles';
+import { ModelVersion } from '../../backends/imageGen';
 import {
   applyMainSampling,
   mainSamplingSummary,
@@ -301,6 +302,20 @@ describe('readMainSampling·resolveVariantSampling 폴백', () => {
 
 describe('핸들러 — 잡의 샘플링 = 메인 사전 세팅', () => {
   const inpaintScene = { name: 'scene', type: 'inpaint' } as any;
+
+  test.each([SDInpaintDef, SDI2IDef])('변형은 작업 사본의 오래된 모델 대신 현재 메인 그림체 모델로 예약한다: $type', async (def) => {
+    const main = { ...MAIN_PRESET, name: 'main', modelVersion: ModelVersion.V4_5Curated };
+    const session = mainSession('SDImageGen', {
+      presets: new Map([['SDImageGen', [main]]]),
+      getCommonSetup: () => ['SDImageGen', main, { ...MAIN_SHARED }, undefined],
+    });
+    const preset = new WFWorkFlow(def).buildPreset();
+    Object.assign(preset, { image: 'RAW', mask: 'mask.png', modelVersion: ModelVersion.V5 });
+    await def.handler(session, inpaintScene, { type: 'text', text: '' }, [], preset, undefined, 10);
+    expect(addTask.mock.calls[0][0].presetModelVersion).toBe(ModelVersion.V4_5Curated);
+    expect(addTask.mock.calls[0][1]).toBe(10);
+    expect(preset.modelVersion).toBe(ModelVersion.V5);
+  });
 
   test('an empty inpaint mask creates I2I without focus; painted masks remain inpaint', async () => {
     const { imageService } = jest.requireMock('..');

@@ -13,6 +13,7 @@ import {
   Sampling,
 } from '../backends/imageGen';
 import { captureGenerationSettings } from '../backends/generationSettings';
+import { isKnownModelVersion } from '../backends/genVendors/naiModelCapabilities';
 import { CircularQueue } from '../circularQueue';
 import {
   backend,
@@ -20,6 +21,7 @@ import {
   isMobile,
   localAIService,
   promptService,
+  presetModelService,
   sessionService,
   taskQueueService,
   workFlowService,
@@ -127,6 +129,8 @@ export interface TaskParam {
   // 예약 순간의 전역 생성 설정. 구 작업·구 위임 payload에는 없을 수 있으며,
   // 그 경우 실행 시 기존 config 해석 경로로 폴백한다.
   generationSnapshot?: GenerationSettingsSnapshot;
+  /** Model of the generating style, resolved into the queued snapshot before delegation. */
+  presetModelVersion?: ModelVersion;
   // 생성 위임(W6 P3): 이 태스크가 보조 창에서 위임되어 호스트 창에서 실행 중이면
   // 채워진다. 존재하면 호스트는 로컬 onComplete/onAddImage 를 하지 않고(=자기 세션을
   // 건드리지 않음) 완료를 원 창에 브리지한다. 로컬 예약(단일 창 포함)은 항상 undefined.
@@ -696,6 +700,11 @@ export class TaskQueueService extends EventTarget {
         return;
       }
     }
+    if (isImageGeneration && capturedParams.generationSnapshot && isKnownModelVersion(params.presetModelVersion)) {
+      capturedParams = { ...capturedParams, generationSnapshot: {
+        ...capturedParams.generationSnapshot, modelVersion: params.presetModelVersion,
+      } };
+    }
     // 생성 위임(W6 P3): 내가 호스트가 아니면(보조 창) 로컬 큐에 넣지 않고 호스트에
     // 위임한다. 호스트/단일 창/모바일은 그대로 로컬 경로(addTaskLocal) — 종전과 동일.
     if (!this.isGenerationHost) {
@@ -743,6 +752,7 @@ export class TaskQueueService extends EventTarget {
   // 한 번의 사용자 예약 동작에서 공유할 생성 설정 스냅샷을 만든다.
   // 일괄 예약 호출부가 이 값을 재사용하면 태스크마다 config IPC를 반복하지 않는다.
   async captureGenerationSnapshot(): Promise<GenerationSettingsSnapshot> {
+    await presetModelService?.ready();
     return captureGenerationSettings(await backend.getConfig());
   }
 

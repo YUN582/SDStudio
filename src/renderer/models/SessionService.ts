@@ -3477,6 +3477,7 @@ export function normalizePresetJson(json: any): any {
     newJson.type = 'SDImageGenEasy';
     newJson.name = json.name;
     newJson.profile = json.profile;
+    if (json.modelVersion) newJson.modelVersion = json.modelVersion;
     newJson.sampling = json.sampling ?? Sampling.KEulerAncestral;
     newJson.noiseSchedule = json.noiseSchedule ?? 'karras';
     newJson.promptGuidance = json.promptGuidance ?? 5;

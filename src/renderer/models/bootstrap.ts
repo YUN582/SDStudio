@@ -1,6 +1,7 @@
 import {
   backend,
   sessionService,
+  presetModelService,
   trashService,
   globalPieceService,
   globalPresetService,
@@ -47,6 +48,7 @@ let started = false;
 export async function bootstrapApp(): Promise<void> {
   if (started) return; // React StrictMode/재호출 방어
   started = true;
+  presetModelService.start();
   const t0 = Date.now();
 
   // 창 제목에 현재 프로젝트명을 반영 — 작업표시줄/Alt+Tab 에서 창을 구분하기 위함

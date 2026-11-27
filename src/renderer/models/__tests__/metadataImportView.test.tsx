@@ -162,7 +162,7 @@ describe('metadata model and sampling import', () => {
       samplingProfiles: { v5: { steps: 31 }, v4_5: { steps: 24 } } });
     await open();
     fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: target } });
-    expect((screen.getByLabelText('모델·품질 전역 설정') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText('모델·공통 설정') as HTMLInputElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: '적용' }));
     await waitFor(() => expect(close).toHaveBeenCalled());
     expect(backend.setConfig).toHaveBeenCalledWith(expect.objectContaining({ modelVersion: ModelVersion.V4_5 }));
@@ -174,7 +174,7 @@ describe('metadata model and sampling import', () => {
 
   test('unchecked model import leaves global model unchanged', async () => {
     await open();
-    fireEvent.click(screen.getByLabelText('모델·품질 전역 설정'));
+    fireEvent.click(screen.getByLabelText('모델·공통 설정'));
     fireEvent.click(screen.getByRole('button', { name: '적용' }));
     await waitFor(() => expect(close).toHaveBeenCalled());
     expect(backend.setConfig).not.toHaveBeenCalled();
@@ -184,7 +184,7 @@ describe('metadata model and sampling import', () => {
   test('saving to the global library does not change the active model', async () => {
     await open();
     fireEvent.change(screen.getByLabelText('적용할 프리셋'), { target: { value: 'new-global' } });
-    expect((screen.getByLabelText('모델·품질 전역 설정') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('모델·공통 설정') as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '적용' }));
     await waitFor(() => expect(close).toHaveBeenCalled());
     expect(backend.setConfig).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { backend, sessionService } from '../models';
+import { backend, sessionService, presetModelService } from '../models';
 import { appState } from '../models/AppService';
 import { ModelVersion } from '../backends/imageGen';
 import {
@@ -9,14 +9,13 @@ import {
   modelVersionForSamplingFamily,
   nextModelFamily,
   samplingFamilyForModel,
-  switchSessionSamplingFamily,
   type ModelSamplingFamily,
 } from '../models/modelSamplingProfiles';
 import { normalizeModelVersion } from '../backends/genVendors/naiModelCapabilities';
 
 /**
  * NAI 모델 계열(v4.5 / v5 / v5 medium) 퀵 전환 — 2026-11-06 V5M(Medium Effort) 칸 추가로 3택(세그먼트 세 칸, 토글은 4.5→5→V5M 순환) — PC 상단 바(TobBar)와 모바일 V2 프롬프트 시트 손잡이 줄이 같은 부품을 쓴다(2026-09-26).
- * 값은 config.modelVersion 의 계열. 전환 = 현재 세션의 샘플링 프로필 교체 + config 저장 + config-changed 알림(예전 TobBar 로직 그대로).
+ * 현재 사전설정의 모델과 샘플링 프로필을 전환하고 config.modelVersion 및 공통 모델 표시를 동기화한다.
  * compact: 모바일용(높이 28px·칸 최소 34px, .touch-hit 로 판정 36px).
  * variant 'toggle': 현재 계열만 적힌 버튼 하나(탭하면 다른 계열로). 클래식 모바일 상단 1줄째 우상단용 —
  *   세그먼트(70px)를 두면 프로젝트 선택이 360 폭에서 약 122px 로 줄어 단일 토글(36px)로 절충(2026-09-26 사용자 결정).
@@ -50,17 +49,11 @@ export function useModelFamilySwitch() {
   const family = samplingFamilyForModel(modelVersion);
   const switchFamily = async (next: ModelSamplingFamily) => {
     if (switching || family === next) return;
-    const previousFamily = family;
     const nextVersion = modelVersionForSamplingFamily(next, modelVersion);
     setSwitching(true);
     try {
-      switchSessionSamplingFamily(appState.curSession, next);
-      const config = await backend.getConfig();
-      await backend.setConfig({ ...config, modelVersion: nextVersion });
-      setModelVersion(nextVersion);
-      sessionService.configChanged();
+      await presetModelService.changeModel(nextVersion);
     } catch (e) {
-      if (previousFamily) switchSessionSamplingFamily(appState.curSession, previousFamily);
       appState.pushMessage('모델 전환에 실패했습니다. 다시 시도해주세요.');
     } finally {
       setSwitching(false);
