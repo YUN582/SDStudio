@@ -287,12 +287,12 @@ export type NewVariantCombo =
 
 export async function chooseNewVariantCombo(
   session: Session,
-  source: GenericScene,
+  source: GenericScene | undefined,
   workflow: string,
   forceChoice = false,
 ): Promise<NewVariantCombo | undefined> {
   if (!canChooseComboMode(workflow)) return { kind: 'single' };
-  if (source.type === 'inpaint' && !forceChoice) {
+  if (source?.type === 'inpaint' && !forceChoice) {
     const inherited = comboPatchFromVariant(source as InpaintScene);
     if (inherited) {
       return {
@@ -314,7 +314,7 @@ export async function chooseNewVariantCombo(
     getAppState().pushMessage(COMBO_SOURCE_TEXT.noSetup, 'error');
     return undefined;
   }
-  if (source.type === 'inpaint') {
+  if (source?.type === 'inpaint') {
     const inherited = comboPatchFromVariant(source as InpaintScene);
     if (inherited) {
       inherited.comboMode = layout;
@@ -327,7 +327,7 @@ export async function chooseNewVariantCombo(
       };
     }
   }
-  if (source.type === 'scene') {
+  if (source?.type === 'scene') {
     const combo = buildComboFromScene(source as Scene, workflow, layout, ctx);
     return {
       kind: 'combo',

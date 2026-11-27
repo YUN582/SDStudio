@@ -15,7 +15,7 @@ import {
 export const SINGLE_IMAGE_EDIT = 'codex.singleImageEdit.v1';
 export const SINGLE_IMAGE_BACKUP = 'codex.singleImagePromptBackup.v1';
 export const KEEP_COMBINATIONS = 'codex.keepImageEditCombinations.v1';
-const EXPLICIT_COMBINATIONS = 'sdstudio.explicitImageEditCombinations.v1';
+export const EXPLICIT_COMBINATIONS = 'sdstudio.explicitImageEditCombinations.v1';
 
 export function isSingleImageEdit(work: InpaintScene) {
   return (

@@ -8,8 +8,9 @@ import { editWorkflowFields } from './presetUndo';
 import { recordScenesCreated } from './sceneStructureUndo';
 import { UNDO_TEXT } from './undoService';
 import { inpaintSceneResolutionFields, resolutionFromImage } from './inpaintResolution';
-import { SINGLE_IMAGE_EDIT } from './singleImageEdit';
+import { EXPLICIT_COMBINATIONS, SINGLE_IMAGE_EDIT } from './singleImageEdit';
 import { openSourceVariant } from './sourceVariant';
+import { chooseNewVariantCombo, COMBO_SOURCE_TEXT } from './comboSource';
 import { joinPromptSections } from './sdstudioPromptImport';
 import { getOrderedBaseCharacterPrompts } from './sceneCharacterPrompts';
 
@@ -90,6 +91,9 @@ export async function createImportedI2I(
     });
     return created;
   }
+  const choice = await chooseNewVariantCombo(session, undefined, 'SDInpaint');
+  if (!choice) return undefined;
+  checkTarget(session, target);
   const selected = session.presets.get(target.type)?.find(preset => preset.name === target.name);
   if (!metadata && !selected) throw new Error('현재 생성 설정을 찾을 수 없습니다.');
   const values = selected?.toJSON?.() ?? selected ?? {};
@@ -114,7 +118,7 @@ export async function createImportedI2I(
   const work = InpaintScene.fromJSON({
     type: 'inpaint', name, workflowType: 'SDInpaint',
     preset: workFlowService.createPreset('SDInpaint', settings as any),
-    meta: { [SINGLE_IMAGE_EDIT]: true },
+    meta: { [SINGLE_IMAGE_EDIT]: true, ...(choice.kind === 'combo' ? { [EXPLICIT_COMBINATIONS]: true } : {}) },
     ...inpaintSceneResolutionFields('SDInpaint', owner ?? { resolution: 'portrait' } as GenericScene, resolution),
     sceneRef: linked ? parent : undefined,
     sourceImage: linked ? source!.path!.split('/').pop() : undefined,
@@ -123,6 +127,14 @@ export async function createImportedI2I(
     imageMap: [], mains: [], slots: [],
   });
   if (!work) throw new Error('I2I 작업을 만들지 못했습니다.');
+  if (choice.kind === 'combo') {
+    // External images have no source scene to copy. Start with one middle prompt;
+    // the chosen mode supplies the current project's upper/lower sections.
+    work.preset.prompt = metadata?.sdstudioMetadata?.promptSource?.middlePrompt ?? metadata?.prompt ?? '';
+    work.preset.uc = metadata?.uc ?? '';
+    work.preset.useGlobalUc = !metadata;
+    choice.apply(work);
+  }
   // The unified editor sends I2I without a mask, and inpaints once a mask is drawn.
   work.preset.strength = 0.6;
   work.preset.mask = '';
@@ -131,5 +143,8 @@ export async function createImportedI2I(
   if (session.inpaints.has(name)) throw new Error('같은 이름의 작업이 추가되었습니다. 다시 시도해 주세요.');
   runInAction(() => session.addScene(work));
   recordScenesCreated(session, [work], UNDO_TEXT.variantSceneCreate(name));
+  if (choice.kind === 'combo' && metadata && !metadata.sdstudioMetadata?.promptSource) {
+    appState.pushMessage(COMBO_SOURCE_TEXT.currentNotice, 'info');
+  }
   return work;
 }

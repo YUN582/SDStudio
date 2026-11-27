@@ -347,6 +347,28 @@ describe('생성 직전 3택 — chooseNewVariantCombo', () => {
     expect(messages).toEqual([{ text: COMBO_SOURCE_TEXT.noSetup, kind: 'error' }]);
   });
 
+  test.each(['shared', 'snapshot'] as const)('외부 이미지 + %s — 원본 씬 없이 현재 프롬프트 한 조각으로 시작', async mode => {
+    const session = makeSession();
+    answers.push(mode);
+    const choice = await chooseNewVariantCombo(session, undefined, 'SDInpaint');
+    expect(pushed).toHaveLength(1);
+    expect(choice?.kind).toBe('combo');
+    const scene = metaVariant('SDInpaint');
+    scene.preset.prompt = 'external middle';
+    if (choice?.kind === 'combo') {
+      expect(choice.fromCurrent).toBe(true);
+      choice.apply(scene);
+    }
+    expect(scene.comboMode).toBe(mode);
+    expect(scene.slots.map(slot => slot.map(piece => piece.prompt))).toEqual([['external middle']]);
+    expect(scene.preset.image).toBe('img.png');
+    expect(scene.preset.mask).toBe('mask.png');
+    if (mode === 'snapshot') {
+      expect(scene.preset.frontPrompt).toBe('MAIN-F, ex');
+      expect(scene.preset.backPrompt).toBe('MAIN-B');
+    }
+  });
+
   test('원본이 조합 모드 변형 씬 — 묻지 않고 조합(slots·comboMode·고정값·useGlobalUc) 승계', async () => {
     const session = makeSession();
     const src = metaVariant('SDI2I', 'V');
