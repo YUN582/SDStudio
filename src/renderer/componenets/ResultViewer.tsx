@@ -380,7 +380,7 @@ const TrashImageView = ({ session, scene, imageSize }: TrashImageViewProps) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-none px-2 pt-2 text-xs text-faint break-keep">{retentionNotice}</div>
-      <div className="flex-none p-2 flex gap-2 flex-wrap border-b line-color">
+      <div className="flex-none p-2 flex gap-2 flex-wrap">
         <button
           className={`round-button back-green`}
           onClick={handleRestore}
@@ -608,6 +608,7 @@ const Cell = memo(
     if (isMobile && imageSize === 500) {
       cellSize = style.width;
     }
+    cellSize = Math.max(1, Math.min(cellSize, Number(style.width) || cellSize, Number(style.height) || cellSize) - 8);
 
     const { show, hideAll } = useContextMenu({
       id: ContextMenuType.GallaryImage,
@@ -709,9 +710,8 @@ const Cell = memo(
         data-history-drop-path={path || undefined}
         style={style}
         className={
-          'image-cell relative hover:brightness-95 active:brightness-90 bg-[var(--c-surface)] cursor-pointer ' +
-          ((isDragging || reorderDrag?.items.includes(path)) ? 'opacity-30 no-touch' : '') +
-          ((path && (isOver || reorderDrag?.target === path)) ? ' border-2 border-sky-500' : '')
+          'image-cell sds-image-cell relative cursor-pointer ' +
+          ((isDragging || reorderDrag?.items.includes(path)) ? 'opacity-30 no-touch' : '')
         }
         draggable={isMobile && !selectMode}
         onClick={(event) => {
@@ -725,7 +725,8 @@ const Cell = memo(
         onMouseLeave={() => onCellLeave?.(index)}
         ref={(node) => drag(drop(isMobile && !selectMode ? node : null))}
       >
-        {path && image && (
+        {path && <div className="sds-image-card">
+        {image && (
           <>
             <div data-image-content className="relative w-fit">
               <img
@@ -797,8 +798,10 @@ const Cell = memo(
           </>
         )}
         {path && isFocused && (
-          <div className="absolute inset-0 border-4 border-sky-400 z-20 pointer-events-none rounded-sm" />
+          <div className="sds-image-card-ring border-4 border-sky-400 z-20 pointer-events-none" />
         )}
+        {(isOver || reorderDrag?.target === path) && <div className="sds-image-card-ring border-2 border-sky-500 z-20 pointer-events-none" />}
+        </div>}
       </div>
     );
   },
@@ -1727,7 +1730,6 @@ export const ResultDetailView = observer(
                 <ActionIcon id="bookmark" size={14} />
               </button>
             </Tooltip>
-            <span className="sds-detail-sep" aria-hidden="true" />
             <Tooltip content="이전 이미지">
               <button
                 type="button"
@@ -1970,7 +1972,7 @@ export const ResultDetailView = observer(
           )
         ) : (
           <div
-            className="sds-detail-heading flex items-center gap-2 flex-none border-b line-color px-3 md:px-4"
+            className="sds-detail-heading flex items-center gap-2 flex-none px-3 md:px-4"
             data-detail-header=""
           >
             {headerContent}
@@ -1978,7 +1980,7 @@ export const ResultDetailView = observer(
         )}
         {!v2 && (
           <nav
-            className="sds-detail-action-bar flex-none border-b line-color bg-[var(--c-surface)]"
+            className="sds-detail-action-bar flex-none bg-[var(--c-surface)]"
             aria-label="이미지 작업"
             data-detail-buttons=""
           >
@@ -2059,14 +2061,14 @@ export const ResultDetailView = observer(
           ref={setBodyEl}
           className={
             wideLayout
-              ? 'relative min-h-0 flex flex-1 flex-row overflow-hidden'
-              : 'relative min-h-0 flex flex-1 flex-col overflow-auto'
+              ? 'sds-detail-body relative min-h-0 flex flex-1 flex-row overflow-hidden'
+              : 'sds-detail-body relative min-h-0 flex flex-1 flex-col overflow-auto'
           }
         >
           {wideLayout ? (
             <>
               <div
-                className="sds-detail-info flex-none min-w-0 flex flex-col border-r line-color"
+                className="sds-detail-info flex-none min-w-0 flex flex-col"
                 style={{ width: wideCols.prompt }}
                 data-detail-info-pane=""
               >
@@ -2080,7 +2082,7 @@ export const ResultDetailView = observer(
           ) : (
             <>
               {!v2 && (
-                <div className="sds-detail-info flex-none p-2 border-b line-color">
+                <div className="sds-detail-info flex-none p-2">
                   <button
                     type="button"
                     className="round-button back-gray"
@@ -3073,7 +3075,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
             />
           </FloatView>
         )}
-        <div className="flex-none p-2 md:p-4 border-b line-color">
+        <div className="flex-none p-2 md:p-4">
           <SceneModeHeaderPortal kindIcon={scene.type === 'inpaint' ? emoji : '🖼️'} name={scene.name}
             mode="images" selectMode={selectMode} sceneNav={sceneNav}
             onMode={mode => { if (mode === 'edit') onEdit(scene); }} />
@@ -3363,7 +3365,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
                 {openVariants.map((variant) => {
                   const results = getScenePaths(variant);
                   return (
-                    <section key={variant.name} className="mb-3 rounded-lg border line-color bg-[var(--c-surface)] p-3">
+                    <section key={variant.name} className="mb-3 rounded-lg bg-[var(--c-surface)] p-3">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <h3 className="m-0 text-sm font-semibold text-default break-all">{variant.name}</h3>
                         <span className="text-xs text-sub">{resultSceneLabel(variant)} · 결과 {results.length}장</span>

@@ -260,7 +260,7 @@ const SceneSeedInput = ({
 const FoldHead = ({ open, label, onToggle }: { open: boolean; label: string; onToggle: () => void }) => (
   <button
     type="button"
-    className="w-full flex items-center gap-1.5 py-2 text-sm text-sub text-left border-t line-color"
+    className="w-full flex items-center gap-1.5 py-2 text-sm text-sub text-left"
     aria-expanded={open}
     onClick={onToggle}
   >
@@ -1676,7 +1676,7 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
     title: string,
   ) => (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex-none flex items-center gap-2 px-2 py-1.5 border-b line-color">
+      <div className="flex-none flex items-center gap-2 px-2 py-1.5">
         <span className="text-sm font-bold text-body flex-none">{title}</span>
         <div className="ml-auto flex gap-1">
           <button
@@ -1897,7 +1897,7 @@ export const SlotEditor = observer(({ scene, big, characterContext }: SlotEditor
 
       {/* 우측 패널: 데스크톱 전용 상시 배치 */}
       {!isMobile && (
-        <div className="w-64 flex-none border-l line-color flex flex-col min-h-0">
+        <div className="w-64 flex-none flex flex-col min-h-0 pl-2">
           {previewPanel(detailed, setDetailed, detailed ? '조합 목록' : '조합 미리보기')}
         </div>
       )}

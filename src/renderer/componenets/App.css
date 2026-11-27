@@ -1232,11 +1232,6 @@ html:not(.finish-classic) .tab-seg > .tab-seg-off:hover {
     background-color: var(--c-surface); /* 히스토리 surface-2·사이드바도 카드 색으로 통일 */
     overflow: hidden; /* 코너 클리핑 — 내부 콘텐츠·오버레이가 라운딩을 따르게 */
     border-color: transparent; /* 카드 자체 경계선(히스토리 border-l 등)은 캔버스 간격이 대신 */
-    /* 옅은 카드 윤곽 하이라이트(2026-07-12 피드백) — 다크에서 캔버스↔카드 명도차가
-       미세해 경계가 안 읽히는 문제 해소. outline 은 자식 위에 그려져 항상 보이고
-       Chromium 94+ 에선 border-radius 를 따른다. */
-    outline: 1px solid var(--c-line);
-    outline-offset: -1px;
   }
   html:not(.finish-classic) .zone-gutter {
     border-color: transparent; /* 카드 사이 손잡이 스트립의 구분선도 간격이 대신 */
@@ -1619,6 +1614,34 @@ input[type='number']::-webkit-outer-spin-button {
   justify-content: center;
   align-items: center;
   overflow: hidden;
+}
+.sds-image-cell {
+  padding: 4px;
+}
+.sds-image-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.75rem;
+  background: var(--c-zone);
+  overflow: hidden;
+}
+.sds-image-card:hover { filter: brightness(0.95); }
+.sds-image-card:active { filter: brightness(0.9); }
+.sds-image-card [data-image-content],
+.sds-image-card img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: inherit;
+}
+.sds-image-card [data-image-content] { overflow: hidden; }
+.sds-image-card-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 /* 그룹 3-a: 종전 이징이 transition-timing-function 으로 적혀 무효였다(애니메이션은 animation-timing-function) → 바로잡고
@@ -2537,12 +2560,16 @@ input[type='number']::-webkit-outer-spin-button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sds-detail-sep {
-  flex: none;
-  width: 1px;
-  height: 18px;
-  background: var(--c-line-strong);
-  margin: 0 2px;
+.sds-detail-body {
+  gap: 6px;
+  padding: 6px;
+  background: var(--c-canvas);
+}
+.sds-detail-body > .sds-detail-info,
+.sds-detail-body > .sds-detail-image {
+  border-radius: 0.75rem;
+  background-color: var(--c-surface);
+  overflow: hidden;
 }
 .sds-detail-action-bar {
   min-height: 44px;
@@ -2576,12 +2603,10 @@ input[type='number']::-webkit-outer-spin-button {
 }
 .sds-detail-section {
   min-width: 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--c-line);
+  padding-top: 20px;
 }
 .sds-detail-section:first-child {
   padding-top: 0;
-  border-top: none;
 }
 .sds-detail-section-head {
   display: flex;
@@ -2842,8 +2867,6 @@ input[type='number']::-webkit-outer-spin-button {
 .sds-inpaint-generation {
   flex: none;
   padding: 8px 12px;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-zone);
 }
 .sds-samples {
   width: 64px;

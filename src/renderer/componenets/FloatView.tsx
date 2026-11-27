@@ -78,12 +78,12 @@ const FloatViewPane = ({
   const [headerSlotEl, setHeaderSlotEl] = useState<HTMLElement | null>(null);
   return (
     <div
-      className="bg-[var(--c-surface)] h-full w-full"
+      className="zone-canvas bg-[var(--c-surface)] h-full w-full"
       style={{ position: 'absolute', zIndex: view.id }}
     >
-      <div className="flex flex-col h-full w-full">
+      <div className="zone-card flex flex-col h-full w-full">
         {/* relative: 되돌리기 버튼 바 구석 자리(undoCorner)·머리줄 내용 자리(headerSlot)의 기준 */}
-        <div className="relative flex-none border-b line-color">
+        <div className="relative flex-none">
           {/* 전체 화면 보기의 닫기 = 좌상단 「뒤로」 ✕ 하나(모달은 우상단 — SPEC §5 닫기 규칙, 2026-10-03 E2-1) */}
           <button
             // 위치·크기(.button 패딩·마진 5px)는 그대로, hover 덮개·키보드 포커스 링만(UI 정돈 그룹 2-a)

@@ -57,7 +57,7 @@ interface ModalOverlayProps {
 }
 
 // 바닥줄 모양 — 래퍼 바닥줄과 표시 전용 OverlayFooterBar 가 같은 클래스를 쓴다(단일 출처, 2026-11-15 C-3)
-const OVERLAY_FOOTER_BAR_CLASS = 'flex-none flex items-center gap-2 px-5 py-3 border-t line-color';
+const OVERLAY_FOOTER_BAR_CLASS = 'flex-none flex items-center gap-2 px-5 py-3';
 
 // 창 닫기 ✕ 모양 — 래퍼 머리줄 ✕ 와 직접 만든 창·패널(이미지 검수·단축키 도움말·작업 목록)의 ✕ 가 같은 클래스·아이콘
 // 크기를 쓴다(단일 출처, 2026-11-15 PC UX 결함 C2). hover 바탕은 덮개 토큰 --c-hover(UI 정돈 그룹 2-a — 종전 gray-200 은
@@ -169,7 +169,7 @@ const ModalOverlay = ({
         data-modal-size={frame.mode === 'size' ? frame.size : undefined}
       >
         {/* 타이틀 바 */}
-        <div className="flex items-center justify-between px-5 py-3 border-b line-color flex-none">
+        <div className="flex items-center justify-between px-5 py-3 flex-none">
           <h2 className="text-base font-semibold text-default">
             {title}
           </h2>
@@ -184,7 +184,7 @@ const ModalOverlay = ({
         {/* 도구줄 — 스크롤 밖 고정 */}
         {toolbar != null && (
           <div
-            className="flex-none flex flex-wrap items-center gap-2 px-5 py-2 border-b line-color"
+            className="flex-none flex flex-wrap items-center gap-2 px-5 py-2"
             data-modal-slot="toolbar"
           >
             {toolbar}
@@ -195,7 +195,7 @@ const ModalOverlay = ({
           <div className="flex-1 min-h-0 flex" data-modal-slot="columns">
             {sideTabs != null && (
               <nav
-                className="flex-none overflow-auto border-r line-color py-2"
+                className="flex-none overflow-auto py-2"
                 style={{ width: OVERLAY_SIDE_TABS_WIDTH }}
                 data-modal-slot="side-tabs"
               >
@@ -204,7 +204,7 @@ const ModalOverlay = ({
             )}
             {aside != null && (
               <div
-                className="flex-none overflow-auto border-r line-color"
+                className="flex-none overflow-auto"
                 style={{ width: OVERLAY_ASIDE_WIDTH }}
                 data-modal-slot="aside"
               >
@@ -218,7 +218,7 @@ const ModalOverlay = ({
         ) : (
           <div className={bodyClass} data-modal-slot={frame.mode === 'size' ? 'body' : undefined}>
             {aside != null && (
-              <div className="pb-3 mb-3 border-b line-color" data-modal-slot="aside">
+              <div className="pb-3 mb-3" data-modal-slot="aside">
                 {aside}
               </div>
             )}
