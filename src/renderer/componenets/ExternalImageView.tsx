@@ -21,7 +21,8 @@ import {
   samplingFamilyForModel,
   switchSessionSamplingFamily,
 } from '../models/modelSamplingProfiles';
-import { base64ToDataUri } from './BrushTool';
+import { base64ToDataUri, getImageDimensions } from './BrushTool';
+import { importedI2IResizeSize, ImportedImageSize, resizeImportedI2IImage } from '../models/importedImageResize';
 import { PromptHighlighter } from './SceneEditor';
 import { extractPromptDataFromBase64 } from '../models/util';
 import { appState } from '../models/AppService';
@@ -133,6 +134,17 @@ export const ExternalImageView = observer(
     const useRequest = useRef(false);
     const [addedUses, setAddedUses] = useState<ImportedImageUse[]>([]);
     const [editingWork, setEditingWork] = useState<InpaintScene | undefined>();
+    const [resizeI2I, setResizeI2I] = useState(false);
+    const [imageSize, setImageSize] = useState<{ image: string; size: ImportedImageSize }>();
+    useEffect(() => {
+      let active = true;
+      setResizeI2I(false);
+      setImageSize(undefined);
+      getImageDimensions(image).then(size => { if (active) setImageSize({ image, size }); }).catch(() => {});
+      return () => { active = false; };
+    }, [image]);
+    const resizeTarget = imageSize?.image === image && !(scene && sourcePath)
+      ? importedI2IResizeSize(imageSize.size.width, imageSize.size.height) : undefined;
     useEffect(() => { setAddedUses([]); setEditingWork(undefined); }, [image, appState.curSession, appState.curSession?.selectedWorkflow?.workflowType, appState.curSession?.selectedWorkflow?.presetName]);
     const useImage = async (use: ImportedImageUse | 'i2i') => {
       const session = appState.curSession;
@@ -140,7 +152,8 @@ export const ExternalImageView = observer(
       useRequest.current = true; setUsingImage(true);
       try {
         if (use === 'i2i') {
-          const work = await createImportedI2I(session, image, job, { scene, path: sourcePath });
+          const input = resizeI2I && resizeTarget ? await resizeImportedI2IImage(image, resizeTarget) : image;
+          const work = await createImportedI2I(session, input, job, { scene, path: sourcePath });
           if (work && appState.curSession === session) setEditingWork(work);
         } else {
           await appendImportedImage(session, image, use, modelVersion, referenceDefaultsFor(modelVersion));
@@ -541,6 +554,12 @@ export const ExternalImageView = observer(
               disabled={imageUseDisabled || !capabilities.supportsCharacterReference || addedUses.includes('reference')} onClick={() => void useImage('reference')}>
               {addedUses.includes('reference') ? '레퍼런스 추가됨' : '레퍼런스로 추가'}
             </button>
+            {resizeTarget && <label className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-default cursor-pointer"
+              title="1,048,576픽셀 이하에서 원본 비율에 가까운 큰 크기로 입력 이미지를 축소합니다. 여백을 붙이거나 원본 파일을 바꾸지 않습니다.">
+              <input type="checkbox" checked={resizeI2I} disabled={imageUseDisabled} onChange={event => setResizeI2I(event.target.checked)} />
+              <span>1MP 이하로 축소</span>
+              <span className="text-xs text-muted tabular-nums">{imageSize!.size.width} × {imageSize!.size.height} → {resizeTarget.width} × {resizeTarget.height}</span>
+            </label>}
             <button type="button" className="round-button back-green px-3 py-2 text-sm"
               title="이 이미지로 새 I2I 편집 작업을 엽니다" disabled={imageUseDisabled || metadataState === 'loading'} onClick={() => void useImage('i2i')}>I2I 편집</button>
         </div>}

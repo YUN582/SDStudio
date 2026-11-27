@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 const extract = jest.fn();
 const appendImage = jest.fn(async (..._args: any[]) => {});
 const createI2I = jest.fn(async (..._args: any[]): Promise<any> => undefined);
+const imageDimensions = jest.fn(async (..._args: any[]) => ({ width: 832, height: 1216 }));
+const resizeImage = jest.fn(async (..._args: any[]) => 'resized-pixels');
+jest.mock('../importedImageResize', () => ({ ...jest.requireActual('../importedImageResize'), resizeImportedI2IImage: (...args: any[]) => resizeImage(...args) }));
 jest.mock('../importedImageActions', () => ({ appendImportedImage: (...args: any[]) => appendImage(...args), createImportedI2I: (...args: any[]) => createI2I(...args) }));
 jest.mock('../referenceDefaults', () => ({ referenceDefaultsFor: () => ({ strength: 0.6, fidelity: 1, referenceType: 'character' }) }));
 jest.mock('../../componenets/useGlobalModelVersion', () => ({ useGlobalModelVersion: () => 'v4.5' }));
@@ -16,7 +19,7 @@ const state: any = { curSession: undefined, confirmAsync, incrementModalOverlay:
 jest.mock('../AppService', () => ({ appState: state }));
 jest.mock('..', () => ({ isMobile: false, backend: {}, sessionService: {}, workFlowService: {}, imageService: {}, globalPresetService: {} }));
 jest.mock('../util', () => ({ extractPromptDataFromBase64: (...args: any[]) => extract(...args) }));
-jest.mock('../../componenets/BrushTool', () => ({ base64ToDataUri: (s: string) => 'data:image/png;base64,' + s }));
+jest.mock('../../componenets/BrushTool', () => ({ base64ToDataUri: (s: string) => 'data:image/png;base64,' + s, getImageDimensions: (...args: any[]) => imageDimensions(...args) }));
 jest.mock('../../componenets/SceneEditor', () => ({ PromptHighlighter: ({ text }: { text: string }) => <div>{text}</div> }));
 jest.mock('../BackStackService', () => ({ backStackService: { push: jest.fn(() => ({ remove: jest.fn() })) } }));
 jest.mock('../imageStateUndo', () => ({ beginMetaApplyRecord: () => record }));
@@ -29,6 +32,7 @@ const source: any = { schemaVersion: 1, workflowType: 'SDImageGen', frontPrompt:
 let preset: any, session: any, scene: any, theme: HTMLElement;
 beforeEach(() => {
   jest.clearAllMocks();
+  imageDimensions.mockResolvedValue({ width: 832, height: 1216 });
   preset = { name: 'keep', frontPrompt: 'old front', backPrompt: 'old back', uc: 'old uc' };
   scene = { name: 'test', type: 'scene', slots: [[{ prompt: 'old middle', enabled: true }]] };
   session = { selectedWorkflow: { workflowType: 'SDImageGen', presetName: 'keep' }, presets: new Map([['SDImageGen', [preset]]]), presetShareds: new Map(), extraPrompt: 'old extra', addPreset: jest.fn() };
@@ -227,4 +231,35 @@ test('adds a reference and opens I2I while metadata is absent', async () => {
   fireEvent.click(screen.getByRole('button', { name: '편집 마치기' }));
   await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
   expect(close).not.toHaveBeenCalled();
+});
+
+test('optional 1MP resize changes the actual I2I input while retaining original generation metadata', async () => {
+  imageDimensions.mockResolvedValue({ width: 3840, height: 2160 });
+  const metadata = { prompt: 'original prompt', uc: 'original negative', characterPrompts: [] };
+  extract.mockResolvedValue(metadata);
+  render(<ExternalImageView image="original-large-pixels" onClose={close} />);
+  const checkbox = await screen.findByRole('checkbox', { name: /1MP 이하로 축소/ });
+  expect((checkbox as HTMLInputElement).checked).toBe(false);
+  expect(checkbox.closest('label')?.textContent).toContain('3840 × 2160 → 1344 × 768');
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
+  await waitFor(() => expect(createI2I).toHaveBeenCalledWith(session, 'resized-pixels', metadata, { scene: undefined, path: undefined }));
+  expect(resizeImage).toHaveBeenCalledWith('original-large-pixels', { width: 1344, height: 768 });
+});
+
+test('leaving 1MP resize unchecked keeps the imported input untouched', async () => {
+  imageDimensions.mockResolvedValue({ width: 3840, height: 2160 });
+  extract.mockResolvedValue(undefined);
+  render(<ExternalImageView image="original-large-pixels" onClose={close} />);
+  await screen.findByRole('checkbox', { name: /1MP 이하로 축소/ });
+  fireEvent.click(screen.getByRole('button', { name: 'I2I 편집' }));
+  await waitFor(() => expect(createI2I).toHaveBeenCalledWith(session, 'original-large-pixels', undefined, { scene: undefined, path: undefined }));
+  expect(resizeImage).not.toHaveBeenCalled();
+});
+
+test('normal sized images do not offer a redundant shrink operation', async () => {
+  extract.mockResolvedValue(undefined);
+  render(<ExternalImageView image="normal-pixels" onClose={close} />);
+  await screen.findByText('이 이미지에는 불러올 생성 정보가 없습니다.');
+  expect(screen.queryByRole('checkbox', { name: /1MP 이하로 축소/ })).toBeNull();
 });
