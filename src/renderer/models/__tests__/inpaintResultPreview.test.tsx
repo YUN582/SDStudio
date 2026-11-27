@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 const images: any = new EventTarget();
 const queue = new EventTarget();
+const fileStats = jest.fn();
 const state: any = { dialogs: [], modalOverlayCount: 0, configScreenOpen: false };
 let menuOpen = false;
-jest.mock('..', () => ({ imageService: images, taskQueueService: queue }));
+jest.mock('..', () => ({ imageService: images, taskQueueService: queue,
+  backend: { listFilesWithStats: (...args: any[]) => fileStats(...args) } }));
 jest.mock('../AppService', () => ({ appState: state }));
 jest.mock('../../componenets/contextMenuBack', () => ({ hasOpenContextMenu: () => menuOpen }));
 import InpaintResultPreview from '../../componenets/InpaintResultPreview';
@@ -18,14 +20,14 @@ function Canvas() {
   useEffect(() => { mounts(); return () => { unmounts(); }; }, []);
   return <input aria-label="drawing fixture" value={drawing} onChange={event => setDrawing(event.target.value)} />;
 }
-function View({ active = true }: { active?: boolean }) {
-  return <InpaintResultPreview session={session} scene={scene} inputImage="original-pixels" active={active} onModeChange={mode}><Canvas /></InpaintResultPreview>;
+function View({ active = true, request = 0 }: { active?: boolean; request?: number }) {
+  return <InpaintResultPreview session={session} scene={scene} inputImage="original-pixels" active={active} generationRequest={request} onModeChange={mode}><Canvas /></InpaintResultPreview>;
 }
 const result = () => document.querySelector('[data-inpaint-results] img') as HTMLImageElement;
 async function added(name: string, owner = scene, project = session) {
   if (owner === scene && project === session) names.push(name);
   await act(async () => {
-    images.dispatchEvent(new CustomEvent('image-added', { detail: { session: project, sceneType: 'inpaint', sceneName: owner.name } }));
+    images.dispatchEvent(new CustomEvent('image-added', { detail: { session: project, sceneType: 'inpaint', sceneName: owner.name, filename: name, path: '/outputs/edit/' + name } }));
   });
 }
 beforeEach(() => {
@@ -36,6 +38,7 @@ beforeEach(() => {
   images.getOutputDir = jest.fn(() => '/outputs/edit');
   images.refresh = jest.fn(async () => {});
   images.fetchImage = jest.fn(async path => 'pixels:' + path);
+  fileStats.mockImplementation(async () => names.map(name => ({ name, size: 1, mtime: parseInt(name, 10) || 0 })));
 });
 
 test('new results open on the right; returning to the original preserves the mounted canvas and drawing', async () => {
@@ -132,4 +135,32 @@ test('image read failures end loading and can be retried', async () => {
   expect(document.querySelector('[data-inpaint-results]')?.getAttribute('aria-busy')).toBe('false');
   fireEvent.click(screen.getByRole('button', { name: '다시 불러오기' }));
   await waitFor(() => expect(result()?.src).toContain('300.png'));
+});
+
+test('Explorer-imported filenames cannot replace the explicitly published new result', async () => {
+  names.push('zz-external.png');
+  render(<View />); await act(async () => {});
+  await added('300.png');
+  await waitFor(() => expect(result()?.src).toContain('300.png'));
+  await act(async () => { queue.dispatchEvent(new Event('complete')); });
+  expect(result().src).toContain('300.png');
+});
+
+test('a completion scan uses file times when it discovers both an imported file and a new result', async () => {
+  render(<View />); await act(async () => {});
+  names.push('300.png', 'zz-imported.png');
+  await act(async () => { queue.dispatchEvent(new Event('complete')); });
+  await waitFor(() => expect(result()?.src).toContain('300.png'));
+  fireEvent.keyDown(window, { key: 'ArrowLeft' });
+  await waitFor(() => expect(result()?.src).toContain('200.png'));
+});
+
+test('starting a fresh batch resumes automatic results after returning to original editing', async () => {
+  const view = render(<View />); await added('300.png');
+  await waitFor(() => expect(result()?.src).toContain('300.png'));
+  fireEvent.click(screen.getByRole('button', { name: '원본 이미지 편집' }));
+  view.rerender(<View request={1} />);
+  await added('400.png');
+  await waitFor(() => expect(result()?.src).toContain('400.png'));
+  expect(mounts).toHaveBeenCalledTimes(1);
 });

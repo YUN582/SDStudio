@@ -166,6 +166,7 @@ const InPaintEditor = observer(
     const activeEditorRef = useRef(activeEditor);
     activeEditorRef.current = activeEditor;
     const [viewingResult, setViewingResult] = useState(false);
+    const [generationRequest, setGenerationRequest] = useState(0);
     const viewingResultRef = useRef(false);
     viewingResultRef.current = viewingResult;
     const [spaceHeld, setSpaceHeld] = useState(false);
@@ -842,7 +843,9 @@ const InPaintEditor = observer(
         // Results stay in their output gallery; never promote them to the editing input.
         const queued=isMirror?await queueMirrorWorkflow(curSession!,editingScene.workflowType,preset,editingScene,count)
           :await queueI2IWorkflow(curSession!,editingScene.workflowType,preset,editingScene,count);
-        if(queued===0){appState.pushMessage(COMBO_EMPTY_TEXT);return false;}return true;
+        if(queued===0){appState.pushMessage(COMBO_EMPTY_TEXT);return false;}
+        if(mountedRef.current&&sceneRef.current===editingScene)setGenerationRequest(value=>value+1);
+        return true;
       }catch(error){appState.pushMessage('생성 예약 실패: '+(error as Error).message,'error');return false;}
       finally{queuingRef.current=false;if(mountedRef.current)setQueuing(false);}
     };
@@ -1076,7 +1079,7 @@ const InPaintEditor = observer(
           )}
           {/* PC 조합 에디터 탭: 이미지만 숨기고 아래 생성 바는 남긴다(언마운트 금지 — 마스크·Focused 보존) */}
           <div ref={viewportRef} data-space-pan={spaceHeld} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} className={`sds-inpaint-viewport flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
-            <InpaintResultPreview session={curSession!} scene={editingScene} inputImage={image ? base64ToDataUri(image) : ''} active={activeEditor && !pcComboWide} onModeChange={setViewingResult}>
+            <InpaintResultPreview session={curSession!} scene={editingScene} inputImage={image ? base64ToDataUri(image) : ''} active={activeEditor && !pcComboWide} generationRequest={generationRequest} onModeChange={setViewingResult}>
             <TransformWrapper
               ref={zoomRef} disabled={false} limitToBounds={false}
               panning={{disabled: !spaceHeld && pointerTarget !== 'pan'}}

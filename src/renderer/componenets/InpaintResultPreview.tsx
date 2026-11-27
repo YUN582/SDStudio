@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { FaChevronLeft, FaChevronRight, FaImages } from 'react-icons/fa';
-import { imageService, taskQueueService } from '../models';
+import { backend, imageService, taskQueueService } from '../models';
 import { appState } from '../models/AppService';
 import { InpaintScene, Session } from '../models/types';
 import { isTextEntryFocused } from '../models/keyTargetGuard';
@@ -9,12 +9,13 @@ import { ActionIcon } from './ActionIcon';
 
 /** Result browsing never changes or unmounts the editing input, mask, or viewport. */
 export default function InpaintResultPreview({
-  session, scene, inputImage, active, onModeChange, children,
+  session, scene, inputImage, active, generationRequest = 0, onModeChange, children,
 }: {
   session: Session;
   scene: InpaintScene;
   inputImage: string;
   active: boolean;
+  generationRequest?: number;
   onModeChange: (viewingResult: boolean) => void;
   children: ReactNode;
 }) {
@@ -28,6 +29,7 @@ export default function InpaintResultPreview({
   const viewingResult = showResults && paths.length > 0;
 
   useEffect(() => onModeChange(viewingResult), [viewingResult, onModeChange]);
+  useEffect(() => { followResults.current = true; }, [generationRequest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,21 +37,29 @@ export default function InpaintResultPreview({
     let scanAgain = false;
     let followRequested = false;
     let known = new Set<string>();
+    const fileTimes = new Map<string, number>();
+    let scannedOnce = false;
+    let publishedPath: string | undefined;
+    let publishedVersion = 0, scannedVersion = 0;
     setShowResults(false);
     setLoaded(undefined);
     followResults.current = true;
     const matchesSession = (other: Session | undefined) => other === session ||
       !!(other && (session.id && other.id ? session.id === other.id : session.name === other.name));
-    const sync = (allowFollow: boolean) => {
+    const sync = (allowFollow: boolean, preferredPath?: string, remember = true) => {
       if (cancelled) return;
       const names = [...imageService.getOutputs(session, scene)].sort((a, b) =>
+        (fileTimes.get(a) ?? 0) - (fileTimes.get(b) ?? 0) ||
         a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
       const next = names.map(name => imageService.getOutputDir(session, scene) + '/' + name);
-      const added = names.some(name => !known.has(name));
-      known = new Set(names);
-      const follow = allowFollow && added && followResults.current;
+      const added = names.filter(name => !known.has(name));
+      if (remember) known = new Set(names);
+      const preferred = preferredPath && next.includes(preferredPath) ? preferredPath : undefined;
+      const follow = allowFollow && !!(preferred || added.length) && followResults.current;
       setPaths(next);
-      setSelected(current => follow || !current || !next.includes(current) ? next[next.length - 1] : current);
+      setSelected(current => follow
+        ? preferred ?? imageService.getOutputDir(session, scene) + '/' + added[added.length - 1]
+        : !current || !next.includes(current) ? next[next.length - 1] : current);
       if (follow) setShowResults(true);
     };
     // Serialize rescans from delegated generation completions, without touching the input files.
@@ -61,7 +71,19 @@ export default function InpaintResultPreview({
         do {
           scanAgain = false;
           await imageService.refresh(session, scene, false);
-          sync(followRequested);
+          if (cancelled) return;
+          // Read times once, then only when previously unknown files appear.
+          // Imported names are not generation timestamps and cannot order results.
+          if (!scannedOnce || imageService.getOutputs(session, scene).some(name => !fileTimes.has(name))) {
+            try {
+              const entries = await backend.listFilesWithStats(imageService.getOutputDir(session, scene));
+              if (cancelled) return;
+              for (const file of entries) if (Number.isFinite(file.mtime)) fileTimes.set(file.name, file.mtime);
+            } catch { /* Keep publication times and usable results if stat access fails. */ }
+            scannedOnce = true;
+          }
+          sync(followRequested, publishedVersion > scannedVersion ? publishedPath : undefined);
+          scannedVersion = publishedVersion;
           followRequested = false;
         } while (scanAgain && !cancelled);
       } catch { /* Keep usable results if the output folder is temporarily unavailable. */ }
@@ -69,13 +91,21 @@ export default function InpaintResultPreview({
     };
     const added = (event: Event) => {
       const d = (event as CustomEvent).detail;
-      if (matchesSession(d?.session) && d.sceneType === 'inpaint' && d.sceneName === scene.name) sync(true);
+      if (matchesSession(d?.session) && d.sceneType === 'inpaint' && d.sceneName === scene.name) {
+        const filename = d.filename ?? d.path?.split('/').pop();
+        if (!filename) return;
+        fileTimes.set(filename, Date.now());
+        publishedPath = imageService.getOutputDir(session, scene) + '/' + filename;
+        publishedVersion++;
+        sync(true, publishedPath);
+      }
     };
     const updated = (event: Event) => {
       const d = (event as CustomEvent).detail;
       if (d?.session && !matchesSession(d.session)) return;
       if (d?.scene && d.scene !== scene && (d.scene.type !== 'inpaint' || d.scene.name !== scene.name)) return;
-      sync(true);
+      // A directory update may precede completion; retain its discovery baseline.
+      sync(false, undefined, false);
     };
     const completed = () => { void scan(true); };
     sync(false);
