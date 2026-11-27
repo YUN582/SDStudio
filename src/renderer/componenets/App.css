@@ -2840,13 +2840,10 @@ input[type='number']::-webkit-outer-spin-button {
   min-width: 80px;
 }
 .sds-inpaint-generation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
   flex: none;
-  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-line);
+  background: var(--c-zone);
 }
 .sds-samples {
   width: 64px;
@@ -3088,22 +3085,6 @@ input[type='number']::-webkit-outer-spin-button {
 .sds-canvas-rotation .canvas-container {
   overflow: visible;
 }
-.sds-inpaint-generation.sds-shared-generation {
-  display: block;
-  margin: 0;
-  padding: 8px 12px;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-zone);
-}
-.sds-shared-generation .sds-effective-mode {
-  margin-bottom: 8px;
-}
-.sds-shared-generation > div:last-child {
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  position: relative;
-}
 .sds-compact-tools button:focus-visible {
   outline: 2px solid var(--c-text);
   outline-offset: 2px;
@@ -3173,7 +3154,6 @@ input[type='number']::-webkit-outer-spin-button {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 16px;
-  margin-bottom: 8px;
 }
 .sds-generation-caption .sds-effective-mode {
   flex: 0 0 auto;

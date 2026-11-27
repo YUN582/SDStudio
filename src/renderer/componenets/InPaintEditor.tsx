@@ -55,7 +55,6 @@ import { InnerPreSetEditor } from './PreSetEdtior';
 import { ComboPromptEditor } from './ComboPromptEditor';
 import { reaction, runInAction } from 'mobx';
 import { FloatView, FloatViewActiveContext } from './FloatView';
-import TaskQueueControl from './TaskQueueControl';
 import WorkflowCanvas, { WorkflowCanvasRef, PaintHistory } from './WorkflowCanvas';
 import { InpaintDrawingTools } from './InpaintDrawingTools';
 import { canvasPointerPoint } from '../models/canvasPointer';
@@ -1118,13 +1117,12 @@ const InPaintEditor = observer(
               </TransformComponent>
             </TransformWrapper>
           </div>
-          <div className="sds-inpaint-generation sds-shared-generation">
-            {editingScene.workflowType==='SDInpaint'&&<div className="sds-generation-caption">
+          {editingScene.workflowType==='SDInpaint'&&<div className="sds-inpaint-generation">
+            <div className="sds-generation-caption">
               <div className="sds-effective-mode" role="status">{!paintHistory.ready?'마스크 확인 중…':paintHistory.hasMask?'인페인트 · 마스크 영역 변형':'I2I · 이미지 전체 변형 (마스크 없음)'}</div>
               {!isMobile&&<p className="sds-canvas-shortcuts">{['Tab: 펜 전환','휠: 크기','Ctrl+휠: 확대','우클릭: 지우기','Ctrl+우클릭: 스포이드','Space+드래그: 이동','Space+휠: 회전'].map(text=><span key={text}>{text}</span>)}</p>}
-            </div>}
-            <TaskQueueControl queueCurrent={queueWork} queueDisabled={generationDisabled}/>
-          </div>
+            </div>
+          </div>}
         </div>
       </div>
     );

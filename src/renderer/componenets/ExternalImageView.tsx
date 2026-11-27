@@ -633,7 +633,7 @@ export const ExternalImageView = observer(
       </ModalOverlay>,
       document.querySelector('[data-app-theme-root]') ?? document.body,
       )}
-      {editingWork && <FloatView priority={3} ownsGenControl onEscape={() => setEditingWork(undefined)}>
+      {editingWork && <FloatView priority={3} onEscape={() => setEditingWork(undefined)}>
         <InPaintEditor editingScene={editingWork} onConfirm={() => setEditingWork(undefined)} onDelete={() => setEditingWork(undefined)} />
       </FloatView>}
     </>;

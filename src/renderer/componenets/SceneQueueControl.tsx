@@ -2440,7 +2440,7 @@ const QueueControl = observer(
         return (
           <>
             {inpaintEditScene && (
-              <FloatView ownsGenControl
+              <FloatView
                 priority={3}
                 onEscape={() => setInpaintEditScene(undefined)}
               >
@@ -2488,7 +2488,7 @@ const QueueControl = observer(
       return (
         <>
           {inpaintEditScene && (
-            <FloatView ownsGenControl
+            <FloatView
               priority={3}
               onEscape={() => setInpaintEditScene(undefined)}
             >
@@ -2503,7 +2503,7 @@ const QueueControl = observer(
           )}
           {(editingScene || adding) && (
             // 변형 씬 편집 창도 같은 머리(모드 행동 동등성) — 새 변형 씬 추가(adding)는 그리드가 없는 경로라 머리 내용 없음
-            <FloatView ownsGenControl
+            <FloatView
               priority={2}
               headerSlot
               onEscape={() => {

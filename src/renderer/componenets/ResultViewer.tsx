@@ -1935,7 +1935,7 @@ export const ResultDetailView = observer(
     return (
       <div className="sds-image-detail z-10 bg-[var(--c-surface)] w-full h-full flex min-h-0 flex-col">
         {editingWork && (
-          <FloatView ownsGenControl priority={3} onEscape={() => setEditingWork(null)}>
+          <FloatView priority={3} onEscape={() => setEditingWork(null)}>
             <InPaintEditor
               editingScene={editingWork}
               onConfirm={() => setEditingWork(null)}
@@ -3521,7 +3521,7 @@ const LinkedImageWorks=observer(function LinkedImageWorks({session,scene,path}:{
         <CellPreview path={file} cellSize={96} imageSize={200} style={{width:96,height:96,display:'grid',placeItems:'center'}}/>
       </button>)}</div>:<p className="text-faint">아직 생성된 결과가 없습니다.</p>}</article>;
     })}
-    {editing&&<FloatView ownsGenControl priority={3} onEscape={()=>setEditing(null)}><InPaintEditor editingScene={editing} onConfirm={()=>setEditing(null)} onDelete={()=>setEditing(null)}/></FloatView>}
+    {editing&&<FloatView priority={3} onEscape={()=>setEditing(null)}><InPaintEditor editingScene={editing} onConfirm={()=>setEditing(null)} onDelete={()=>setEditing(null)}/></FloatView>}
     {result&&<FloatView priority={2} allowUndo headerSlot onEscape={()=>setResult(null)}><ResultDetailView scene={result.work} session={session} buttons={[]}
       getPaths={()=>gameService.getOutputs(session,result.work).map(name=>imageService.getOutputDir(session,result.work)+'/'+name)}
       initialSelectedIndex={gameService.getOutputs(session,result.work).indexOf(result.file.split('/').pop()!)} onClose={()=>setResult(null)}/></FloatView>}
