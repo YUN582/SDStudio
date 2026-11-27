@@ -78,6 +78,7 @@ import { ModelVersion, Resolution } from '../../backends/imageGen';
 import { activeFocusSpec, FOCUSED_COMPOSE_FAILED_TEXT, taskHandlers } from '../TaskHandlers';
 import { composeFocusedResult, prepareFocusedRequest } from '../focusedInpaintCanvas';
 import { appState } from '../AppService';
+import { TaskQueueService } from '../TaskQueueService';
 
 const prepare = prepareFocusedRequest as jest.Mock;
 const compose = composeFocusedResult as jest.Mock;
@@ -161,6 +162,24 @@ beforeEach(() => {
     fullSizeMask: false,
   });
   compose.mockResolvedValue('COMPOSED');
+});
+
+test.each(
+  [ModelVersion.V4_5, ModelVersion.V5].flatMap(modelVersion => ['sd_i2i', 'sd_inpaint'].map(type => [modelVersion, type])),
+)('%s %s keeps resized request pixels after subsequent scene edits', async (modelVersion, type) => {
+  const service = new TaskQueueService(taskHandlers);
+  const original = inpaintTask({ focus: null, modelVersion: modelVersion as ModelVersion, width: 1280, height: 768 });
+  original.params.job.type = type;
+  service.addTaskLocal(original.params, 10);
+  original.params.scene.resolutionWidth = 1536;
+  original.params.scene.resolutionHeight = 1024;
+  const task = service.queue.peek();
+  const selectedHandler = taskHandlers.find(h => h.checkTask(task))!;
+  expect(selectedHandler.calculateCost(task)).toEqual([]);
+  await selectedHandler.handleTask(task, { stopped: false });
+  expect(generateImage).toHaveBeenCalledWith(expect.objectContaining({
+    resolution: { width: 1280, height: 768 }, steps: 28,
+  }));
 });
 
 test('Focused: 크롭 이미지·마스크·요청 해상도·add_original_image=false·좌표 재매핑으로 요청한다', async () => {

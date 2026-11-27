@@ -284,6 +284,33 @@ describe('TaskQueueService 예약 생성 설정 스냅샷', () => {
     expect(service.queue.peek().params.generationSnapshot).toMatchObject({ modelVersion: ModelVersion.V5Medium, transparentBackground: true });
   });
 
+  test.each(['sd', 'sd_i2i', 'sd_inpaint'])('예약 이후 씬을 확대해도 %s 요청과 비용 판정은 예약 당시의 축소 크기를 유지한다', async (type) => {
+    getConfig.mockResolvedValue({ modelVersion: ModelVersion.V5 });
+    const service = new TaskQueueService(taskHandlers);
+    const param = makeParam();
+    Object.assign(param.scene, { resolution: 'custom', resolutionWidth: 1280, resolutionHeight: 768 });
+    param.job = { ...param.job, type, steps: 28 };
+    const pending = service.addTask(param, 10);
+    // Config IPC can finish after another image/size has been selected.
+    param.scene.resolutionWidth = 1536;
+    param.scene.resolutionHeight = 1024;
+    await pending;
+    const task = service.queue.peek();
+    expect(task.params.job).toMatchObject({ overrideResolution: { width: 1280, height: 768 } });
+    expect(task.params.scene).toBe(param.scene);
+    expect(service.calculateCost()).toEqual([]);
+  });
+
+  test('직접·위임 큐의 명시 해상도 객체도 사본으로 보관한다', () => {
+    const service = new TaskQueueService(taskHandlers);
+    const param = makeParam();
+    param.job = { ...param.job, steps: 28, overrideResolution: { width: 1344, height: 768 } };
+    service.addTaskLocal(param, 1);
+    param.job.overrideResolution.width = 2048;
+    expect(service.queue.peek().params.job).toMatchObject({ overrideResolution: { width: 1344, height: 768 } });
+    expect(service.calculateCost()).toEqual([]);
+  });
+
   test('단일 씬 예약도 호출 단위로 설정을 한 번만 캡처해 전달한다', async () => {
     const snapshot = {
       schemaVersion: 1 as const,

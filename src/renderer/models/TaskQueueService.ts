@@ -399,6 +399,16 @@ export const lowerResolution = (
   }
 };
 
+/** Keep queued request pixels independent of later scene edits or shared size objects. */
+const captureTaskResolution = (params: TaskParam): TaskParam => {
+  const job = params.job;
+  if (job.type !== 'sd' && job.type !== 'sd_i2i' && job.type !== 'sd_inpaint') return params;
+  const resolution = job.overrideResolution || params.scene?.resolution;
+  if (!resolution) return params; // Legacy callers without resolution retain their existing fallback.
+  const size = lowerResolution(resolution as Resolution | ImageSize, params.scene?.resolutionWidth, params.scene?.resolutionHeight);
+  return { ...params, job: { ...job, overrideResolution: { ...size } } };
+};
+
 export interface TaskLog {
   timestamp: number;
   level: 'info' | 'warn' | 'error';
@@ -683,7 +693,7 @@ export class TaskQueueService extends EventTarget {
       appState.pushMessage('예약 개수가 올바르지 않습니다.');
       return;
     }
-    let capturedParams = params;
+    let capturedParams = captureTaskResolution(params);
     const isImageGeneration =
       params.job.type === 'sd' ||
       params.job.type === 'sd_inpaint' ||
@@ -691,7 +701,7 @@ export class TaskQueueService extends EventTarget {
     if (isImageGeneration && !params.generationSnapshot) {
       try {
         capturedParams = {
-          ...params,
+          ...capturedParams,
           generationSnapshot: await this.captureGenerationSnapshot(),
         };
       } catch (e) {
@@ -769,6 +779,7 @@ export class TaskQueueService extends EventTarget {
       appState.pushMessage('예약 개수가 올바르지 않습니다.');
       return;
     }
+    params = captureTaskResolution(params);
     const m = Math.floor(Number(boostShares));
     const shares = Number.isFinite(m) && m >= 2 ? m : 1;
     const task: Task = {
