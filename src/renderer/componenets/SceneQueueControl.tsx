@@ -1,3 +1,12 @@
+import { SceneImageView, SceneImageViewHandle, SceneViewModeControl } from './SceneImageView';
+import {
+  buildSceneViewModeMenu,
+  normalizeSceneViewMode,
+  registerSceneRevealer,
+  sceneViewModeOf,
+  setSceneViewMode,
+  SCENE_VIEW_TEXT,
+} from '../models/sceneImageView';
 import CaptureDialog from './CaptureDialog';
 
 import {
@@ -105,8 +114,8 @@ import { setImageFavorites, toggleImageFavorite } from '../models/imageStateUndo
 import { galleryPreviewEntry, linkedImageVariants } from '../models/sceneImageVariants';
 import { queueWorkflow } from '../models/TaskQueueService';
 import {
+  addSceneToQueue,
   addScenesToQueue,
-  createMissingPiecesForSession,
   queueArtistBreakdown,
   applyArtistPrefixBatch,
   queueScene,
@@ -820,32 +829,8 @@ export const SceneCell = observer(
       [moveScene],
     );
 
-    const addToQueue = async (scene: GenericScene) => {
-      try {
-        const missing = promptService.findMissingPieces(curSession, scene);
-        if (missing.length > 0) {
-          const list = missing
-            .map((m) => `<${m.library}.${m.piece}>`)
-            .join(', ');
-          appState.pushDialog({
-            type: 'confirm',
-            text: `존재하지 않는 프롬프트조각이 발견되었습니다:\n${list}\n\n로컬 프롬프트조각으로 새로 만들까요?\n(빈 조각이 생성되며, 내용은 직접 채워주세요)`,
-            callback: async () => {
-              createMissingPiecesForSession(curSession, missing);
-              try {
-                await queueScene(curSession, scene, appState.samples);
-              } catch (e: any) {
-                appState.pushMessage(`프롬프트 에러: ${e.message}`);
-              }
-            },
-          });
-          return;
-        }
-        await queueScene(curSession, scene, appState.samples);
-      } catch (e: any) {
-        appState.pushMessage(`프롬프트 에러: ${e.message}`);
-      }
-    };
+    // 씬 하나 예약 추가(누락 조각 확인 포함) — 이미지 뷰 첫 칸의 같은 버튼과 공용(models/sceneQueueActions)
+    const addToQueue = (scene: GenericScene) => addSceneToQueue(curSession, scene);
 
     const [_, rerender] = useState<{}>({});
 
@@ -1405,6 +1390,14 @@ const QueueControl = observer(
     const [displayFocus, setDisplayFocus] = useState<string | undefined>(
       undefined,
     );
+    // 이미지 뷰의 이미지 칸에서 연 「상세 보기로 바로 열기」(2026-11-26) — 열린 뷰어의 씬·초점이 이것과 같을 때만 뷰어에 넘긴다.
+    // 그래서 다른 진입점(씬 카드·더보기·히스토리·단축키)이 씬이나 초점을 바꾸면 저절로 효력이 없고, 뷰어가 닫히면 아래 효과가 비운다.
+    const [displayDirect, setDisplayDirect] = useState<
+      { scene: GenericScene; filename: string } | undefined
+    >(undefined);
+    useEffect(() => {
+      if (displayDirect && displayDirect.scene !== displayScene) setDisplayDirect(undefined);
+    }, [displayScene, displayDirect]);
     // 열린 씬 편집 창(일반 씬)·이미지 그리드의 씬이 프로젝트에서 빠지면 그 창을 닫는다(2026-11-01 되돌리기 U2a) —
     // 두 창은 안에서 되돌리기 단축키가 동작하므로(D9) 그 씬의 생성을 되돌리면 휴지통으로 간 씬 객체를 계속 편집하게 된다.
     // 이름이 아니라 객체로 확인한다(이름 변경 도중 잠깐 키와 이름이 어긋나도 닫지 않게).
@@ -1428,6 +1421,13 @@ const QueueControl = observer(
     }, [type, editingScene, displayScene, curSession]);
     const [focusedScene, setFocusedScene] = useState<GenericScene | null>(null);
     const gridContainerRef = useRef<HTMLDivElement>(null);
+    // 이미지 뷰 모드(2026-11-26, models/sceneImageView): 메인 씬 목록(패널 있음·파생 목록 아님)만 보기 방식을 따른다.
+    // cards 가 아니면 씬 카드 격자 대신 SceneImageView — 씬 선택·끌어 선택·씬 포커스 단축키는 끈다. 핸들러는 ref 로 지금 값을 읽는다.
+    const sceneViewMode = !!showPannel && !filterFunc ? sceneViewModeOf(type) : 'cards';
+    const imageViewOn = sceneViewMode !== 'cards';
+    const imageViewOnRef = useRef(imageViewOn);
+    imageViewOnRef.current = imageViewOn;
+    const imageViewRef = useRef<SceneImageViewHandle>(null);
     const [captureOpen, setCaptureOpen] = useState<{ visible: string[] }>();
     const [sceneSearchQuery, setSceneSearchQuery] = useState('');
     // 모바일 V2(선택형 배치): 씬 툴바 줄 대신 하단 메인 줄, 검색·프롬프트조각은 상단 슬롯, 프롬프트 도구는 시트 슬롯으로 보낸다.
@@ -1465,6 +1465,17 @@ const QueueControl = observer(
           gridContainerRef.current?.offsetParent !== null && gridSelectionCanReceiveEscape() ? 'close' : 'skip';
       },
     });
+    const imageViewSelecting = imageViewOn && isActive && !!(appState.sceneSelectionMode || appState.selectedSceneCount(type));
+    useEffect(() => { if (imageViewSelecting) { appState.sceneSelectionMode = false; appState.clearSceneSelection(); } }, [imageViewSelecting]);
+    // 「씬으로 이동」 등록소(models/sceneImageView) — 히스토리 navigateTo 가 이미지 뷰일 때 카드 DOM 대신 이 길을 탄다.
+    useEffect(() => {
+      if (!showPannel || filterFunc) return undefined;
+      return registerSceneRevealer(type, {
+        isImageView: () => imageViewOnRef.current,
+        isReady: () => !!imageViewRef.current?.isReady(),
+        reveal: (name) => !!imageViewRef.current?.scrollToScene(name),
+      });
+    }, [type, showPannel, filterFunc]);
     const { show: showSceneContextMenu } = useContextMenu({
       id: ContextMenuType.Scene,
     });
@@ -1548,6 +1559,7 @@ const QueueControl = observer(
             ? curSession!.scenes.get(sceneName)
             : curSession!.inpaints.get(sceneName);
         if (!scene) return;
+        setDisplayDirect(undefined);
         setDisplayFocus(filename);
         setFocusedScene(scene);
         appState.applySceneSelection({ names: new Set([scene.name]), type: scene.type });
@@ -1635,6 +1647,12 @@ const QueueControl = observer(
       setSceneSearchQuery('');
       setFocusedScene(found);
       window.setTimeout(() => {
+        if (imageViewOnRef.current) {
+          if (!imageViewRef.current?.scrollToScene(found.name)) {
+            appState.pushMessage(SCENE_VIEW_TEXT.noImageToReveal(found.name));
+          }
+          return;
+        }
         const element = document.getElementById(
           `scene-cell-${found.type}-${found.name}`,
         );
@@ -1675,6 +1693,7 @@ const QueueControl = observer(
     };
 
     const handleGridMouseDown = (e: React.MouseEvent | MouseEvent) => {
+      if (imageViewOnRef.current) return; // 이미지 뷰 = 끌어 선택 없음
       if (
         e.button !== 0 ||
         !gridContainerRef.current ||
@@ -1942,6 +1961,7 @@ const QueueControl = observer(
           gridContainerRef.current.offsetParent === null
         )
           return;
+        if (imageViewOnRef.current && action !== 'queue-run' && action !== 'queue-clear') return;
         const scenes = getFilteredScenes();
         if (scenes.length === 0) return;
         const focusedSceneIndex = focusedScene ? scenes.indexOf(focusedScene) : -1;
@@ -2047,6 +2067,8 @@ const QueueControl = observer(
         if (appState.floatViewCount > 0) return;
         if (appState.dialogs.length > 0) return;
         if (appState.configScreenOpen) return;
+        // 이미지 뷰: S(선택)·A/D/F(포커스 씬 넘겨 보기·즐겨찾기)는 카드 보기 전용
+        if (imageViewOnRef.current) return;
         if (appState.pieceEditorOpen) return;
         if (appState.findReplaceOpen) return;
         if (appState.batchInsertOpen) return;
@@ -2092,7 +2114,7 @@ const QueueControl = observer(
 
     // 포커스된 씬 자동 스크롤
     useEffect(() => {
-      if (!focusedScene || !getFilteredScenes().includes(focusedScene)) return;
+      if (imageViewOnRef.current || !focusedScene || !getFilteredScenes().includes(focusedScene)) return;
       const el = document.getElementById(
         `scene-cell-${focusedScene.type}-${focusedScene.name}`,
       );
@@ -2560,6 +2582,7 @@ const QueueControl = observer(
     const detailSceneEntry = useRef<GenericScene | null>(null);
     useEffect(() => { detailSceneEntry.current = null; }, [displayScene]);
     const resultViewer = useMemo(() => {
+      const direct = !!displayDirect && displayDirect.scene === displayScene && displayDirect.filename === displayFocus;
       if (displayScene) {
         // 씬 탭 이동(W1): 그리드 표시 순서(검색/필터 반영)대로 이전/다음 씬 계산.
         // 뷰어가 열려 있는 동안엔 검색어/필터를 바꿀 수 없으므로 메모 시점 목록으로 충분.
@@ -2590,6 +2613,7 @@ const QueueControl = observer(
               ref={resultViewerRef}
               scene={displayScene}
               initialDetailOpen={detailSceneEntry.current === displayScene}
+              onDirectDetailClose={direct ? () => { setDisplayDirect(undefined); closeGridOf(displayScene); } : undefined}
               focusFilename={displayFocus}
               sceneNav={{
                 hasPrev: navIdx > 0,
@@ -2672,7 +2696,7 @@ const QueueControl = observer(
         );
       }
       return <></>;
-    }, [displayScene, displayFocus, getFilteredScenes, editingScene]);
+    }, [displayScene, displayFocus, getFilteredScenes, editingScene, displayDirect]);
 
     const [sceneSelector, setSceneSelector] = useState<
       SceneSelectorItem | undefined
@@ -2805,7 +2829,10 @@ const QueueControl = observer(
     const openCapture = () => {
       const grid = gridContainerRef.current;
       const visible: string[] = [];
-      if (grid) {
+      if (imageViewOnRef.current) {
+        // 이미지 뷰 = 화면에 칸이 하나라도 보이는 씬(가상 격자의 보이는 범위)
+        visible.push(...(imageViewRef.current?.visibleSceneNames() ?? []));
+      } else if (grid) {
         const g = grid.getBoundingClientRect();
         const box = { x: g.left, y: g.top, w: g.width, h: g.height };
         for (const s of getFilteredScenes()) {
@@ -2863,7 +2890,60 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
         }
       : undefined;
 
+    // 「보기 방식」(2026-11-26 이미지 뷰) — 툴바 ⋯·모바일 더보기에서 고른다(PC 보기 설정 묶음에는 드롭다운).
+    // 아래 toolbarButtons 맵이 값으로 읽으므로 그보다 먼저 선언한다.
+    const openSceneViewModeMenu = async () => {
+      const menu = buildSceneViewModeMenu(sceneViewModeOf(type));
+      const choice = await appState.pushDialogAsync({
+        type: 'select',
+        text: menu.text,
+        items: menu.items,
+      });
+      if (!choice) return;
+      setSceneViewMode(type, normalizeSceneViewMode(choice));
+    };
+    // 이미지 뷰 칸의 동작 — 이미지 = 그 씬의 이미지 상세 보기를 그 이미지로 바로(2026-11-26, 닫으면 씬 목록으로),
+    // 이미지 메뉴 「이미지 그리드에서 보기」 = 그 씬의 이미지 그리드를 그 이미지 위치로(종전 칸 누름), 씬 = 씬 카드 우클릭과 같은 씬 메뉴
+    const openImageFromView = (scene: GenericScene, filename: string) => {
+      setDisplayDirect({ scene, filename });
+      setDisplayFocus(filename);
+      setDisplayScene(scene);
+    };
+    const openGridFromView = (scene: GenericScene, filename: string) => {
+      setDisplayDirect(undefined);
+      setDisplayFocus(filename);
+      setDisplayScene(scene);
+    };
+    // 칸 왼쪽 위 별 — 그리드·상세 보기의 별과 같은 되돌리기 기록 길(models/imageStateUndo)
+    const toggleFavoriteFromView = (scene: GenericScene, filename: string) =>
+      toggleImageFavorite(curSession!, scene, filename);
+    const openSceneFromView = (scene: GenericScene) => {
+      setDisplayFocus(undefined);
+      setDisplayScene(scene);
+    };
+    const openSceneMenuFromView = (scene: GenericScene, e: React.MouseEvent) => {
+      appState.contextSceneType = scene.type;
+      showSceneContextMenu({ event: e, props: { ctx: { type: 'scene', scene } } });
+    };
+    // 「씬 별로」 첫 칸의 호버 버튼 넷(PC) — 씬 카드의 네 버튼과 같은 동작
+    const queueAddFromView = (scene: GenericScene) => void addSceneToQueue(curSession, scene);
+    const queueRemoveFromView = (scene: GenericScene) => taskQueueService.removeTasksFromScene(scene);
+    const editSceneFromView = (scene: GenericScene) => setEditingScene(scene);
+    const toggleBookmarkFromView = (scene: GenericScene) =>
+      // 절대값 + 되돌리기 기록(U2a) — 씬 카드와 같은 길
+      void toggleSceneBookmarkRecorded(curSession, scene);
     const toolbarButtons: Record<string, ReactNode> = {
+      'scene-view-mode': (
+        <Tooltip content={SCENE_VIEW_TEXT.label}>
+          <button
+            className={`round-button${iconMode ? ' icon-only' : ''} back-gray`}
+            aria-label={SCENE_VIEW_TEXT.label}
+            onClick={() => void openSceneViewModeMenu()}
+          >
+            {iconMode ? <ActionIcon id="scene-view-mode" size={18} /> : SCENE_VIEW_TEXT.label}
+          </button>
+        </Tooltip>
+      ),
       'scene-capture': (
         <Tooltip content={CAPTURE_TEXT.tooltip}>
           <button
@@ -2981,6 +3061,9 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
             }`}
             aria-pressed={appState.sceneSelectionMode}
             data-toolbar-toggle="multi-select"
+            // 이미지 뷰에서는 여러 씬 선택이 없다(씬 카드 보기 전용)
+            disabled={imageViewOn}
+            title={imageViewOn ? SCENE_VIEW_TEXT.selectDisabled : undefined}
             onClick={() => {
               if (appState.sceneSelectionMode) {
                 appState.sceneSelectionMode = false;
@@ -3112,6 +3195,12 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
                     sceneBookmark.type === 'scene' ? '일반' : '인페인트'
                   } 탭에 있습니다.`,
                 );
+                return;
+              }
+              if (imageViewOn) {
+                if (!imageViewRef.current?.scrollToScene(sceneBookmark.name)) {
+                  appState.pushMessage(SCENE_VIEW_TEXT.noImageToReveal(sceneBookmark.name));
+                }
                 return;
               }
               const el = document.getElementById(
@@ -3464,6 +3553,8 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
               data-scene-totals-anchor=""
             >
               {!isMobile && <SceneTotalsBadge session={curSession} type={type} />}
+              {/* 보기 방식(2026-11-26 이미지 뷰) — 메인 목록만. 「씬 별로」면 옆에 씬당 장수 */}
+              {!filterFunc && <SceneViewModeControl type={type} />}
               {!appState.classicSceneCard && (
                 <select
                   className="app-select app-select-tight text-sm h-8"
@@ -3489,7 +3580,29 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
           </div>
         )}
         <div className="flex flex-1 overflow-hidden">
-          {(() => {
+          {imageViewOn ? (
+            // 이미지 뷰(씬 별로·최근 순) — 바깥 상자에 gridContainerRef 를 붙여 「보이는 탭」 판정이 그대로 산다
+            <SceneImageView
+              ref={imageViewRef}
+              type={type}
+              mode={sceneViewMode as 'byScene' | 'rows' | 'recent'}
+              session={curSession}
+              scenes={getFilteredScenes()}
+              isActive={isActive}
+              containerRef={gridContainerRef}
+              searching={!!sceneSearchQuery.trim()}
+              onOpenImage={openImageFromView}
+              onOpenGrid={openGridFromView}
+              onToggleFavorite={toggleFavoriteFromView}
+              onOpenScene={openSceneFromView}
+              onSceneMenu={openSceneMenuFromView}
+              bookmarkedScene={sceneBookmark?.name}
+              onQueueAdd={queueAddFromView}
+              onQueueRemove={queueRemoveFromView}
+              onEditScene={editSceneFromView}
+              onToggleBookmark={toggleBookmarkFromView}
+            />
+          ) : (() => {
             // 열 최소 폭·「높이 고정」 높이 = 씬 카드 크기 슬라이더(appState.sceneCardSizePercent) — SceneCardGrid 가 읽는다.
             // 그 값을 여기(QueueControl)서 읽지 않아 끄는 동안 이 컴포넌트와 카드 목록이 다시 그려지지 않는다.
             const renderedScenes = getFilteredScenes();
@@ -3627,6 +3740,8 @@ const captureCounts: Record<CaptureSceneScope, number> | undefined = captureOpen
                 key: 'multi-select',
                 name: '다중 선택',
                 icon: <ActionIcon id="multi-select" size={17} />,
+                // 이미지 뷰에서는 여러 씬 선택이 없다(씬 카드 보기 전용)
+                disabled: imageViewOn,
                 onTap: () => {
                   appState.sceneSelectionMode = true;
                 },
