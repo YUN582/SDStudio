@@ -1,3 +1,4 @@
+import { IMPORT_IMAGE_ACCEPT } from '../models/imageFormats';
 import { linkedInpaintInputPath } from '../models/inpaintInput';
 import * as React from 'react';
 import { useContext, useEffect, useRef, useState } from 'react';
@@ -180,8 +181,10 @@ const TRANSPARENT_BACKGROUND_HELP =
 
 const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
   const { curSession } = appState;
-  const { type, preset, shared, meta, editVibe, onImageUploaded } =
+  const { type, preset, shared, meta, editVibe, onImageUploaded, onBaseImageReplace } =
     useContext(WFElementContext)!;
+  const [replacing, setReplacing] = useState(false);
+  const replacesBase = input.fieldType === 'preset' && input.field === 'image' && !!onBaseImageReplace;
   const getField = () => {
     if (input.fieldType === 'preset') return preset[input.field];
     if (input.fieldType === 'shared') return shared[input.field];
@@ -194,10 +197,21 @@ const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
   };
   return (
     <div className="inline-flex md:flex gap-3 items-center flex-none text-eplsis overflow-hidden gap-3 mb-1 mt-2 md:mt-3">
-      <span className="gray-label">{input.label}: </span>
-      <div className="w-24 md:w-48">
+      {!replacesBase && <span className="gray-label">{input.label}: </span>}
+      <div className={replacesBase ? "w-40 md:w-48" : "w-24 md:w-48"}>
         <FileUploadBase64
+          label={replacesBase ? (replacing ? '이미지 교체 중…' : '베이스 이미지 교체') : undefined}
+          accept={replacesBase ? IMPORT_IMAGE_ACCEPT : undefined}
+          disabled={replacing}
           onFileSelect={async (file: string) => {
+            if (replacesBase) {
+              if (replacing) return;
+              setReplacing(true);
+              try { await onBaseImageReplace!(file); }
+              catch (error) { appState.pushMessage('베이스 이미지 교체 실패: ' + (error instanceof Error ? error.message : String(error)), 'error'); }
+              finally { setReplacing(false); }
+              return;
+            }
             // 변형 씬의 이미지 칸(U5): 저장 방식은 그대로(비었으면 새 파일, 있으면 제자리 덮어쓰기). 비어 있던 칸에 경로를
             // 넣은 경우만 되돌리기 1항목(경로 + 해상도 맞춤) — 덮어쓰기는 파일 덮어쓰기라 기록하지 않는다(보류 D20).
             const variant =
@@ -230,6 +244,7 @@ const ImageSelect = observer(({ input }: { input: WFIInlineInput }) => {
       {!isMobile && (
         <button
           className={`round-button back-sky`}
+          disabled={replacing}
           onClick={async () => {
             if (!getField()) return;
             try {
@@ -3012,6 +3027,7 @@ interface ImplProps {
   getCharacterMiddlePrompt?: (index: number) => string;
   onCharacterMiddlePromptChange?: (index: number, txt: string) => void;
   onImageUploaded?: (field: string, base64: string) => void | Promise<void>;
+  onBaseImageReplace?: (base64: string) => Promise<void>;
   customSlots?: Record<string, (() => React.ReactNode) | undefined>;
   fieldHeaderEnds?: Record<string, (() => React.ReactNode) | undefined>;
 }
@@ -3031,6 +3047,7 @@ export const PreSetEditorImpl = observer(
     getCharacterMiddlePrompt,
     onCharacterMiddlePromptChange,
     onImageUploaded,
+    onBaseImageReplace,
     customSlots,
     fieldHeaderEnds,
   }: ImplProps) => {
@@ -3136,6 +3153,7 @@ export const PreSetEditorImpl = observer(
             getCharacterMiddlePrompt,
             onCharacterMiddlePromptChange,
             onImageUploaded,
+            onBaseImageReplace,
             customSlots,
             fieldHeaderEnds,
           }}
@@ -3209,6 +3227,7 @@ interface InnerProps {
   onCharacterMiddlePromptChange?: (index: number, txt: string) => void;
   /** 이미지 입력칸에 파일을 올린 뒤(저장 완료 후) 호출 — 필드명과 base64. */
   onImageUploaded?: (field: string, base64: string) => void | Promise<void>;
+  onBaseImageReplace?: (base64: string) => Promise<void>;
   /** `wfiCustomSlot` 칸의 렌더 함수(id → 함수) — 조합 계열 변형 씬 편집 창(SPEC §7-4). */
   customSlots?: Record<string, (() => React.ReactNode) | undefined>;
   /** 프롬프트 칸 머리 줄 오른쪽 끝(필드명 → 렌더 함수) — 단일 I2I·인페인트 「조합 모드 켜기」(SPEC §7-4). */
@@ -3242,6 +3261,7 @@ export const InnerPreSetEditor = observer(
     onCharacterMiddlePromptChange,
     nopad,
     onImageUploaded,
+    onBaseImageReplace,
     customSlots,
     fieldHeaderEnds,
   }: InnerProps) => {
@@ -3260,6 +3280,7 @@ export const InnerPreSetEditor = observer(
           getCharacterMiddlePrompt={getCharacterMiddlePrompt}
           onCharacterMiddlePromptChange={onCharacterMiddlePromptChange}
           onImageUploaded={onImageUploaded}
+          onBaseImageReplace={onBaseImageReplace}
           customSlots={customSlots}
           fieldHeaderEnds={fieldHeaderEnds}
         />

@@ -53,6 +53,7 @@ interface Props {
   setPromptRow: (target: any, field: string, rowLabel: string, v: string) => void;
   onTurnOff: () => void;
   onImageUploaded?: (field: string, base64: string) => void | Promise<void>;
+  onBaseImageReplace?: (base64: string) => Promise<void>;
 }
 
 export const ComboPromptEditor = observer(
@@ -68,6 +69,7 @@ export const ComboPromptEditor = observer(
     setPromptRow,
     onTurnOff,
     onImageUploaded,
+    onBaseImageReplace,
   }: Props) => {
     const [globalUcFolded, setGlobalUcFolded] = useState(globalUcFoldedSaved);
     // V5 Medium 이면 전역 네거티브 칸은 접힘 고정·「사용」 토글 비활성 + 머리 줄 아래 「쓰이지 않음」 안내(2026-11-06 추가 보정).
@@ -214,6 +216,7 @@ export const ComboPromptEditor = observer(
         element={element}
         middlePromptMode={false}
         onImageUploaded={onImageUploaded}
+        onBaseImageReplace={onBaseImageReplace}
         customSlots={customSlots}
       />
     );

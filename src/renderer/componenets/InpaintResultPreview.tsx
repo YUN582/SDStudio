@@ -9,11 +9,12 @@ import { ActionIcon } from './ActionIcon';
 
 /** Result browsing never changes or unmounts the editing input, mask, or viewport. */
 export default function InpaintResultPreview({
-  session, scene, inputImage, active, generationRequest = 0, onModeChange, children,
+  session, scene, inputImage, inputIdentity, active, generationRequest = 0, onModeChange, children,
 }: {
   session: Session;
   scene: InpaintScene;
   inputImage: string;
+  inputIdentity?: string;
   active: boolean;
   generationRequest?: number;
   onModeChange: (viewingResult: boolean) => void;
@@ -28,6 +29,7 @@ export default function InpaintResultPreview({
   const followResults = useRef(true);
   const viewingResult = showResults && paths.length > 0;
 
+  useEffect(() => { setShowResults(false); }, [inputIdentity]);
   useEffect(() => onModeChange(viewingResult), [viewingResult, onModeChange]);
   useEffect(() => { followResults.current = true; }, [generationRequest]);
 

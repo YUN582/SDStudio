@@ -20,10 +20,22 @@ function Canvas() {
   useEffect(() => { mounts(); return () => { unmounts(); }; }, []);
   return <input aria-label="drawing fixture" value={drawing} onChange={event => setDrawing(event.target.value)} />;
 }
-function View({ active = true, request = 0 }: { active?: boolean; request?: number }) {
-  return <InpaintResultPreview session={session} scene={scene} inputImage="original-pixels" active={active} generationRequest={request} onModeChange={mode}><Canvas /></InpaintResultPreview>;
+function View({ active = true, request = 0, input = 'original' }: { active?: boolean; request?: number; input?: string }) {
+  return <InpaintResultPreview session={session} scene={scene} inputImage="original-pixels" inputIdentity={input} active={active} generationRequest={request} onModeChange={mode}><Canvas /></InpaintResultPreview>;
 }
 const result = () => document.querySelector('[data-inpaint-results] img') as HTMLImageElement;
+
+test('replacing the input returns to editing without unmounting the canvas or deleting results', async () => {
+  const view = render(<View />);
+  const canvas = screen.getByLabelText('drawing fixture');
+  await added('300.png');
+  await waitFor(() => expect(result()?.src).toContain('300.png'));
+  view.rerender(<View input="replacement" />);
+  expect(document.querySelector('[data-inpaint-results]')).toBeNull();
+  expect(screen.getByLabelText('drawing fixture')).toBe(canvas);
+  fireEvent.click(screen.getByRole('button', { name: '생성 결과 보기' }));
+  await waitFor(() => expect(result()?.src).toContain('300.png'));
+});
 async function added(name: string, owner = scene, project = session) {
   if (owner === scene && project === session) names.push(name);
   await act(async () => {

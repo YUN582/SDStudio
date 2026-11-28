@@ -82,7 +82,9 @@ export const FileUploadBase64: React.FC<{
   onFileSelect: (file: string) => void;
   disabled?: boolean;
   notext?: boolean;
-}> = ({ onFileSelect, disabled, notext }) => {
+  label?: string;
+  accept?: string;
+}> = ({ onFileSelect, disabled, notext, label, accept }) => {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<any>(null);
@@ -126,6 +128,7 @@ export const FileUploadBase64: React.FC<{
       setFile(file);
       convertFileToBase64(file);
     }
+    e.target.value = '';
   };
 
   const handleClick = () => {
@@ -150,7 +153,10 @@ export const FileUploadBase64: React.FC<{
       onDrop={handleDrop}
       onClick={handleClick}
       role="button"
-      aria-label="파일 선택"
+      aria-label={label ?? '파일 선택'}
+      aria-disabled={!!disabled}
+      tabIndex={disabled ? -1 : 0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); } }}
       className="w-full h-8 overflow-hidden rounded-[var(--r-btn)] back-sky clickable flex items-center justify-center"
       style={{
         backgroundColor: dragging ? '#0ea5e9' : undefined,
@@ -158,12 +164,13 @@ export const FileUploadBase64: React.FC<{
     >
       <input
         type="file"
+        accept={accept}
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
       />
       <p className="whitespace-nowrap">
-        {file && !notext ? file.name : <ActionIcon id="import" />}
+        {label ?? (file && !notext ? file.name : <ActionIcon id="import" />)}
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import { replaceInpaintBaseImage } from '../models/inpaintBaseImage';
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Tooltip from './Tooltip';
 import {
@@ -158,6 +159,8 @@ const InPaintEditor = observer(
     const [paintOpacity, setPaintOpacity] = useState(1);
     const [paintHistory, setPaintHistory] = useState<PaintHistory>({undo:false,redo:false,ready:false});
     const [queuing, setQueuing] = useState(false);
+    const [replacingBase, setReplacingBase] = useState(false);
+    const replacingBaseRef = useRef(false);
     const queuingRef = useRef(false);
     const [inputRevision, setInputRevision] = useState(0);
     const zoomRef = useRef<ReactZoomPanPinchRef>(null);
@@ -422,6 +425,7 @@ const InPaintEditor = observer(
             setPromptRow={setPromptRow}
             onTurnOff={turnOffComboMode}
             onImageUploaded={onImageUploaded}
+            onBaseImageReplace={['SDInpaint', 'SDI2I'].includes(editingScene.workflowType) ? replaceBaseImage : undefined}
           />
         ),
       },
@@ -544,6 +548,7 @@ const InPaintEditor = observer(
       setMask(undefined);
       let cancelled=false;
       let inputRequest=0;
+      let maskRequest=0;
       async function loadImage() {
         const request=++inputRequest;
         setInputError(undefined);setCanUseStoredInput(false);
@@ -570,14 +575,16 @@ const InPaintEditor = observer(
       }
       setMask(undefined);
       async function loadMask() {
+        const request = ++maskRequest;
         await waitPendingMaskSave(editingScene);
-        if (cancelled || !editingScene.preset.mask) return;
+        if (cancelled || request !== maskRequest) return;
+        if (!editingScene.preset.mask) { setMask(undefined); return; }
         try {
           const data = await imageService.fetchVibeImage(
             curSession!,
             editingScene.preset.mask,
           );
-          if (data && !cancelled) setMask(dataUriToBase64(data));
+          if (data && !cancelled && request === maskRequest) setMask(dataUriToBase64(data));
         } catch (e) {}
       }
       const dispose = reaction(
@@ -586,6 +593,7 @@ const InPaintEditor = observer(
           loadImage();
         },
       );
+      const disposeMask = reaction(() => editingScene.preset.mask, () => { void loadMask(); });
       if (isMirror && !editingScene.preset.image && curSession?.mirrorImage) {
         refreshMirrorCanvas();
       } else {
@@ -598,6 +606,7 @@ const InPaintEditor = observer(
         cancelled=true;
         imageService.removeEventListener('image-cache-invalidated', loadImage);
         dispose();
+        disposeMask();
       };
     }, [editingScene, inputReload]);
     useEffect(() => {
@@ -732,6 +741,28 @@ const InPaintEditor = observer(
       })());
     };
 
+    const replaceBaseImage = async (base64: string) => {
+      if (replacingBaseRef.current || queuingRef.current || !curSession) return;
+      const scene = editingScene, session = curSession;
+      replacingBaseRef.current = true; setReplacingBase(true);
+      try {
+        const result = await replaceInpaintBaseImage(session, scene, base64, imageService, {
+          before: async () => { await saveMask(); await waitPendingMaskSave(scene); },
+          isCurrent: () => mountedRef.current && editingSceneRef.current === scene && appState.curSession === session,
+        });
+        if (result) {
+          cachedMaskRef.current = null;
+          setPaintHistory({ undo: false, redo: false, ready: false });
+          setImage(result.image); setMask(result.mask); setWidth(result.width); setHeight(result.height);
+          setInputError(undefined); setCanUseStoredInput(false);
+          setInputRevision(value => value + 1);
+        }
+      } finally {
+        replacingBaseRef.current = false;
+        if (mountedRef.current) setReplacingBase(false);
+      }
+    };
+
     // 컴포넌트 언마운트 시 캐싱된 마스크 자동 저장 (ESC로 닫을 때도 마스크 유지)
     useEffect(() => {
       return () => {
@@ -827,7 +858,7 @@ const InPaintEditor = observer(
       onConfirm();
     };
     const queueWork=async()=>{
-      if(queuingRef.current||inputError)return false;
+      if(queuingRef.current||replacingBaseRef.current||inputError)return false;
       queuingRef.current=true;setQueuing(true);
       try {
         if(!await ensureSingleImagePrompt(curSession!,editingScene,()=>mountedRef.current&&sceneRef.current===editingScene))return false;
@@ -850,7 +881,7 @@ const InPaintEditor = observer(
       finally{queuingRef.current=false;if(mountedRef.current)setQueuing(false);}
     };
     const queueWorkRef=useRef(queueWork);queueWorkRef.current=queueWork;
-    const generationDisabled=queuing||!!inputError||!!def?.hasMask&&!isMirror&&!paintHistory.ready;
+    const generationDisabled=queuing||replacingBase||!!inputError||!!def?.hasMask&&!isMirror&&!paintHistory.ready;
     useLayoutEffect(()=>{
       if(!activeEditor)return;
       const target={session:curSession!,scene:editingScene,queue:()=>queueWorkRef.current(),disabled:generationDisabled};
@@ -983,6 +1014,7 @@ const InPaintEditor = observer(
                   )}
                   middlePromptMode={false}
                   onImageUploaded={onImageUploaded}
+                  onBaseImageReplace={['SDInpaint', 'SDI2I'].includes(editingScene.workflowType) ? replaceBaseImage : undefined}
                   fieldHeaderEnds={singleHeaderEnds}
                 />
               )}
@@ -1010,6 +1042,7 @@ const InPaintEditor = observer(
                 element={workFlowService.getI2IEditor(editingScene.workflowType)}
                 middlePromptMode={false}
                 onImageUploaded={onImageUploaded}
+                onBaseImageReplace={['SDInpaint', 'SDI2I'].includes(editingScene.workflowType) ? replaceBaseImage : undefined}
                 fieldHeaderEnds={singleHeaderEnds}
               />
             </div>
@@ -1079,7 +1112,7 @@ const InPaintEditor = observer(
           )}
           {/* PC 조합 에디터 탭: 이미지만 숨기고 아래 생성 바는 남긴다(언마운트 금지 — 마스크·Focused 보존) */}
           <div ref={viewportRef} data-space-pan={spaceHeld} onContextMenu={event=>{event.preventDefault();event.stopPropagation();}} className={`sds-inpaint-viewport flex-1 overflow-hidden ${pcComboWide ? 'md:hidden' : ''}`}>
-            <InpaintResultPreview session={curSession!} scene={editingScene} inputImage={image ? base64ToDataUri(image) : ''} active={activeEditor && !pcComboWide} generationRequest={generationRequest} onModeChange={setViewingResult}>
+            <InpaintResultPreview session={curSession!} scene={editingScene} inputImage={image ? base64ToDataUri(image) : ''} inputIdentity={editingScene.preset.image} active={activeEditor && !pcComboWide} generationRequest={generationRequest} onModeChange={setViewingResult}>
             <TransformWrapper
               ref={zoomRef} disabled={false} limitToBounds={false}
               panning={{disabled: !spaceHeld && pointerTarget !== 'pan'}}
@@ -1093,8 +1126,8 @@ const InPaintEditor = observer(
                 <WorkflowCanvas
                   session={curSession!} inputRevision={inputRevision}
                   pointerToImage={(element,event,width,height)=>canvasPointerPoint(element,event,width,height,rotation)}
-                  brushPreviewEnabled={activeEditor&&!viewingResult&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
-                  tool={spaceHeld||pointerTarget!=='brush'?'pan':paintTool==='paint'&&eraserMode?'erase':paintTool}
+                  brushPreviewEnabled={!replacingBase&&activeEditor&&!viewingResult&&!spaceHeld&&pointerTarget==='brush'&&!isMirror}
+                  tool={replacingBase||spaceHeld||pointerTarget!=='brush'?'pan':paintTool==='paint'&&eraserMode?'erase':paintTool}
                   color={paintColor} opacity={paintOpacity} onHistoryChange={setPaintHistory} onPickColor={setPaintColor}
                   brushSize={brushSize}
                   eraserMode={eraserMode}

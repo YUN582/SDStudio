@@ -33,3 +33,11 @@ The Windows Electron build migrated a flat layout and a previous `works/<ID>/` l
 - Production build completed; existing local desktop Drive OAuth retained only in the built package. Runtime dependencies preserved. Installation pending app closure; do not run the candidate against live data during testing.
 
 Local feature commits: `198508c` (project folders), `4c8da2f` (work assets), `35cd0bb` (migration/cleanup/restore). No push or PR.
+
+## Base image replacement — 2026-11-28
+
+The SDInpaint/SDI2I editor exposes `베이스 이미지 교체` in both single-prompt and combination modes. File selection and drop share the same action. The work stops following its previous source image, retaining its parent scene association and result folder.
+
+Replacement writes a new PNG input, mask and drawing under the work's `vibes/` directory. It preserves prompts, generation resolution, generated images and favorites. Masks and drawings resize to the new base dimensions; their old files remain intact. Focus rectangles reconcile to valid bounds. One project undo entry restores the prior paths, source-following flag, drawing metadata and focus coordinates. Failed reads/writes do not publish a partial replacement. Existing reservations keep their earlier pixel snapshots.
+
+Validation: typecheck and production renderer build passed; seven related suites passed 87 assertions. An isolated Windows build checked real replacement pixels, scaled drawing/mask pixels, unchanged source-file hash and request resolution, both editor modes, and a narrower layout. No remote generation or installation replacement. Native report: `E:/Temp/sdstudio-base-image-20261128/native-validation.json`.
