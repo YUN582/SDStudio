@@ -49,7 +49,6 @@ import {
   setVariantPresetField,
   touchVariantEdit,
   VARIANT_FOCUS_RECT_KEYS,
-  VARIANT_RESOLUTION_KEYS,
 } from '../models/variantSceneUndo';
 import { observer } from 'mobx-react-lite';
 import { InnerPreSetEditor } from './PreSetEdtior';
@@ -66,15 +65,12 @@ import { DETACHED_INPUT_META } from '../models/inpaintInput';
 import { ensureSingleImagePrompt, isSingleImageEdit } from '../models/singleImageEdit';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import {
-  lowerResolution,
   queueI2IWorkflow,
   queueMirrorWorkflow,
 } from '../models/TaskQueueService';
 import {
   applyImageResolution,
-  IMAGE_RESOLUTION_TEXT,
   ImageResolution,
-  imageResolutionMismatch,
   paidResolutionNotice,
   resolutionFromImage,
   workflowUsesImageResolution,
@@ -212,10 +208,6 @@ const InPaintEditor = observer(
     const [inputReload, setInputReload] = useState(0);
     const [width, setWidth] = useState(0);
     const [height, setHeight] = useState(0);
-    // 크기를 잰 이미지(같은 이미지일 때만 해상도 불일치 안내 — 씬 전환 직후 옛 크기로 판단하지 않게)
-    const [loadedDims, setLoadedDims] = useState<
-      { image: string; width: number; height: number } | undefined
-    >(undefined);
     const [mask, setMask] = useState<string | undefined>(undefined);
     const [brushSize, setBrushSize] = useState(brushSizeSaved);
     const [eraserMode, setEraserMode] = useState(false);
@@ -624,7 +616,6 @@ const InPaintEditor = observer(
         .then(({ width, height }) => {
           setWidth(width);
           setHeight(height);
-          if (image) setLoadedDims({ image, width, height });
           // 표시 이미지 크기에 저장된 Focused 사각형을 맞춘다(다른 이미지·작은 이미지 — 무효면 해제).
           // 그사이 다른 씬으로 바뀌었으면 손대지 않는다.
           if (!image || scene !== editingSceneRef.current) return;
@@ -636,21 +627,12 @@ const InPaintEditor = observer(
         .catch(() => {});
     }, [image]);
 
-    // 씬 해상도 = 첨부 이미지 크기(R-res, SPEC §7-3) — 업로드·「이미지 크기로 맞추기」 공용.
+    // 새 이미지 업로드 시 적용하는 해상도와 유료 크기 안내.
     const applyResolution = (scene: InpaintScene, r: ImageResolution) => {
       applyImageResolution(scene, r);
       const notice = paidResolutionNotice(r);
       if (notice) appState.pushMessage(notice, 'info');
     };
-    // 「이미지 크기로 맞추기」 버튼 = 해상도 3필드 1항목(U5)
-    const fitResolution = (r: ImageResolution) =>
-      editSceneFields(
-        appState.curSession,
-        editingScene,
-        VARIANT_RESOLUTION_KEYS,
-        UNDO_TEXT.variantFitResolution(editingScene.name),
-        () => applyResolution(editingScene, r),
-      );
     // 편집 창 이미지 입력칸에 새 이미지를 올리면(ⓑ) 저장 뒤 씬 해상도를 그 크기로 맞춘다.
     // 등록된 씬의 비어 있던 이미지 칸이면 ImageSelect → uploadVariantImageRecorded 가 경로 설정 + 이 해상도 맞춤을 1항목으로 담는다
     // (이미 있던 이미지를 덮어쓴 업로드는 기록하지 않음).
@@ -661,22 +643,6 @@ const InPaintEditor = observer(
       const r = await resolutionFromImage(base64);
       if (r) applyResolution(scene, r);
     };
-    // 기존 씬 불일치 안내(자동 변경 없음) — 표시 이미지 크기와 요청 해상도(lowerResolution)가 다를 때만.
-    const sceneSize =
-      editingScene.resolution in resolutionMap
-        ? lowerResolution(
-            editingScene.resolution as Resolution,
-            editingScene.resolutionWidth,
-            editingScene.resolutionHeight,
-          )
-        : { width: undefined, height: undefined };
-    const fitTarget =
-      image &&
-      loadedDims?.image === image &&
-      workflowUsesImageResolution(editingScene.workflowType)
-        ? imageResolutionMismatch(sceneSize, loadedDims.width, loadedDims.height)
-        : undefined;
-
     const deleteScene = () => {
       appState.pushDialog({
         type: 'confirm',
@@ -970,19 +936,6 @@ const InPaintEditor = observer(
                 />
               </div>
             </div>
-            {fitTarget && loadedDims && (
-              <div className="w-full flex flex-wrap items-center gap-2">
-                <span className="gray-label text-xs">
-                  {IMAGE_RESOLUTION_TEXT.mismatch(loadedDims, sceneSize)}
-                </span>
-                <button
-                  className="round-button back-sky flex-none"
-                  onClick={() => fitResolution(fitTarget)}
-                >
-                  {IMAGE_RESOLUTION_TEXT.fitButton}
-                </button>
-              </div>
-            )}
           </div>
           {isMirror && (
             <div className="flex flex-wrap gap-2 mt-1">
