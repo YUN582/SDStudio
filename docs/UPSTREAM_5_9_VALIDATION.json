@@ -1,0 +1,389 @@
+{
+  "date": "2026-11-28",
+  "upstream": "17044ed836b0edfa3952463c2b76e9e1be9ec90d",
+  "previousUpstream": "31e5e8e36e90a60191043bd345aa8732ce9947ae",
+  "forkBefore": "f44ae6e41dcce460664d2f8be8d8863d2a3b6daa",
+  "version": "5.9.0",
+  "method": "Incremental feature port preserving fork UI and owner-aware storage; no upstream merge, subagents or Gemini.",
+  "upstreamCommitCount": 8,
+  "upstreamPathCount": 39,
+  "upstreamPathDispositions": [
+    {
+      "path": "android/app/build.gradle",
+      "disposition": "version-only"
+    },
+    {
+      "path": "package-lock.json",
+      "disposition": "version-only"
+    },
+    {
+      "path": "package.json",
+      "disposition": "version-only"
+    },
+    {
+      "path": "release/app/package-lock.json",
+      "disposition": "version-only"
+    },
+    {
+      "path": "release/app/package.json",
+      "disposition": "version-only"
+    },
+    {
+      "path": "src/renderer/componenets/App.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/AppContextMenu.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/HistoryImagePreview.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/HistoryView.tsx",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/componenets/ImageHistory.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/ResultViewer.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/SceneImageView.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/SceneQueueControl.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/componenets/historyHooks.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/ImageHistoryService.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/KeyboardShortcutService.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/__tests__/historyPreview.test.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/historyViewer.test.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/imageHistory.test.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/__tests__/imageMenuEditSettings.test.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/pcUxDefects4.test.tsx",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneImageView.test.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneImageViewNavigate.test.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneImageViewRender.test.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneImageViewRowHint.test.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneImageViewWiring.test.tsx",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/__tests__/sceneModeSwitch.test.tsx",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/__tests__/toolbarButtonNames.test.tsx",
+      "disposition": "retained-fork-tests"
+    },
+    {
+      "path": "src/renderer/models/__tests__/uiLayoutGroups.test.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/historyLayout.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/historyPreview.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/historyView.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/iconDictionary.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/progressiveImage.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/sceneImageView.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/sceneQueueActions.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/swipeNav.ts",
+      "disposition": "integrated"
+    },
+    {
+      "path": "src/renderer/models/types.ts",
+      "disposition": "fork-adapted"
+    },
+    {
+      "path": "src/renderer/models/uiLayout.ts",
+      "disposition": "integrated"
+    }
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "rendererBuild": "passed; pre-existing Browserslist age warnings",
+    "focusedTests": {
+      "suites": 22,
+      "passed": 276,
+      "failed": 0,
+      "suitesRun": [
+        {
+          "path": "src/renderer/models/__tests__/taskGenerationSnapshot.test.ts",
+          "passed": 19
+        },
+        {
+          "path": "src/renderer/models/__tests__/historySharedPreview.test.tsx",
+          "passed": 2
+        },
+        {
+          "path": "src/renderer/models/__tests__/sceneImageViewWiring.test.tsx",
+          "passed": 23
+        },
+        {
+          "path": "src/renderer/models/__tests__/inpaintResultPreview.test.tsx",
+          "passed": 10
+        },
+        {
+          "path": "src/renderer/models/__tests__/historyPreview.test.tsx",
+          "passed": 17
+        },
+        {
+          "path": "src/renderer/models/__tests__/sceneImageViewRender.test.tsx",
+          "passed": 37
+        },
+        {
+          "path": "src/renderer/models/__tests__/historyViewer.test.tsx",
+          "passed": 34
+        },
+        {
+          "path": "src/renderer/models/__tests__/historyImageDrag.test.tsx",
+          "passed": 1
+        },
+        {
+          "path": "src/renderer/models/__tests__/quickRandomResolution.test.ts",
+          "passed": 3
+        },
+        {
+          "path": "src/renderer/models/__tests__/sceneImageViewNavigate.test.ts",
+          "passed": 5
+        },
+        {
+          "path": "src/renderer/models/__tests__/historyImageDrop.test.ts",
+          "passed": 4
+        },
+        {
+          "path": "src/renderer/models/__tests__/sceneImageView.test.ts",
+          "passed": 33
+        },
+        {
+          "path": "src/renderer/models/__tests__/workAssets.test.ts",
+          "passed": 7
+        },
+        {
+          "path": "src/renderer/models/__tests__/comboSource.test.ts",
+          "passed": 28
+        },
+        {
+          "path": "src/renderer/models/__tests__/sceneImageViewRowHint.test.tsx",
+          "passed": 2
+        },
+        {
+          "path": "src/renderer/models/__tests__/imageHistory.test.ts",
+          "passed": 8
+        },
+        {
+          "path": "src/renderer/models/__tests__/inpaintInput.test.ts",
+          "passed": 5
+        },
+        {
+          "path": "src/renderer/models/__tests__/presetModelService.test.ts",
+          "passed": 9
+        },
+        {
+          "path": "src/renderer/models/__tests__/gridKeyboard.test.ts",
+          "passed": 4
+        },
+        {
+          "path": "src/renderer/models/__tests__/inpaintSeed.test.ts",
+          "passed": 5
+        },
+        {
+          "path": "src/renderer/models/__tests__/gallerySort.test.ts",
+          "passed": 5
+        },
+        {
+          "path": "src/renderer/models/__tests__/inpaintResolution.test.ts",
+          "passed": 15
+        }
+      ]
+    },
+    "finalDesktopSelectionRegression": {
+      "suite": "sceneImageViewWiring.test.tsx",
+      "passed": 23,
+      "failed": 0
+    },
+    "overlappingLegacyUI": {
+      "passed": 66,
+      "failed": 20,
+      "baselineFailed": 20,
+      "newFailures": [],
+      "resolved": [],
+      "failedTests": [
+        "이름 문구 단일 출처 씬 툴바 버튼 이름(사용자 시안 문구)",
+        "이름 문구 단일 출처 글자형 WebP 변환 말고는 씬 레지스트리 버튼 모두 2~7자 이름이 있다",
+        "이름 문구 단일 출처 이미지 그리드 머리줄 이름 표(ResultViewer GRID_HEADER_NAMES)와 쓰임",
+        "켜짐 조건(소스 대조) 이미지 그리드 머리줄: PC·클래식 머리줄·설정 켬일 때만",
+        "제외·보류 항목 불변 카드 원형 버튼(캐릭터 프롬프트 적용 포함)은 btn-solid-yellow 없이 .card-overlay-btn",
+        "하드코딩 bg-{색}-500 잔존 = 제외 목록 파일별 건수 정확 일치",
+        "하드코딩 bg-{색}-500 잔존 = 제외 목록 바뀐 선택·강조 자리는 라이트 600 + 다크 500 짝",
+        "R2 잔여 — 캐릭터 프리셋 카드 위 원형 버튼 아이콘 14 w-8 h-8 원형 버튼 안 아이콘은 모두 size 14",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 GallaryImage 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 Image 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 HistoryImage 메뉴: 이미지 편집 = PC 전용·edit 아이콘, 생성 설정 적용 = 게이트 없음·gen-settings 아이콘",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 그리드 선택 메뉴는 한 장일 때만 보인다",
+        "AppContextMenu — 이미지 메뉴 세 종에 두 항목 동작 = 상세 보기와 같은 경로(편집기 열기 → 감시, 외부 이미지 창), 실패는 알림",
+        "AppContextMenu — 히스토리 이미지 메뉴 「글로벌 프리셋으로 복사」(2026-11-22) 그리드·이미지 메뉴와 같은 이름·아이콘, 게이트 없음(PC·모바일), 자리 = 「생성 설정 적용」 뒤 구분선 다음·삭제 앞",
+        "AppContextMenu — 히스토리 이미지 메뉴 「글로벌 프리셋으로 복사」(2026-11-22) 동작 = 그리드 메뉴와 같은 saveImageAsGlobalPreset(→ appState.saveImageAsGlobalPreset)",
+        "「이미지 편집」 호출부 — 실패는 알림, 감시는 성공했을 때만(2026-11-22) ResultViewer.tsx",
+        "「이미지 편집」 호출부 — 실패는 알림, 감시는 성공했을 때만(2026-11-22) PreSetEdtior.tsx",
+        "ResultDetailView — 해상도 칸 해상도 = 실제 파일 픽셀 측정값(경로가 같을 때만 넘김, 모르면 칸 없음)",
+        "ResultDetailView — 해상도 칸 불러오기마다 비우고, 측정값은 최신 요청일 때만(getImageDimensions 재사용)",
+        "ResultDetailView — 해상도 칸 PC 넓은 폭(프롬프트 열·상세 열)·좁은 폭·모바일 V2 모두 같은 정보 칸(renderInfo)을 쓴다"
+      ]
+    },
+    "nativeSmoke": {
+      "paidGeneration": false,
+      "personalDataUsed": false,
+      "networkBlocked": true,
+      "installationReplaced": false,
+      "checks": [
+        {
+          "name": "88 scene cards keep their height and scroll layout",
+          "count": 88,
+          "first": 382,
+          "second": 639,
+          "top": 241
+        },
+        {
+          "name": "byScene renders a virtualized image view",
+          "mounted": 18,
+          "variant": true,
+          "favorite": "true"
+        },
+        {
+          "name": "rows renders a virtualized image view",
+          "mounted": 19,
+          "variant": true,
+          "favorite": "true"
+        },
+        {
+          "name": "recent renders a virtualized image view",
+          "mounted": 18,
+          "variant": false,
+          "favorite": "true"
+        },
+        {
+          "name": "linked favorite toggles the work, not the equal-name original",
+          "parent": false,
+          "work": false
+        },
+        {
+          "name": "linked result opens the shared detailed viewer with the real owner"
+        },
+        {
+          "name": "history keeps 200 entries and virtualizes the full grid",
+          "count": "200 / 200장",
+          "mounted": 44
+        },
+        {
+          "name": "history favorites filter uses work favorites",
+          "filtered": "66 / 200장"
+        },
+        {
+          "name": "history arrow navigation crosses scene boundaries in the shared viewer"
+        },
+        {
+          "name": "vertical history opens the common viewer on image click"
+        }
+      ],
+      "screenshotLimit": "No display surface available; runtime DOM and geometry checked",
+      "unexpectedErrors": []
+    }
+  },
+  "installationReplaced": false,
+  "userDataUsed": false,
+  "installationSha256": "bc4fc95274cb738e4d17da90e0fed436d2d5912f1d516d13b764a55453578487",
+  "dependenciesChanged": false,
+  "projectSchemaChanged": false,
+  "limitations": [
+    "Full historical test suite was not rerun. Legacy UI assertions retain 20 baseline failures.",
+    "Native screenshots unavailable because no display surface was available; real DOM actions and layout measurements passed.",
+    "No actual remote generation, Android device test or installation replacement.",
+    "Smoke archive preserves installed main/runtime package version 5.8.1 and is not a release installer."
+  ],
+  "versionMetadataUpdatedInSourceOnly": true,
+  "implementationHead": "2ef2f2f4f38f9b7bd8352dbbacdbaba3166d5533",
+  "featureCommits": [
+    {
+      "commit": "9242506",
+      "scope": "History cap, virtual grids, shared detail actions and vertical browsing; shared scene-layout primitives."
+    },
+    {
+      "commit": "2ef2f2f",
+      "scope": "Owner-aware scene image modes, toolbar wiring and selection cleanup."
+    }
+  ],
+  "smokeArchive": {
+    "sha256": "381e047d4d7345e6a1b1fc4adf36d2948972f24cd9efed165b09a7ced8a625f9",
+    "embeddedRuntimeVersion": "5.8.1",
+    "preservedRuntimeFiles": 947,
+    "rendererFiles": 27,
+    "releaseInstaller": false
+  }
+}

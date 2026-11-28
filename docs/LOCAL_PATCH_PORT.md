@@ -1,6 +1,6 @@
 # Local patch source port
 
-Historical source port report, 2026-11-17. The local-only status below applies to that date. Current feature commits are pushed to fork main; see [5.8.1 integration](UPSTREAM_5_8_1_AI_REVIEW.md).
+Historical source port report, 2026-11-17. The local-only status below applies to that date. Current feature commits are pushed to fork main; see [5.9 integration](UPSTREAM_5_9_AI_REVIEW.md) and the earlier [5.8.1 integration](UPSTREAM_5_8_1_AI_REVIEW.md).
 
 - Upstream: `Dd154663/SDStudio`, base `99c0831`.
 - Branch: `port/local-improvements-20261117`.
