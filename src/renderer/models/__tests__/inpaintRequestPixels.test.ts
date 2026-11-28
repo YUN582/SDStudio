@@ -1,4 +1,4 @@
-import { prepareInpaintRequestPixels } from '../inpaintRequestPixels';
+import { prepareI2IRequestPixels, prepareInpaintRequestPixels } from '../inpaintRequestPixels';
 import { loadImageFromBase64 } from '../focusedInpaintCanvas';
 
 jest.mock('../focusedInpaintCanvas', () => ({ loadImageFromBase64: jest.fn() }));
@@ -59,4 +59,17 @@ test('unreadable or missing inputs fail locally', async () => {
   load.mockRejectedValueOnce(new Error('decode'));
   await expect(prepareInpaintRequestPixels('BAD', 'MASK', { width: 1280, height: 768 })).rejects.toThrow('decode');
   await expect(prepareInpaintRequestPixels('IMAGE', '', { width: 1280, height: 768 })).rejects.toThrow('마스크');
+});
+
+
+test('I2I scales a large replacement without requiring a mask', async () => {
+  expect(await prepareI2IRequestPixels('IMAGE', { width: 1280, height: 768 })).toBe('RESIZED');
+  expect(canvases.map(c => [c.width, c.height])).toEqual([[1280, 768]]);
+  expect(contexts[0].imageSmoothingEnabled).toBe(true);
+});
+
+test('I2I leaves matching encoded image bytes intact', async () => {
+  load.mockResolvedValueOnce({ naturalWidth: 1280, naturalHeight: 768 });
+  expect(await prepareI2IRequestPixels('IMAGE', { width: 1280, height: 768 })).toBe('IMAGE');
+  expect(canvases).toHaveLength(0);
 });

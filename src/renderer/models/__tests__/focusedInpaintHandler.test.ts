@@ -1,4 +1,5 @@
 jest.mock('../inpaintRequestPixels', () => ({
+  prepareI2IRequestPixels: jest.fn(async (image: string) => image),
   prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
 }));
 
@@ -78,7 +79,7 @@ jest.mock('../focusedInpaintCanvas', () => ({
   composeFocusedResult: jest.fn(),
 }));
 
-import { prepareInpaintRequestPixels } from '../inpaintRequestPixels';
+import { prepareI2IRequestPixels, prepareInpaintRequestPixels } from '../inpaintRequestPixels';
 import { ModelVersion, Resolution } from '../../backends/imageGen';
 import { activeFocusSpec, FOCUSED_COMPOSE_FAILED_TEXT, taskHandlers } from '../TaskHandlers';
 import { composeFocusedResult, prepareFocusedRequest } from '../focusedInpaintCanvas';
@@ -319,5 +320,33 @@ test('bad inpaint pixels fail before the server request and are not retried', as
   (prepareInpaintRequestPixels as jest.Mock).mockRejectedValueOnce(new Error('decode'));
   await expect(handler().handleTask(inpaintTask({ focus: null }), { stopped: false }))
     .rejects.toMatchObject({ retryable: false, message: expect.stringContaining('인페인트 이미지 준비 실패') });
+  expect(generateImage).not.toHaveBeenCalled();
+});
+
+
+test.each([ModelVersion.V4_5, ModelVersion.V5])('%s I2I after empty-mask conversion resizes pixels at frozen dimensions', async modelVersion => {
+  const task = inpaintTask({ focus: null, modelVersion });
+  task.params.job.type = 'sd_i2i';
+  task.params.job.mask = '';
+  task.params.job.overrideResolution = { width: 1280, height: 768 };
+  task.params.scene.resolutionWidth = 3264;
+  task.params.scene.resolutionHeight = 2048;
+  (prepareI2IRequestPixels as jest.Mock).mockResolvedValueOnce('RESIZED_I2I');
+  const selectedHandler = taskHandlers.find(h => h.checkTask(task))!;
+  await selectedHandler.handleTask(task, { stopped: false });
+  expect(prepareI2IRequestPixels).toHaveBeenCalledWith('ORIGINAL', { width: 1280, height: 768 });
+  expect(prepareInpaintRequestPixels).not.toHaveBeenCalled();
+  expect(generateImage).toHaveBeenCalledWith(expect.objectContaining({
+    model: 'i2i', image: 'RESIZED_I2I', resolution: { width: 1280, height: 768 },
+  }));
+  expect(generateImage.mock.calls[0][0].mask).toBeUndefined();
+  expect(task.params.job.image).toBe('ORIGINAL');
+});
+
+test('bad I2I input fails locally without a server retry', async () => {
+  const task = inpaintTask({ focus: null });task.params.job.type = 'sd_i2i';
+  (prepareI2IRequestPixels as jest.Mock).mockRejectedValueOnce(new Error('decode'));
+  await expect(taskHandlers.find(h => h.checkTask(task))!.handleTask(task, { stopped: false }))
+    .rejects.toMatchObject({ retryable: false, message: expect.stringContaining('I2I 이미지 준비 실패') });
   expect(generateImage).not.toHaveBeenCalled();
 });

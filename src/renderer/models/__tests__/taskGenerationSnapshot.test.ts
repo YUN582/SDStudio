@@ -1,4 +1,5 @@
 jest.mock('../inpaintRequestPixels', () => ({
+  prepareI2IRequestPixels: jest.fn(async (image: string) => image),
   prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
 }));
 

@@ -71,7 +71,7 @@ import {
   FocusedRequest,
   prepareFocusedRequest,
 } from './focusedInpaintCanvas';
-import { prepareInpaintRequestPixels } from './inpaintRequestPixels';
+import { prepareI2IRequestPixels, prepareInpaintRequestPixels } from './inpaintRequestPixels';
 import {
   normalizeTokenRotateBalance,
   normalizeTokenRotateTarget,
@@ -674,7 +674,14 @@ class GenerateImageTaskHandler implements TaskHandler {
     if (this.type === 'i2i') {
       const i2iJob = job as SDI2IJob;
       arg.model = Model.I2I;
-      arg.image = i2iJob.image;
+      try {
+        arg.image = await prepareI2IRequestPixels(i2iJob.image, arg.resolution);
+      } catch (e: any) {
+        throwIfAborted(ctx?.signal);
+        const err: any = new Error(`I2I 이미지 준비 실패: ${e?.message || e}`);
+        err.retryable = false;
+        throw err;
+      }
       arg.noise = i2iJob.noise;
       arg.originalImage = true;
       arg.imageStrength = i2iJob.strength;
