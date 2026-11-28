@@ -1,3 +1,4 @@
+import { HistoryView } from './HistoryView';
 import { ProgressBar, Spinner } from './ProgressIndicators';
 import './App.css';
 import { isWeightSpacingFixEnabled } from '../models/promptWeightSpacingFlow';
@@ -921,6 +922,7 @@ export const App = observer(() => {
               >
               <FloatViewProvider>
                 <AppContextMenu />
+                <HistoryView />
                 <SceneMergeDialog />
                 {historyPreview && (
                   <HistoryImagePreview key={historyPreview.entry.id} preview={historyPreview} onClose={closeHistoryImage} />

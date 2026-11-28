@@ -275,7 +275,7 @@ describe('히스토리 칸', () => {
 
   test('칸을 누르면 미리 보기가 열리고 즐겨찾기는 바뀌지 않는다', async () => {
     await mount();
-    const cells = container.querySelectorAll('.grid > div');
+    const cells = container.querySelectorAll('[data-history-cell]');
     expect(cells).toHaveLength(3);
     click(cells[1]);
     expect(historyPreviewState.entryId).toBe('outs/b.png');

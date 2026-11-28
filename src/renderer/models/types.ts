@@ -920,6 +920,7 @@ export interface ImageContextAlt {
 }
 
 export interface GallaryImageContextAlt {
+  openGrid?: () => void;
   type: 'gallary_image';
   path: string[];
   scene?: GenericScene;

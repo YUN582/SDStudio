@@ -4,6 +4,7 @@ import { toggleImageFavorite } from './imageStateUndo';
 import { persistService } from './PersistenceService';
 import { projectPath, sceneOutputDir } from './projectPaths';
 import { getAppState } from './appStateRef';
+import { getSceneRevealer, SceneRevealer } from './sceneImageView';
 import { GenericScene, Session } from './types';
 
 // 최근 생성 이미지 히스토리 (우측 사이드바용).
@@ -13,7 +14,7 @@ import { GenericScene, Session } from './types';
 // 영속화 (2026-07-18 개편): 종전에는 메모리 기반(앱 재시작 시 초기화)이었으나,
 // history.json 사이드카에 저장해 다음 실행에서 복원한다. 보관 상한은 종전과
 // 같은 **전체 최근 HISTORY_LIMIT장** (세션당 상한안은 프로젝트가 많을 때 목록
-// ×30 부하 우려로 사용자 결정으로 기각 — 재제안 시 참고).
+// ×30 부하 우려로 사용자 결정으로 기각 — 재제안 시 참고. 2026-11-26 상한 200).
 // 항목은 경로 문자열 메타뿐이라 파일이 작고(썸네일은 fastcache 재사용),
 // 사라진 파일/씬은 기존 자가 정리(prune·셀 로드 실패·클릭 검증)가 걷어낸다.
 
@@ -27,7 +28,10 @@ export interface GenerationHistoryEntry {
   createdAt: number;
 }
 
-export const HISTORY_LIMIT = 30;
+// 2026-11-26 사용자 결정(히스토리 확대 1단계): 30 → 200. 목록은 화면에 보이는 칸만 그린다(react-window —
+// ImageHistory.tsx HistoryList). history.json 형식은 그대로(항목 수만 늘어남). 구버전이 200장짜리 파일을 읽으면
+// 최신 30장만 남기고, 다음 저장 때 파일도 30장으로 줄어든다(오래된 170장 메타만 잃음 — 이미지 무손실).
+export const HISTORY_LIMIT = 200;
 
 const SIDECAR_PATH = 'history.json';
 
@@ -327,8 +331,36 @@ export class ImageHistoryService {
       // 타 프로젝트 항목 → 프로젝트 전환 (ProjectDrawer.selectProject와 동일 패턴)
       appState.curSession = session;
     }
-    const cell = await this.waitForSceneCell(entry.sceneType, entry.sceneName);
-    if (!cell) return;
+    const target = await this.waitForSceneCell(entry.sceneType, entry.sceneName);
+    if (!target) return;
+    if (!opts.openGrid) {
+      appState.applySceneSelection({ names: new Set([entry.sceneName]), type: entry.sceneType });
+      sessionService.dispatchEvent(new CustomEvent('focus-scene', {
+        detail: { sceneType: entry.sceneType, sceneName: entry.sceneName },
+      }));
+    }
+    if ('revealer' in target) {
+      // 이미지 뷰(2026-11-26): 가상 격자라 화면 밖 씬의 칸은 DOM 에 없다 → 칸 인덱스로 스크롤(models/sceneImageView 등록소).
+      // 그 씬의 칸이 없으면(최근 순의 이미지 없는 씬) 스크롤 없이 다음 단계(그리드 열기)로 간다.
+      if (!opts.openGrid) {
+        sessionService.dispatchEvent(new CustomEvent('close-result-viewer'));
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      target.revealer.reveal(entry.sceneName);
+      if (opts.openGrid) {
+        sessionService.dispatchEvent(
+          new CustomEvent('open-result-viewer', {
+            detail: {
+              sceneType: entry.sceneType,
+              sceneName: entry.sceneName,
+              filename: entry.filename,
+            },
+          }),
+        );
+      }
+      return;
+    }
+    const cell = target.cell;
     if (opts.openGrid) {
       sessionService.dispatchEvent(
         new CustomEvent('open-result-viewer', {
@@ -342,10 +374,6 @@ export class ImageHistoryService {
     } else {
       // 열려 있는 이미지 그리드(ResultViewer)를 먼저 닫아야 스크롤이 보인다
       sessionService.dispatchEvent(new CustomEvent('close-result-viewer'));
-      appState.applySceneSelection({ names: new Set([entry.sceneName]), type: entry.sceneType });
-      sessionService.dispatchEvent(new CustomEvent('focus-scene', {
-        detail: { sceneType: entry.sceneType, sceneName: entry.sceneName },
-      }));
       // 오버레이 언마운트가 반영된 다음 프레임에 스크롤
       await new Promise((r) => setTimeout(r, 0));
       cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -355,11 +383,12 @@ export class ImageHistoryService {
   // 해당 씬 셀이 "보이는" 상태가 될 때까지 탭 전환을 재발신하며 대기.
   // 매 틱 재발신하는 이유: 프로젝트 전환 시 TabComponent가 리마운트(key=세션명)되어
   // 리스너 등록 전 dispatch가 유실될 수 있음 — 탭 전환은 멱등이라 반복해도 무해.
+  // 이미지 뷰(2026-11-26): 그 탭의 메인 목록이 이미지 뷰면 카드 DOM 대신 「격자가 보이는 탭에 그려졌는가」를 기다린다.
   private waitForSceneCell(
     type: 'scene' | 'inpaint',
     name: string,
     timeoutMs = 2500,
-  ): Promise<HTMLElement | null> {
+  ): Promise<{ cell: HTMLElement } | { revealer: SceneRevealer } | null> {
     const tabAction = type === 'scene' ? 'tab-1' : 'tab-2';
     const deadline = Date.now() + timeoutMs;
     return new Promise((resolve) => {
@@ -369,10 +398,18 @@ export class ImageHistoryService {
             detail: { action: tabAction },
           }),
         );
-        const el = document.getElementById(`scene-cell-${type}-${name}`);
-        if (el && el.offsetParent !== null) {
-          resolve(el);
-          return;
+        const revealer = getSceneRevealer(type);
+        if (revealer && revealer.isImageView()) {
+          if (revealer.isReady()) {
+            resolve({ revealer });
+            return;
+          }
+        } else {
+          const el = document.getElementById(`scene-cell-${type}-${name}`);
+          if (el && el.offsetParent !== null) {
+            resolve({ cell: el });
+            return;
+          }
         }
         if (Date.now() > deadline) {
           resolve(null);

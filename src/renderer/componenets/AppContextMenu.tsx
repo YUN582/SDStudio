@@ -1,3 +1,5 @@
+import { closeHistoryView } from '../models/historyView';
+import { closeHistoryPreview } from '../models/historyPreview';
 import { DETACHED_INPUT_META } from '../models/inpaintInput';
 import { observer } from 'mobx-react-lite';
 import { getSnapshot } from 'mobx-state-tree';
@@ -914,6 +916,8 @@ export const AppContextMenu = observer(() => {
       saveImageToArtistLibrary(props.ctx);
     } else if (id === 'reveal') {
       revealImageInExplorer(props.ctx.path?.[0]);
+    } else if (id === 'open-grid') {
+      props.ctx.openGrid?.();
     } else if ((id === 'edit-image' || id === 'image-edit') && props.ctx.path?.length === 1) {
       editImage(props.ctx.path[0]);
     }
@@ -989,6 +993,7 @@ export const AppContextMenu = observer(() => {
   const handleHistoryItemClick = ({ id, props }: any) => {
     const ctx = props.ctx as HistoryImageContextAlt;
     if (id === 'metadata' || id === 'image-settings') {
+      closeHistoryPreview();
       void historyImageSettings(ctx);
     } else if (id === 'save-global') {
       void appState.saveImageAsGlobalPreset(ctx.entry.path);
@@ -997,8 +1002,12 @@ export const AppContextMenu = observer(() => {
     } else if (id === 'clipboard') {
       void backend.copyImageToClipboard(ctx.entry.path);
     } else if (id === 'goto-scene') {
+      closeHistoryPreview();
+      closeHistoryView();
       imageHistoryService.navigateTo(ctx.entry, { openGrid: false });
     } else if (id === 'open-grid') {
+      closeHistoryPreview();
+      closeHistoryView();
       imageHistoryService.navigateTo(ctx.entry, { openGrid: true });
     } else if (id === 'fav') {
       imageHistoryService.toggleFavorite(ctx.entry);
@@ -1194,6 +1203,9 @@ export const AppContextMenu = observer(() => {
             <MenuItemLabel icon={<ActionIcon id="copy" size={I} />}>이미지 복사</MenuItemLabel>
           </Item>
         )}
+        <Item id="open-grid" onClick={handleImageItemClick2} hidden={(p) => !p.props?.ctx?.openGrid}>
+          <MenuItemLabel icon={<FaThLarge size={I} />}>이미지 그리드로 이동</MenuItemLabel>
+        </Item>
         {!isMobile && (
           <Item id="reveal" onClick={handleImageItemClick2}>
             <MenuItemLabel icon={<FaFolderOpen size={I} />}>파일 탐색기에서 열기</MenuItemLabel>

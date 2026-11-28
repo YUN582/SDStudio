@@ -1,3 +1,4 @@
+import { directDetailStartIndex, directDetailCloseTarget } from '../models/sceneImageView';
 import CaptureDialog from './CaptureDialog';
 
 import {
@@ -1208,6 +1209,7 @@ interface ResultDetailViewProps {
   onClose: () => void;
   onViewedImageChange?: (path: string | undefined) => void;
   historyEntry?: GenerationHistoryEntry;
+  historyNavigation?: { prev?: () => void; next?: () => void; index: number; total: number };
   imageOwners?: ReadonlyMap<string, GenericScene>;
   variantCounts?: ReadonlyMap<string, number>;
   onOpenVariants?: (path: string) => void;
@@ -1235,6 +1237,7 @@ export const ResultDetailView = observer(
     onClose,
     onViewedImageChange,
     historyEntry,
+    historyNavigation,
     sceneNav,
     imageOwners,
     variantCounts,
@@ -1404,9 +1407,9 @@ export const ResultDetailView = observer(
         )
           return;
         if (e.key === 'ArrowLeft') {
-          if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
+          if (historyNavigation) historyNavigation.prev?.(); else if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
         } else if (e.key === 'ArrowRight') {
-          if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
+          if (historyNavigation) historyNavigation.next?.(); else if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
           const doDel = async () => {
             await deleteImageFilesRecorded(session, [paths[selectedIndex]], scene);
@@ -1431,9 +1434,9 @@ export const ResultDetailView = observer(
           return;
         }
         if (action === 'prev-image') {
-          if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
+          if (historyNavigation) historyNavigation.prev?.(); else if (paths.length > 1) setSelectedIndex((selectedIndex - 1 + paths.length) % paths.length);
         } else if (action === 'next-image') {
-          if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
+          if (historyNavigation) historyNavigation.next?.(); else if (paths.length > 1) setSelectedIndex((selectedIndex + 1) % paths.length);
         } else if (action === 'delete-image') {
           const doDel = async () => {
             await deleteImageFilesRecorded(session, [paths[selectedIndex]], scene);
@@ -1488,7 +1491,7 @@ export const ResultDetailView = observer(
         sessionService.removeEventListener('main-image-updated', rerender);
         gameService.removeEventListener('updated', refreshPaths);
       };
-    }, [selectedIndex, paths, activeView, variantChoices, session, scene, appliedCharacterPreset, getPaths, sceneNav]);
+    }, [selectedIndex, paths, activeView, variantChoices, session, scene, appliedCharacterPreset, getPaths, sceneNav, historyNavigation]);
 
     useEffect(() => {
       return () => {
@@ -1668,6 +1671,7 @@ export const ResultDetailView = observer(
     };
 
     const stepImage = (delta: number) => {
+      if (historyNavigation) { (delta < 0 ? historyNavigation.prev : historyNavigation.next)?.(); return; }
       if (paths.length < 2) return;
       setSelectedIndex((selectedIndex + delta + paths.length) % paths.length);
     };
@@ -1691,7 +1695,7 @@ export const ResultDetailView = observer(
             </span>
           )}
           <span className="text-xs text-muted tabular-nums flex-none" data-detail-index="">
-            {selectedIndex + 1} / {paths.length}
+            {historyNavigation ? historyNavigation.index + 1 : selectedIndex + 1} / {historyNavigation?.total ?? paths.length}
           </span>
         </div>
         {!v2 && (
@@ -1733,7 +1737,7 @@ export const ResultDetailView = observer(
                 type="button"
                 className="round-button icon-only back-gray"
                 aria-label="이전 이미지"
-                disabled={paths.length < 2}
+                disabled={historyNavigation ? !historyNavigation.prev : paths.length < 2}
                 onClick={() => stepImage(-1)}
               >
                 <FaArrowLeft size={13} />
@@ -1744,7 +1748,7 @@ export const ResultDetailView = observer(
                 type="button"
                 className="round-button icon-only back-gray"
                 aria-label="다음 이미지"
-                disabled={paths.length < 2}
+                disabled={historyNavigation ? !historyNavigation.next : paths.length < 2}
                 onClick={() => stepImage(1)}
               >
                 <FaArrowRight size={13} />
@@ -2163,6 +2167,7 @@ interface ResultViewerProps {
   // 씬 탭 이동(W1): 뷰어를 연 채 그리드 표시 순서대로 이전/다음 씬으로 전환
   sceneNav?: SceneNavigation;
   initialDetailOpen?: boolean;
+  onDirectDetailClose?: () => void;
   coveredByEditor?: boolean;
 }
 
@@ -2188,6 +2193,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
       focusFilename,
       sceneNav,
       initialDetailOpen = false,
+      onDirectDetailClose,
       coveredByEditor = false,
     }: ResultViewerProps,
     ref,
@@ -2206,9 +2212,17 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     const selectedImages = useRef(new Set<string>());
     const imageSelectionAnchor = useRef<string>();
     const selectMode = isMobile ? mobileImageSelection : selectedImages.current.size > 0;
+    const [directStartIndex] = useState(() => directDetailStartIndex(!!onDirectDetailClose, focusFilename,
+      () => imageService.getSceneGalleryEntries(curSession!, scene).map(entry => entry.path)));
+    const [startedDirect] = useState(directStartIndex != null);
     const [selectedImageIndex, setSelectedImageIndex] = useState<
       number | undefined
-    >(() => initialDetailOpen && imageService.getSceneGalleryEntries(curSession!, scene).length ? 0 : undefined);
+    >(() => directStartIndex ?? (initialDetailOpen && imageService.getSceneGalleryEntries(curSession!, scene).length ? 0 : undefined));
+    const closeDetail = () => {
+      if (directDetailCloseTarget(startedDirect, !!onDirectDetailClose) === 'viewer') onDirectDetailClose!();
+      else setSelectedImageIndex(undefined);
+    };
+    const hideGridForDirect = startedDirect && !!onDirectDetailClose && selectedImageIndex != null;
     const [focusedImagePath, setFocusedImagePath] = useState<string>();
     const [imageFilter, setImageFilter] = useState<SceneImageFilter>('all');
     const [variantSourcePath, setVariantSourcePath] = useState<string>();
@@ -2328,13 +2342,14 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
     // 히스토리 → 특정 이미지 포커스: 그리드를 해당 이미지 위치로 스크롤
     useEffect(() => {
       if (!focusFilename) return;
-      const idx = imagePaths.findIndex((p) => p === sourceDir + '/' + focusFilename);
+      const idx = imagePaths.findIndex((p) => p === focusFilename || p === sourceDir + '/' + focusFilename);
       if (idx >= 0) {
         setFocusedImagePath(imagePaths[idx]);
+        if (initialDetailOpen) setSelectedImageIndex(idx);
         const t = setTimeout(() => gallaryRef.current?.scrollToIndex(idx), 100);
         return () => clearTimeout(t);
       }
-    }, [focusFilename]);
+    }, [focusFilename, initialDetailOpen]);
 
     const onClearSelection = useCallback(() => {
       imageSelectionAnchor.current = undefined;
@@ -3054,6 +3069,7 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
 
     return (
       <div className="w-full h-full flex flex-col">
+        <div className={"flex flex-col flex-1 min-h-0" + (hideGridForDirect ? ' invisible' : '')}>
         {!isMobile && showImageCheatsheet && !tournament && !appState.modalOverlayCount && (
           <ShortcutCheatsheet
             scope="image-grid"
@@ -3328,19 +3344,18 @@ const ResultViewer = observer(forwardRef<ResultVieweRef, ResultViewerProps>(
               return !!(x.sceneRef && x.sceneRef === scene.name);
             }}
           ></QueueControl>
+        </div>
           {selectedImageIndex != null && (
             <FloatView
               priority={1}
               // 이미지 상세 — 전역 되돌리기 단축키 허용(D9, 바깥 이미지 그리드 창도 허용이라 함께 통과)
               allowUndo
               headerSlot
-              onEscape={() => setSelectedImageIndex(undefined)}
+              onEscape={closeDetail}
             >
               <ResultDetailView
                 buttons={buttons}
-                onClose={() => {
-                  setSelectedImageIndex(undefined);
-                }}
+                onClose={closeDetail}
                 scene={scene}
                 getPaths={getPaths}
                 initialSelectedIndex={selectedImageIndex}
