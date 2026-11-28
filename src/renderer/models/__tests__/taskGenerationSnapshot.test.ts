@@ -1,3 +1,7 @@
+jest.mock('../inpaintRequestPixels', () => ({
+  prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
+}));
+
 const getConfig = jest.fn();
 const delegateTask = jest.fn(async () => {});
 const delegateComplete = jest.fn(async () => {});

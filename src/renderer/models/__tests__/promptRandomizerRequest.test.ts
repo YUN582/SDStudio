@@ -1,3 +1,7 @@
+jest.mock('../inpaintRequestPixels', () => ({
+  prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
+}));
+
 const getConfig = jest.fn(async () => ({}));
 const generateImage = jest.fn(async (_arg: any) => {});
 const deleteFile = jest.fn(async (_p: string) => {});

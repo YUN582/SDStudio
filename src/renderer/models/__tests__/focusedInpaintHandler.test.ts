@@ -1,3 +1,7 @@
+jest.mock('../inpaintRequestPixels', () => ({
+  prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
+}));
+
 /**
  * Focused inpainting 핸들러 연결(2026-10-04 S1) — 요청 해상도·이미지·마스크 교체, add_original_image=false,
  * 캐릭터 좌표 재매핑, 저장 직후 합성·같은 경로 덮어쓰기, 합성 실패 시 원본 유지, 미러 무시,
@@ -74,6 +78,7 @@ jest.mock('../focusedInpaintCanvas', () => ({
   composeFocusedResult: jest.fn(),
 }));
 
+import { prepareInpaintRequestPixels } from '../inpaintRequestPixels';
 import { ModelVersion, Resolution } from '../../backends/imageGen';
 import { activeFocusSpec, FOCUSED_COMPOSE_FAILED_TEXT, taskHandlers } from '../TaskHandlers';
 import { composeFocusedResult, prepareFocusedRequest } from '../focusedInpaintCanvas';
@@ -191,6 +196,7 @@ test('Focused: 크롭 이미지·마스크·요청 해상도·add_original_image
     rect: { ...RECT, context: 48 },
     context: 48,
   });
+  expect(prepareInpaintRequestPixels).not.toHaveBeenCalled();
   const arg = generateImage.mock.calls[0][0];
   expect(arg.image).toBe('CROP');
   expect(arg.mask).toBe('CROPMASK');
@@ -293,4 +299,25 @@ test('비용 표시도 Focused 요청 해상도 기준', () => {
   expect(handler().calculateCost(big)).toEqual([]);
   const plain = inpaintTask({ width: 2048, height: 2048, focus: null as any });
   expect(handler().calculateCost(plain)).toEqual([{ scene: 'scene', text: '씬 해상도가 큼' }]);
+});
+
+
+test('normal inpaint sends prepared image and mask at frozen queue dimensions', async () => {
+  const task = inpaintTask({ focus: null });
+  task.params.job.overrideResolution = { width: 1280, height: 768 };
+  (prepareInpaintRequestPixels as jest.Mock).mockResolvedValueOnce({ image: 'RESIZED', mask: 'RESIZEDMASK' });
+  await handler().handleTask(task, { stopped: false });
+  expect(prepareInpaintRequestPixels).toHaveBeenCalledWith('ORIGINAL', 'MASK', { width: 1280, height: 768 });
+  expect(generateImage).toHaveBeenCalledWith(expect.objectContaining({
+    image: 'RESIZED', mask: 'RESIZEDMASK', resolution: { width: 1280, height: 768 },
+  }));
+  expect(task.params.job.image).toBe('ORIGINAL');
+  expect(task.params.job.mask).toBe('MASK');
+});
+
+test('bad inpaint pixels fail before the server request and are not retried', async () => {
+  (prepareInpaintRequestPixels as jest.Mock).mockRejectedValueOnce(new Error('decode'));
+  await expect(handler().handleTask(inpaintTask({ focus: null }), { stopped: false }))
+    .rejects.toMatchObject({ retryable: false, message: expect.stringContaining('인페인트 이미지 준비 실패') });
+  expect(generateImage).not.toHaveBeenCalled();
 });

@@ -1,3 +1,7 @@
+jest.mock('../inpaintRequestPixels', () => ({
+  prepareInpaintRequestPixels: jest.fn(async (image: string, mask: string) => ({ image, mask })),
+}));
+
 /**
  * 부스트 모드 B2(2026-11-01) — 실제 생성 핸들러의 부스트 처리.
  * - 대상 판정(supportsWorkerAccount + 정책): 변형 작업 토글, Anlas 작업은 'anlas' 범위만, 정책 없으면 B1 그대로

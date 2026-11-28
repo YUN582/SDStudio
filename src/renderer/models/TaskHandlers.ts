@@ -71,6 +71,7 @@ import {
   FocusedRequest,
   prepareFocusedRequest,
 } from './focusedInpaintCanvas';
+import { prepareInpaintRequestPixels } from './inpaintRequestPixels';
 import {
   normalizeTokenRotateBalance,
   normalizeTokenRotateTarget,
@@ -653,6 +654,21 @@ class GenerateImageTaskHandler implements TaskHandler {
             ? remapCharacterCenter(p, prepared.rect, prepared.imageWidth, prepared.imageHeight)
             : p,
         );
+      } else {
+        try {
+          const prepared = await prepareInpaintRequestPixels(
+            inpaintJob.image,
+            inpaintJob.mask,
+            arg.resolution,
+          );
+          arg.image = prepared.image;
+          arg.mask = prepared.mask;
+        } catch (e: any) {
+          throwIfAborted(ctx?.signal);
+          const err: any = new Error(`인페인트 이미지 준비 실패: ${e?.message || e}`);
+          err.retryable = false;
+          throw err;
+        }
       }
     }
     if (this.type === 'i2i') {
